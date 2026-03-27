@@ -100,14 +100,6 @@ calc_active() {
         fi
         prev=$ts
     done
-    # Add time since last prompt if within threshold
-    if [ -n "$prev" ]; then
-        local now=$(date +%s)
-        local gap=$((now - prev))
-        if [ "$gap" -le "$PAUSE_THRESHOLD" ]; then
-            active=$((active + gap))
-        fi
-    fi
     echo "$active"
 }
 
@@ -276,16 +268,19 @@ if [ "$MODE" = "statusline" ]; then
     done
     now=$(date +%s)
     gap=$((now - prev))
-    [ "$gap" -le "$PAUSE_THRESHOLD" ] && active=$((active + gap))
+    idle=$( [ "$gap" -gt "$PAUSE_THRESHOLD" ] && echo true || echo false )
 
     proj_short=""
     [ -n "$project" ] && proj_short=$(short_project "$project")
 
-    if [ -n "$proj_short" ]; then
-        echo "⏱ $(fmt_time_short $active) · $proj_short"
+    if $idle; then
+        label="⏸ idle $(fmt_time_short $gap)"
+        [ -n "$proj_short" ] && label="$label · $proj_short"
     else
-        echo "⏱ $(fmt_time_short $active)"
+        label="⏱ $(fmt_time_short $active)"
+        [ -n "$proj_short" ] && label="$label · $proj_short"
     fi
+    echo "$label"
     exit 0
 fi
 
@@ -414,12 +409,6 @@ for ts in "${timestamps[@]}"; do
     fi
     prev=$ts
 done
-
-now=$(date +%s)
-gap=$((now - prev))
-if [ "$gap" -le "$PAUSE_THRESHOLD" ]; then
-    active=$((active + gap))
-fi
 
 first="${timestamps[0]}"
 output_result "$active" "$first" "$project"
