@@ -1,454 +1,428 @@
 #!/bin/bash
-# claude-worktime — show active session time for Claude Code
+# claude-worktime — track active working time in Claude Code sessions
 #
-# Reads timestamps logged by Claude Code hooks and calculates
-# active working time, excluding idle periods (default: >15min gap).
+# JSONL log format: {"t":UNIX_TS,"p":"/path","b":"branch","e":"start"|"activity"}
+# One entry per hook event. Sessions detected by activity gaps, not markers.
 #
 # Usage:
-#   claude-worktime                                  # current session
-#   claude-worktime --today                          # all active time today
-#   claude-worktime --week                           # this week
-#   claude-worktime --since 2026-03-25               # since a date
-#   claude-worktime --filter PATH                    # time in a project
-#   claude-worktime --today --filter Todenbuettel    # combined
-#   claude-worktime --summary                        # per-project breakdown
-#   claude-worktime --summary --today                # per-project today
-#   claude-worktime --csv                            # export sessions as CSV
-#   claude-worktime --csv --today                    # CSV for today only
-#   claude-worktime --statusline                     # compact for statusline
-#   claude-worktime --rotate                         # rotate old log entries
-#   claude-worktime --raw                            # JSON (any mode)
+#   claude-worktime log [--start]        # append entry (called by hooks)
+#   claude-worktime stop                 # session end summary (Stop hook)
+#   claude-worktime                      # current session
+#   claude-worktime --today              # today's total
+#   claude-worktime --week               # this week
+#   claude-worktime --since 2026-03-25   # since a date
+#   claude-worktime --filter PATH        # time in a project
+#   claude-worktime --summary [--today]  # per-project breakdown
+#   claude-worktime --csv [--today]      # export as CSV
+#   claude-worktime --statusline         # compact for status bar
+#   claude-worktime --rotate             # archive old entries
+#   claude-worktime --raw                # JSON output (any mode)
 
 set -euo pipefail
 
 LOGDIR="${CLAUDE_WORKTIME_DIR:-${HOME}/.claude/worktime}"
 LOGFILE="${LOGDIR}/activity.log"
-PAUSE_THRESHOLD="${CLAUDE_WORKTIME_PAUSE:-900}"  # seconds (default: 15min)
+PAUSE="${CLAUDE_WORKTIME_PAUSE:-900}"
 
-# Parse arguments
-MODE="session"
-RAW=false
-FILTER_PATH=""
-SINCE_TS=0
+# Reusable jq function: compute active seconds from sorted array
+# Must be prepended to jq expressions that use calc_active
+JQ_CALC='def calc_active($pause): . as $a | reduce range(1; $a|length) as $i (0;
+  . + (if ($a[$i].t - $a[$i-1].t) <= $pause then $a[$i].t - $a[$i-1].t else 0 end));'
 
-parse_args() {
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --raw) RAW=true ;;
-            --summary) MODE="summary" ;;
-            --csv) MODE="csv" ;;
-            --statusline) MODE="statusline" ;;
-            --rotate) MODE="rotate" ;;
-            --filter)
-                [ "$MODE" = "session" ] && MODE="filter"
-                shift
-                FILTER_PATH="${1:-}"
-                ;;
-            --today)
-                SINCE_TS=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
-                [ "$MODE" = "session" ] && MODE="range"
-                ;;
-            --week)
-                SINCE_TS=$(date -d "last monday" +%s 2>/dev/null || date -j -v-monday -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
-                [ "$(date +%u)" = "1" ] && SINCE_TS=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
-                [ "$MODE" = "session" ] && MODE="range"
-                ;;
-            --since)
-                shift
-                SINCE_TS=$(date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2>/dev/null || echo 0)
-                [ "$MODE" = "session" ] && MODE="range"
-                ;;
-            *) ;;
-        esac
-        shift
-    done
+# --- date helper: GNU coreutils vs BSD ---
+_date() {
+    date -d "$1" "+$2" 2>/dev/null || date -j -f "%Y-%m-%d" "$1" "+$2" 2>/dev/null
 }
-
-fmt_time() {
-    local secs=$1
-    local h=$((secs / 3600))
-    local m=$(( (secs % 3600) / 60 ))
-    if [ "$h" -gt 0 ]; then
-        printf "%dh %dmin" "$h" "$m"
+_date_at() {
+    date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null
+}
+_today_start() {
+    date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null
+}
+_week_start() {
+    local dow
+    dow=$(date +%u)
+    if [ "$dow" = "1" ]; then
+        _today_start
     else
-        printf "%dmin" "$m"
+        date -d "last monday" +%s 2>/dev/null || date -j -v-monday +%s 2>/dev/null
     fi
 }
 
-fmt_time_short() {
-    local secs=$1
-    local h=$((secs / 3600))
-    local m=$(( (secs % 3600) / 60 ))
-    if [ "$h" -gt 0 ]; then
-        printf "%dh%02dm" "$h" "$m"
-    else
-        printf "%dm" "$m"
+_require_jq() {
+    if ! command -v jq &>/dev/null; then
+        echo "Error: jq is required. Install with your package manager." >&2
+        exit 1
     fi
 }
 
-# Calculate active time from timestamps on stdin (one per line)
-calc_active() {
-    local active=0
-    local prev=""
-    while read -r ts; do
-        [ -z "$ts" ] && continue
-        if [ -n "$prev" ]; then
-            local gap=$((ts - prev))
-            if [ "$gap" -le "$PAUSE_THRESHOLD" ]; then
-                active=$((active + gap))
-            fi
-        fi
-        prev=$ts
-    done
-    echo "$active"
+# ============================================================
+# Subcommand: log — append a JSONL entry (called by hooks)
+# ============================================================
+cmd_log() {
+    mkdir -p "$LOGDIR"
+    local event="activity"
+    [ "${1:-}" = "--start" ] && event="start"
+
+    local ts path branch
+    ts=$(date +%s)
+    path=$(pwd)
+    branch=$(git branch --show-current 2>/dev/null || true)
+
+    if [ -n "$branch" ]; then
+        printf '{"t":%d,"p":"%s","b":"%s","e":"%s"}\n' "$ts" "$path" "$branch" "$event" >> "$LOGFILE"
+    else
+        printf '{"t":%d,"p":"%s","e":"%s"}\n' "$ts" "$path" "$event" >> "$LOGFILE"
+    fi
+
+    if [ "$event" = "start" ]; then
+        printf '{"systemMessage":"Session timer started at %s"}' "$(date +%H:%M)"
+    fi
+}
+
+# ============================================================
+# Subcommand: stop — compute today's total, print systemMessage
+# ============================================================
+cmd_stop() {
+    _require_jq
+    [ ! -f "$LOGFILE" ] && { printf '{"systemMessage":"Today active: 0min"}'; exit 0; }
+
+    local today_start
+    today_start=$(_today_start)
+
+    local active
+    active=$(jq -s --argjson since "$today_start" --argjson pause "$PAUSE" "
+        ${JQ_CALC}
+        [.[] | select(.t >= \$since)] | sort_by(.t) | calc_active(\$pause)
+    " "$LOGFILE")
+
+    local h m today_str
+    h=$((active / 3600))
+    m=$(( (active % 3600) / 60 ))
+    if [ "$h" -gt 0 ]; then
+        today_str="${h}h ${m}min"
+    else
+        today_str="${m}min"
+    fi
+
+    printf '{"systemMessage":"Today active: %s"}' "$today_str"
+}
+
+# ============================================================
+# Query helpers
+# ============================================================
+
+_entries() {
+    local since=${1:-0} filter=${2:-}
+    local jq_filter
+
+    if [ -n "$filter" ]; then
+        jq_filter=". | select(.t >= $since) | select(.p | test(\"$filter\"))"
+    else
+        jq_filter=". | select(.t >= $since)"
+    fi
+
+    jq -c "$jq_filter" "$LOGFILE" 2>/dev/null || true
+}
+
+_current_session() {
+    jq -s --argjson pause "$PAUSE" '
+        sort_by(.t)
+        | if length == 0 then []
+          else
+            . as $a | length as $n
+            | { start: ($n - 1), i: ($n - 1), done: false }
+            | until(.i <= 0 or .done;
+                if ($a[.i].t - $a[.i - 1].t) > $pause then .done = true
+                else .start = (.i - 1) | .i = (.i - 1) end)
+            | .start as $s | $a[$s:]
+          end
+    ' "$LOGFILE" 2>/dev/null || echo '[]'
+}
+
+fmt() {
+    local s=$1
+    local h=$((s / 3600)) m=$(( (s % 3600) / 60 ))
+    if [ "$h" -gt 0 ]; then printf "%dh %dmin" "$h" "$m"
+    else printf "%dmin" "$m"; fi
+}
+
+fmt_short() {
+    local s=$1
+    local h=$((s / 3600)) m=$(( (s % 3600) / 60 ))
+    if [ "$h" -gt 0 ]; then printf "%dh%02dm" "$h" "$m"
+    else printf "%dm" "$m"; fi
 }
 
 short_project() {
     echo "$1" | awk -F/ '{if(NF>=2) print $(NF-1)"/"$NF; else print $NF}'
 }
 
-# Extract matching lines from log: numeric timestamp lines, optionally filtered
-get_lines() {
-    local lines
-    lines=$(grep '^[0-9]' "$LOGFILE" 2>/dev/null || true)
-    if [ "$SINCE_TS" -gt 0 ]; then
-        lines=$(echo "$lines" | awk -v since="$SINCE_TS" '{if ($1 >= since) print}')
+# ============================================================
+# Modes
+# ============================================================
+
+mode_session() {
+    local raw=$1
+    local session
+    session=$(_current_session)
+
+    local count
+    count=$(echo "$session" | jq 'length')
+    if [ "$count" -eq 0 ]; then
+        if $raw; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
+        else echo "No session activity recorded"; fi
+        return
     fi
-    if [ -n "$FILTER_PATH" ]; then
-        lines=$(echo "$lines" | grep "$FILTER_PATH" || true)
-    fi
-    echo "$lines"
+
+    local info
+    info=$(echo "$session" | jq --argjson pause "$PAUSE" "
+        ${JQ_CALC}
+        {
+            first: (.[0].t),
+            last: (.[-1].t),
+            project: ([.[] | .p] | last),
+            branch: ([.[] | .b // empty] | if length > 0 then last else \"\" end),
+            active: (sort_by(.t) | calc_active(\$pause))
+        }
+    ")
+
+    _output_info "$info" "$raw"
 }
 
-# Format and output results
-output_result() {
-    local active=$1 first_ts=$2 project_path=$3 branch=${4:-} label=${5:-}
+mode_range() {
+    local raw=$1 since=$2 filter=$3
+    local entries
+    entries=$(_entries "$since" "$filter")
+
+    if [ -z "$entries" ]; then
+        if $raw; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
+        else echo "No activity recorded for this filter/range"; fi
+        return
+    fi
+
+    local info
+    info=$(echo "$entries" | jq -s --argjson pause "$PAUSE" "
+        ${JQ_CALC}
+        sort_by(.t) | {
+            first: (.[0].t),
+            last: (.[-1].t),
+            project: ([.[] | .p] | last),
+            branch: ([.[] | .b // empty] | if length > 0 then last else \"\" end),
+            active: calc_active(\$pause)
+        }
+    ")
+
+    _output_info "$info" "$raw"
+}
+
+_output_info() {
+    local info=$1 raw=$2
+
+    local active first_ts project branch
+    active=$(echo "$info" | jq -r '.active')
+    first_ts=$(echo "$info" | jq -r '.first')
+    project=$(echo "$info" | jq -r '.project')
+    branch=$(echo "$info" | jq -r '.branch')
 
     local now=$(date +%s)
-    local wall=$((now - first_ts))
-    local paused=$((wall - active))
+    local wall=$(( now - first_ts ))
+    local paused=$(( wall - active ))
     local started
-    started=$(date -d "@$first_ts" +%H:%M 2>/dev/null || date -r "$first_ts" +%H:%M 2>/dev/null || echo "?")
+    started=$(_date_at "$first_ts" "%H:%M" || echo "?")
+    local proj_short
+    proj_short=$(short_project "$project")
+    [ -n "$branch" ] && proj_short="$proj_short ($branch)"
 
-    local proj_short=""
-    if [ -n "$project_path" ]; then
-        proj_short=$(short_project "$project_path")
-        if [ -n "$branch" ]; then
-            proj_short="$proj_short ($branch)"
-        fi
-    fi
-
-    if $RAW; then
-        printf '{"active":%d,"wall":%d,"paused":%d,"started":"%s","project":"%s","branch":"%s"}\n' \
-            "$active" "$wall" "$paused" "$started" "$proj_short" "$branch"
+    if $raw; then
+        jq -n --argjson a "$active" --argjson w "$wall" --argjson p "$paused" \
+            --arg s "$started" --arg proj "$proj_short" --arg br "$branch" \
+            '{active:$a,wall:$w,paused:$p,started:$s,project:$proj,branch:$br}'
     else
-        local line="Active: $(fmt_time $active)  |  Wall: $(fmt_time $wall)  |  Paused: $(fmt_time $paused)  |  Started: $started"
-        if [ -n "$proj_short" ]; then
-            line="$line  |  Project: $proj_short"
-        fi
-        if [ -n "$label" ]; then
-            line="$label: $line"
-        fi
-        echo "$line"
+        echo "Active: $(fmt $active)  |  Wall: $(fmt $wall)  |  Paused: $(fmt $paused)  |  Started: $started  |  Project: $proj_short"
     fi
 }
 
-# Extract sessions as array of "start_ts end_ts project" lines
-get_sessions() {
-    local lines
-    lines=$(get_lines)
-    [ -z "$lines" ] && return
+mode_summary() {
+    local raw=$1 since=$2 filter=$3
+    local entries
+    entries=$(_entries "$since" "$filter")
 
-    # Group by session marker
-    local session_start="" session_end="" session_project="" session_timestamps=""
-    local in_header=true
+    if [ -z "$entries" ]; then
+        if $raw; then echo '{}'; else echo "No activity recorded"; fi
+        return
+    fi
 
-    while IFS='' read -r line; do
-        if [[ "$line" == "# SESSION"* ]]; then
-            # Output previous session if exists
-            if [ -n "$session_timestamps" ]; then
-                local active
-                active=$(echo "$session_timestamps" | calc_active)
-                echo "$session_start $session_end $active $session_project"
-            fi
-            session_start="" session_end="" session_project="" session_timestamps=""
-            in_header=true
-            continue
-        fi
-        local ts path
-        ts=$(echo "$line" | awk '{print $1}')
-        path=$(echo "$line" | awk '{print $2}')
-        case "$ts" in ''|*[!0-9]*) continue ;; esac
+    local result
+    result=$(echo "$entries" | jq -s --argjson pause "$PAUSE" "
+        ${JQ_CALC}
+        group_by(.p) | map({
+            project: (.[0].p | split(\"/\") | if length >= 2 then [.[-2], .[-1]] | join(\"/\") else last end),
+            active: (sort_by(.t) | calc_active(\$pause))
+        }) | sort_by(-.active)
+    ")
 
-        [ -z "$session_start" ] && session_start=$ts
-        session_end=$ts
-        [ -n "$path" ] && session_project=$path
-        session_timestamps+="$ts"$'\n'
-    done < "$LOGFILE"
-
-    # Last session
-    if [ -n "$session_timestamps" ]; then
-        local active
-        active=$(echo "$session_timestamps" | calc_active)
-        echo "$session_start $session_end $active $session_project"
+    if $raw; then
+        echo "$result" | jq 'reduce .[] as $x ({}; . + {($x.project): $x.active})'
+    else
+        echo "$result" | jq -r '.[] | "  \(.project)  \(
+            if .active >= 3600 then "\(.active / 3600 | floor)h \((.active % 3600) / 60 | floor)min"
+            else "\(.active / 60 | floor)min" end)"'
     fi
 }
 
-parse_args "$@"
+mode_csv() {
+    local since=$1 filter=$2
+    local entries
+    entries=$(_entries "$since" "$filter")
 
-if [ ! -f "$LOGFILE" ]; then
-    if [ "$MODE" = "statusline" ]; then
-        echo "⏱ --"
-    elif $RAW; then
-        echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}'
-    else
-        echo "No session activity recorded"
-    fi
-    exit 0
-fi
+    echo "date,start,end,active_min,wall_min,project"
+    [ -z "$entries" ] && return
 
-# ---- Rotate mode: archive entries older than current month ----
-if [ "$MODE" = "rotate" ]; then
-    month_start=$(date -d "$(date +%Y-%m-01)" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-01)" +%s 2>/dev/null)
-    archive="${LOGDIR}/activity-$(date -d "last month" +%Y-%m 2>/dev/null || date -j -v-1m +%Y-%m 2>/dev/null).log"
-
-    # Extract old lines
-    old_lines=$(awk -v since="$month_start" '
-        /^# SESSION/ { header=$0; next }
-        /^[0-9]/ { if ($1 < since) { if (header) { print header; header="" }; print } else { header="" } }
-    ' "$LOGFILE")
-
-    if [ -z "$old_lines" ]; then
-        echo "Nothing to rotate (all entries are from this month)"
-        exit 0
-    fi
-
-    # Append old lines to archive
-    echo "$old_lines" >> "$archive"
-
-    # Keep only current month in active log
-    awk -v since="$month_start" '
-        /^# SESSION/ { header=$0; has_current=0; next }
-        /^[0-9]/ {
-            if ($1 >= since) {
-                if (header) { print header; header="" }
-                print
-            }
+    # Split into sessions and output CSV fields as raw text
+    echo "$entries" | jq -rs --argjson pause "$PAUSE" "
+        ${JQ_CALC}
+        sort_by(.t)
+        | . as \$all
+        | reduce range(1; length) as \$i (
+            [[\$all[0]]];
+            if (\$all[\$i].t - .[-1][-1].t) > \$pause
+            then . + [[\$all[\$i]]]
+            else .[-1] += [\$all[\$i]] end)
+        | .[] | . as \$s | {
+            start: (\$s[0].t),
+            end_t: (\$s[-1].t),
+            project: ([\$s[].p] | last | split(\"/\") | if length >= 2 then [.[-2], .[-1]] | join(\"/\") else last end),
+            active_min: ((\$s | sort_by(.t) | calc_active(\$pause)) + 30) / 60 | floor
         }
-    ' "$LOGFILE" > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
-
-    old_count=$(echo "$old_lines" | grep -c '^[0-9]' || true)
-    echo "Rotated $old_count entries to $archive"
-    exit 0
-fi
-
-# ---- Helper: find current work session ----
-# Walks backwards from end of log, collecting all entries that belong
-# to the current continuous work period (no gap > PAUSE_THRESHOLD).
-# Ignores # SESSION markers — a "session" is defined by activity, not CLI restarts.
-find_current_session() {
-    local all_ts=()
-    local all_paths=()
-    while IFS=' ' read -r ts rest; do
-        case "$ts" in '#'*|''|*[!0-9]*) continue ;; esac
-        all_ts+=("$ts")
-        all_paths+=("$rest")
-    done < "$LOGFILE"
-
-    local count=${#all_ts[@]}
-    [ "$count" -eq 0 ] && return
-
-    # Walk backwards from the end, stop when gap > threshold
-    local session_start=$((count - 1))
-    local i=$((count - 1))
-    while [ "$i" -gt 0 ]; do
-        local gap=$(( ${all_ts[$i]} - ${all_ts[$((i-1))]} ))
-        if [ "$gap" -gt "$PAUSE_THRESHOLD" ]; then
-            break
-        fi
-        session_start=$((i - 1))
-        i=$((i - 1))
-    done
-
-    # Output the session entries
-    for (( j=session_start; j<count; j++ )); do
-        echo "${all_ts[$j]} ${all_paths[$j]}"
+        | \"\(.start),\(.end_t),\(.active_min),\(((.end_t - .start + 30) / 60) | floor),\(.project)\"
+    " | while IFS=, read -r start_ts end_ts active_min wall_min project; do
+        local d s e
+        d=$(_date_at "$start_ts" "%Y-%m-%d")
+        s=$(_date_at "$start_ts" "%H:%M")
+        e=$(_date_at "$end_ts" "%H:%M")
+        echo "$d,$s,$e,$active_min,$wall_min,$project"
     done
 }
 
-# ---- Statusline mode: compact output for Claude Code statusline ----
-if [ "$MODE" = "statusline" ]; then
-    session_lines=$(find_current_session)
-    if [ -z "$session_lines" ]; then
+mode_statusline() {
+    local session
+    session=$(_current_session)
+
+    local count
+    count=$(echo "$session" | jq 'length')
+    if [ "$count" -eq 0 ]; then
         echo "⏱ --"
-        exit 0
+        return
     fi
 
-    timestamps=()
-    project=""
-    branch=""
-    while IFS=' ' read -r ts path br; do
-        timestamps+=("$ts")
-        [ -n "$path" ] && project="$path"
-        [ -n "$br" ] && branch="$br"
-    done <<< "$session_lines"
+    local info
+    info=$(echo "$session" | jq --argjson pause "$PAUSE" "
+        ${JQ_CALC}
+        {
+            project: ([.[] | .p] | last | split(\"/\") | if length >= 2 then [.[-2], .[-1]] | join(\"/\") else last end),
+            branch: ([.[] | .b // empty] | if length > 0 then last else \"\" end),
+            last_t: (.[-1].t),
+            active: (sort_by(.t) | calc_active(\$pause))
+        }
+    ")
 
-    active=0
-    prev=""
-    for ts in "${timestamps[@]}"; do
-        if [ -n "$prev" ]; then
-            gap=$((ts - prev))
-            [ "$gap" -le "$PAUSE_THRESHOLD" ] && active=$((active + gap))
-        fi
-        prev=$ts
-    done
-    now=$(date +%s)
-    gap=$((now - prev))
-    idle=$( [ "$gap" -gt "$PAUSE_THRESHOLD" ] && echo true || echo false )
+    local active last_t project branch
+    active=$(echo "$info" | jq -r '.active')
+    last_t=$(echo "$info" | jq -r '.last_t')
+    project=$(echo "$info" | jq -r '.project')
+    branch=$(echo "$info" | jq -r '.branch')
 
-    # Calculate today's total active time
-    today_start=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
-    today_lines=$(grep '^[0-9]' "$LOGFILE" | awk -v since="$today_start" '{if ($1 >= since) print $1}')
-    today_active=0
-    if [ -n "$today_lines" ]; then
-        today_active=$(echo "$today_lines" | calc_active)
-    fi
+    local now=$(date +%s)
+    local gap=$(( now - last_t ))
+    local idle=false
+    [ "$gap" -gt "$PAUSE" ] && idle=true
 
-    proj_short=""
-    if [ -n "$project" ]; then
-        proj_short=$(short_project "$project")
-        [ -n "$branch" ] && proj_short="$proj_short ($branch)"
-    fi
+    # Today's total
+    local today_start
+    today_start=$(_today_start)
+    local today_active
+    today_active=$(jq -s --argjson since "$today_start" --argjson pause "$PAUSE" "
+        ${JQ_CALC}
+        [.[] | select(.t >= \$since)] | sort_by(.t) | calc_active(\$pause)
+    " "$LOGFILE")
+
+    local proj_short="$project"
+    [ -n "$branch" ] && proj_short="$proj_short ($branch)"
 
     if $idle; then
-        label="⏸ idle $(fmt_time_short $gap) · $(fmt_time_short $active) ($(fmt_time_short $today_active))"
-        [ -n "$proj_short" ] && label="$label · $proj_short"
+        echo "⏸ idle $(fmt_short $gap) · $(fmt_short $active) ($(fmt_short $today_active)) · $proj_short"
     else
-        label="⏱ $(fmt_time_short $active) ($(fmt_time_short $today_active))"
-        [ -n "$proj_short" ] && label="$label · $proj_short"
+        echo "⏱ $(fmt_short $active) ($(fmt_short $today_active)) · $proj_short"
     fi
-    echo "$label"
-    exit 0
-fi
+}
 
-# ---- CSV export: one row per session ----
-if [ "$MODE" = "csv" ]; then
-    echo "date,start,end,active_min,wall_min,project"
-    get_sessions | while read -r start_ts end_ts active_secs project_path; do
-        [ -z "$start_ts" ] && continue
-        # Apply time filter
-        if [ "$SINCE_TS" -gt 0 ] && [ "$end_ts" -lt "$SINCE_TS" ]; then
-            continue
-        fi
-        # Apply path filter
-        if [ -n "$FILTER_PATH" ] && [[ "$project_path" != *"$FILTER_PATH"* ]]; then
-            continue
-        fi
+mode_rotate() {
+    local month_start
+    month_start=$(date -d "$(date +%Y-%m-01)" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-01)" +%s 2>/dev/null)
+    local archive_month
+    archive_month=$(date -d "last month" +%Y-%m 2>/dev/null || date -j -v-1m +%Y-%m 2>/dev/null)
+    local archive="${LOGDIR}/activity-${archive_month}.log"
 
-        date_str=$(date -d "@$start_ts" +%Y-%m-%d 2>/dev/null || date -r "$start_ts" +%Y-%m-%d 2>/dev/null)
-        start_str=$(date -d "@$start_ts" +%H:%M 2>/dev/null || date -r "$start_ts" +%H:%M 2>/dev/null)
-        end_str=$(date -d "@$end_ts" +%H:%M 2>/dev/null || date -r "$end_ts" +%H:%M 2>/dev/null)
-        active_min=$(( (active_secs + 30) / 60 ))  # round to nearest minute
-        wall_secs=$((end_ts - start_ts))
-        wall_min=$(( (wall_secs + 30) / 60 ))
-        proj=$(short_project "$project_path")
-        echo "$date_str,$start_str,$end_str,$active_min,$wall_min,$proj"
-    done
-    exit 0
-fi
+    local old_count
+    old_count=$(jq --argjson since "$month_start" 'select(.t < $since)' "$LOGFILE" 2>/dev/null | wc -l)
 
-# ---- Summary mode: time per project ----
-if [ "$MODE" = "summary" ]; then
-    declare -A project_times
-    lines=$(get_lines)
-    if [ -z "$lines" ]; then
-        echo "No activity recorded"
-        exit 0
-    fi
-    while IFS=' ' read -r ts path; do
-        [ -z "$path" ] && continue
-        key=$(short_project "$path")
-        project_times[$key]+="$ts "
-    done <<< "$lines"
-
-    if $RAW; then
-        printf '{'
-        first=true
-        for proj in "${!project_times[@]}"; do
-            secs=$(echo "${project_times[$proj]}" | tr ' ' '\n' | grep -v '^$' | calc_active)
-            $first || printf ','
-            printf '"%s":%d' "$proj" "$secs"
-            first=false
-        done
-        printf '}\n'
-    else
-        results=()
-        for proj in "${!project_times[@]}"; do
-            secs=$(echo "${project_times[$proj]}" | tr ' ' '\n' | grep -v '^$' | calc_active)
-            results+=("$(printf "%06d %s" "$secs" "$proj")")
-        done
-        IFS=$'\n' sorted=($(sort -rn <<< "${results[*]}")); unset IFS
-        for entry in "${sorted[@]}"; do
-            secs=$(echo "$entry" | awk '{print $1+0}')
-            proj=$(echo "$entry" | awk '{print $2}')
-            printf "  %-40s %s\n" "$proj" "$(fmt_time $secs)"
-        done
-    fi
-    exit 0
-fi
-
-# ---- Filter / Range mode: all matching lines ----
-if [ "$MODE" = "filter" ] || [ "$MODE" = "range" ]; then
-    lines=$(get_lines)
-    if [ -z "$lines" ]; then
-        if $RAW; then
-            echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}'
-        else
-            echo "No activity recorded for this filter/range"
-        fi
-        exit 0
+    if [ "$old_count" -eq 0 ]; then
+        echo "Nothing to rotate (all entries are from this month)"
+        return
     fi
 
-    timestamps=$(echo "$lines" | awk '{print $1}')
-    project_path=$(echo "$lines" | tail -1 | awk '{print $2}')
-    branch_name=$(echo "$lines" | tail -1 | awk '{print $3}')
-    first_ts=$(echo "$timestamps" | head -1)
-    active=$(echo "$timestamps" | calc_active)
-    output_result "$active" "$first_ts" "$project_path" "$branch_name"
-    exit 0
-fi
+    jq -c --argjson since "$month_start" 'select(.t < $since)' "$LOGFILE" >> "$archive"
+    jq -c --argjson since "$month_start" 'select(.t >= $since)' "$LOGFILE" > "${LOGFILE}.tmp" \
+        && mv "${LOGFILE}.tmp" "$LOGFILE"
 
-# ---- Default: current work session (continuous activity, ignoring CLI restarts) ----
-session_lines=$(find_current_session)
-if [ -z "$session_lines" ]; then
-    if $RAW; then
-        echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}'
-    else
-        echo "No session activity recorded"
-    fi
-    exit 0
-fi
+    echo "Rotated $old_count entries to $archive"
+}
 
-timestamps=()
-project=""
-branch=""
-while IFS=' ' read -r ts path br; do
-    timestamps+=("$ts")
-    [ -n "$path" ] && project="$path"
-    [ -n "$br" ] && branch="$br"
-done <<< "$session_lines"
+# ============================================================
+# Main
+# ============================================================
 
-active=0
-prev=""
-for ts in "${timestamps[@]}"; do
-    if [ -n "$prev" ]; then
-        gap=$((ts - prev))
-        if [ "$gap" -le "$PAUSE_THRESHOLD" ]; then
-            active=$((active + gap))
-        fi
-    fi
-    prev=$ts
+case "${1:-}" in
+    log)  shift; cmd_log "$@"; exit 0 ;;
+    stop) cmd_stop; exit 0 ;;
+esac
+
+_require_jq
+
+MODE="session"
+RAW=false
+FILTER_PATH=""
+SINCE_TS=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --raw) RAW=true ;;
+        --summary) MODE="summary" ;;
+        --csv) MODE="csv" ;;
+        --statusline) MODE="statusline" ;;
+        --rotate) MODE="rotate" ;;
+        --filter) shift; FILTER_PATH="${1:-}"; [ "$MODE" = "session" ] && MODE="range" ;;
+        --today) SINCE_TS=$(_today_start); [ "$MODE" = "session" ] && MODE="range" ;;
+        --week) SINCE_TS=$(_week_start); [ "$MODE" = "session" ] && MODE="range" ;;
+        --since) shift; SINCE_TS=$(_date "$1" "%s" || echo 0); [ "$MODE" = "session" ] && MODE="range" ;;
+        *) ;;
+    esac
+    shift
 done
 
-first="${timestamps[0]}"
-output_result "$active" "$first" "$project" "$branch"
+if [ ! -f "$LOGFILE" ]; then
+    if [ "$MODE" = "statusline" ]; then echo "⏱ --"
+    elif $RAW; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
+    else echo "No session activity recorded"; fi
+    exit 0
+fi
+
+case "$MODE" in
+    session)    mode_session "$RAW" ;;
+    range)      mode_range "$RAW" "$SINCE_TS" "$FILTER_PATH" ;;
+    summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" ;;
+    csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" ;;
+    statusline) mode_statusline ;;
+    rotate)     mode_rotate ;;
+esac
