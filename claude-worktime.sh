@@ -208,56 +208,49 @@ _pomodoro_status() {
     local entries; entries=$(_session_entries "$sid")
     [ -z "$entries" ] && { echo "work:$POMODORO_WORK"; return; }
 
-    # Find active time since last break.
-    # A "break" for pomodoro = any response→prompt gap >= POMODORO_SHORT_BREAK.
-    # This is separate from the idle threshold used for time accounting.
+    # Get active time since last real idle (response→prompt gap > PAUSE_THRESHOLD).
+    # If no idle occurred, uses total session active time.
     local info
-    info=$(echo "$entries" | jq -s --argjson brk "$POMODORO_SHORT_BREAK" --argjson pause "$PAUSE_THRESHOLD" "
+    info=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
         sort_by(.t)
         | . as \$a
         | (reduce range(1; length) as \$i (0;
             if (\$a[\$i-1].e == \"response\" or \$a[\$i-1].e == \"start\")
-               and (\$a[\$i].t - \$a[\$i-1].t) >= \$brk
-            then \$i else . end)) as \$after_break
+               and (\$a[\$i].t - \$a[\$i-1].t) > \$pause
+            then \$i else . end)) as \$after_idle
+        | (\$a[\$after_idle:] | calc_active(\$pause)) as \$active_since_idle
         | {
-            active_since_break: (\$a[\$after_break:] | calc_active(\$pause)),
-            total_active: calc_active(\$pause),
-            last_t: (.[-1].t),
-            last_e: (.[-1].e)
+            active_since_idle: \$active_since_idle,
+            total_active: calc_active(\$pause)
         }
     ")
 
-    local active_since_break last_t last_e
-    active_since_break=$(echo "$info" | jq -r '.active_since_break')
-    last_t=$(echo "$info" | jq -r '.last_t')
-    last_e=$(echo "$info" | jq -r '.last_e')
-
-    local gap=$(( now - last_t ))
-
-    # Is user currently on a break? (idle since last response)
-    local on_break=false
-    if { [ "$last_e" = "response" ] || [ "$last_e" = "start" ]; } && [ "$gap" -ge "$POMODORO_SHORT_BREAK" ]; then
-        on_break=true
-    fi
-
-    # Determine break target for this interval
-    local total_active
+    local active_since_idle total_active
+    active_since_idle=$(echo "$info" | jq -r '.active_since_idle')
     total_active=$(echo "$info" | jq -r '.total_active')
-    local completed=$(( total_active / POMODORO_WORK ))
-    local break_target=$POMODORO_SHORT_BREAK
-    if [ "$POMODORO_LONG_EVERY" -gt 0 ] && [ "$(( completed % POMODORO_LONG_EVERY ))" -eq 0 ] && [ "$completed" -gt 0 ]; then
-        break_target=$POMODORO_LONG_BREAK
+
+    # Pomodoro is a simple cycling timer:
+    # work POMODORO_WORK → show reminder for POMODORO_SHORT_BREAK → repeat
+    # Every POMODORO_LONG_EVERY cycles, show reminder for POMODORO_LONG_BREAK instead
+    local cycle=$((POMODORO_WORK + POMODORO_SHORT_BREAK))
+    local completed=$(( active_since_idle / cycle ))
+    local pos_in_cycle=$(( active_since_idle % cycle ))
+
+    # Check if this should be a long break cycle
+    local break_duration=$POMODORO_SHORT_BREAK
+    if [ "$POMODORO_LONG_EVERY" -gt 0 ] && [ "$(( (completed + 1) % POMODORO_LONG_EVERY ))" -eq 0 ]; then
+        break_duration=$POMODORO_LONG_BREAK
+        cycle=$((POMODORO_WORK + POMODORO_LONG_BREAK))
+        pos_in_cycle=$(( active_since_idle % cycle ))
     fi
 
-    if [ "$active_since_break" -ge "$POMODORO_WORK" ]; then
-        if $on_break; then
-            echo "on_break:${gap}/${break_target}"
-        else
-            echo "break_due:0"
-        fi
+    if [ "$pos_in_cycle" -ge "$POMODORO_WORK" ]; then
+        # In the reminder window
+        local reminder_elapsed=$(( pos_in_cycle - POMODORO_WORK ))
+        echo "break_due:${reminder_elapsed}/${break_duration}"
     else
-        local remaining=$(( POMODORO_WORK - active_since_break ))
+        local remaining=$(( POMODORO_WORK - pos_in_cycle ))
         echo "work:$remaining"
     fi
 }
@@ -351,14 +344,15 @@ mode_statusline() {
             tok_break="🍅$(_fmt_short "$remaining")"
             ;;
         break_due:*)
-            tok_break="☕ break!"
-            color="$COLOR_BREAK_DUE"
-            ;;
-        on_break:*)
-            local parts=${pomo_status#on_break:}
+            local parts=${pomo_status#break_due:}
             local elapsed=${parts%/*} target=${parts#*/}
-            tok_break="☕$(_fmt_short "$elapsed")/$(_fmt_short "$target")"
-            color="$COLOR_ON_BREAK"
+            local left=$(( target - elapsed ))
+            if [ "$left" -gt 0 ]; then
+                tok_break="☕$(_fmt_short "$left")"
+            else
+                tok_break="☕ break!"
+            fi
+            color="$COLOR_BREAK_DUE"
             ;;
         disabled) ;;
     esac
