@@ -1,5 +1,5 @@
 #!/bin/bash
-# Uninstall claude-worktime hooks and script
+# Uninstall claude-worktime hooks, statusline, and script
 set -euo pipefail
 
 CLAUDE_DIR="${HOME}/.claude"
@@ -14,16 +14,28 @@ if [ -f "$SCRIPTS_DIR/claude-worktime.sh" ]; then
     echo "  Removed script"
 fi
 
-# Remove hooks from settings.json
+# Remove hooks and statusline from settings.json
 if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
-    if jq -e '.hooks.SessionStart' "$SETTINGS" &>/dev/null; then
-        jq 'del(.hooks.SessionStart) | del(.hooks.UserPromptSubmit) | if .hooks == {} then del(.hooks) else . end' \
-            "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
-        echo "  Removed hooks from settings.json"
+    changed=false
+    for hook in SessionStart UserPromptSubmit Stop; do
+        if jq -e ".hooks.$hook" "$SETTINGS" &>/dev/null; then
+            jq "del(.hooks.$hook)" "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+            changed=true
+        fi
+    done
+    # Clean up empty hooks object
+    if jq -e '.hooks == {}' "$SETTINGS" &>/dev/null; then
+        jq 'del(.hooks)' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
     fi
+    # Remove statusline if it's ours
+    if jq -e '.statusLine.command' "$SETTINGS" 2>/dev/null | grep -q 'claude-worktime'; then
+        jq 'del(.statusLine)' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+        echo "  Removed statusline"
+    fi
+    $changed && echo "  Removed hooks from settings.json"
 fi
 
 echo ""
 echo "Done. Restart Claude Code to deactivate."
-echo "Note: Activity log preserved at ~/.claude/worktime/activity.log"
-echo "  To remove it: rm -rf ~/.claude/worktime/"
+echo "Note: Activity logs preserved at ~/.claude/worktime/"
+echo "  To remove all data: rm -rf ~/.claude/worktime/"
