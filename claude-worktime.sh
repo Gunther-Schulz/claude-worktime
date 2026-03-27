@@ -58,25 +58,19 @@ JQ_CALC='def calc_active($pause):
       else . + $gap
       end);'
 
-# Reusable jq: compute phase breakdown
-# Buckets each gap into: tool_exec, claude_thinking, user_time, idle
-# Tracks tool depth to handle parallel tool calls (tool_start→tool_start→tool_end→tool_end)
+# Reusable jq: compute phase breakdown — two categories
+# claude = prompt→response (thinking, tools, output — Claude's turn)
+# user = response→prompt within threshold (reading, thinking, typing — your turn)
+# idle = response→prompt over threshold (excluded from active)
 JQ_BREAKDOWN='def calc_breakdown($pause):
   . as $a | reduce range(1; $a|length) as $i (
-    {tool_exec: 0, claude_thinking: 0, user_time: 0, idle: 0, _depth: 0};
+    {claude: 0, user: 0, idle: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
-    | (if $a[$i-1].e == "tool_start" then ._depth + 1
-       elif $a[$i-1].e == "tool_end" then ([._depth - 1, 0] | max)
-       else ._depth end) as $new_depth
-    | ._depth = $new_depth
     | if $gap <= 0 then .
-      elif $new_depth > 0 or ($a[$i-1].e == "tool_start") then .tool_exec += $gap
       elif ($a[$i-1].e == "response" or $a[$i-1].e == "start") and $gap > $pause then .idle += $gap
-      elif $a[$i-1].e == "response" or $a[$i-1].e == "start" then .user_time += $gap
-      elif $a[$i-1].e == "prompt" or $a[$i-1].e == "tool_end" then .claude_thinking += $gap
-      else .claude_thinking += $gap
-      end)
-  | del(._depth);'
+      elif $a[$i-1].e == "response" or $a[$i-1].e == "start" then .user += $gap
+      else .claude += $gap
+      end);'
 
 # --- Date helpers ---
 _date_at() {
@@ -478,7 +472,7 @@ mode_breakdown() {
     local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
 
     if [ -z "$entries" ]; then
-        if $raw; then echo '{"tool_exec":0,"claude_thinking":0,"user_time":0,"idle":0,"active":0}';
+        if $raw; then echo '{"claude":0,"user":0,"idle":0,"active":0}';
         else echo "No activity recorded"; fi; return; fi
 
     local result
@@ -491,38 +485,27 @@ mode_breakdown() {
         }
     ")
 
-    local tool_exec claude_thinking user_time idle active
-    tool_exec=$(echo "$result" | jq '.breakdown.tool_exec')
-    claude_thinking=$(echo "$result" | jq '.breakdown.claude_thinking')
-    user_time=$(echo "$result" | jq '.breakdown.user_time')
+    local claude_time user_time idle active
+    claude_time=$(echo "$result" | jq '.breakdown.claude')
+    user_time=$(echo "$result" | jq '.breakdown.user')
     idle=$(echo "$result" | jq '.breakdown.idle')
     active=$(echo "$result" | jq '.active')
 
     if $raw; then
-        echo "$result" | jq '{
-            tool_exec: .breakdown.tool_exec,
-            claude_thinking: .breakdown.claude_thinking,
-            user_time: .breakdown.user_time,
-            idle: .breakdown.idle,
-            active: .active
-        }'
+        echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, idle: .breakdown.idle, active: .active}'
     else
-        # Calculate percentages of active time
-        local pct_tool=0 pct_claude=0 pct_user=0
+        local pct_claude=0 pct_user=0
         if [ "$active" -gt 0 ]; then
-            pct_tool=$(( tool_exec * 100 / active ))
-            pct_claude=$(( claude_thinking * 100 / active ))
+            pct_claude=$(( claude_time * 100 / active ))
             pct_user=$(( user_time * 100 / active ))
         fi
 
-        echo "Phase breakdown:"
-        printf "  Tool execution:    %-12s %d%%\n" "$(_fmt $tool_exec)" "$pct_tool"
-        printf "  Claude thinking:   %-12s %d%%\n" "$(_fmt $claude_thinking)" "$pct_claude"
-        printf "  User reading:      %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
-        echo "  ─────────────────────────────"
-        printf "  Active total:      %s\n" "$(_fmt $active)"
+        printf "  Claude:   %-12s %d%%\n" "$(_fmt $claude_time)" "$pct_claude"
+        printf "  You:      %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
+        echo "  ───────────────────────"
+        printf "  Active:   %s\n" "$(_fmt $active)"
         if [ "$idle" -gt 0 ]; then
-            printf "  Idle (excluded):   %s\n" "$(_fmt $idle)"
+            printf "  Idle:     %s\n" "$(_fmt $idle)"
         fi
     fi
 }
