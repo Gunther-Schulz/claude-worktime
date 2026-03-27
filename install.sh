@@ -73,8 +73,8 @@ if jq -e '.hooks.SessionStart' "$SETTINGS" &>/dev/null && ! $FORCE; then
 fi
 
 # Hook commands
-SESSION_START_CMD="mkdir -p \${HOME}/.claude/worktime && echo \"# SESSION \$(date +%Y-%m-%dT%H:%M:%S)\" >> \${HOME}/.claude/worktime/activity.log && echo \"\$(date +%s) \$(pwd)\" >> \${HOME}/.claude/worktime/activity.log && printf '{\"systemMessage\": \"Session timer started at %s\"}' \"\$(date +%H:%M)\""
-ACTIVITY_CMD="echo \"\$(date +%s) \$(pwd)\" >> \${HOME}/.claude/worktime/activity.log"
+SESSION_START_CMD="mkdir -p \${HOME}/.claude/worktime && echo \"# SESSION \$(date +%Y-%m-%dT%H:%M:%S)\" >> \${HOME}/.claude/worktime/activity.log && echo \"\$(date +%s) \$(pwd) \$(git branch --show-current 2>/dev/null)\" >> \${HOME}/.claude/worktime/activity.log && printf '{\"systemMessage\": \"Session timer started at %s\"}' \"\$(date +%H:%M)\""
+ACTIVITY_CMD="echo \"\$(date +%s) \$(pwd) \$(git branch --show-current 2>/dev/null)\" >> \${HOME}/.claude/worktime/activity.log"
 STOP_CMD="${BIN_DIR}/${SCRIPT_NAME} --today --raw | { read -r json; active=\$(echo \"\$json\" | sed 's/.*\"active\":\\([0-9]*\\).*/\\1/'); h=\$((active/3600)); m=\$(((active%3600)/60)); today_str=\"\"; [ \$h -gt 0 ] && today_str=\"\${h}h \${m}min\" || today_str=\"\${m}min\"; echo \"\$(date +%Y-%m-%d) \$today_str\" >> \${HOME}/.claude/worktime/daily.log; printf '{\"systemMessage\": \"Today active: %s\"}' \"\$today_str\"; }"
 
 jq --arg ss "$SESSION_START_CMD" \

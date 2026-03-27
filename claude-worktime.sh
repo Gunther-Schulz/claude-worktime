@@ -122,7 +122,7 @@ get_lines() {
 
 # Format and output results
 output_result() {
-    local active=$1 first_ts=$2 project_path=$3 label=${4:-}
+    local active=$1 first_ts=$2 project_path=$3 branch=${4:-} label=${5:-}
 
     local now=$(date +%s)
     local wall=$((now - first_ts))
@@ -133,11 +133,14 @@ output_result() {
     local proj_short=""
     if [ -n "$project_path" ]; then
         proj_short=$(short_project "$project_path")
+        if [ -n "$branch" ]; then
+            proj_short="$proj_short ($branch)"
+        fi
     fi
 
     if $RAW; then
-        printf '{"active":%d,"wall":%d,"paused":%d,"started":"%s","project":"%s"}\n' \
-            "$active" "$wall" "$paused" "$started" "$proj_short"
+        printf '{"active":%d,"wall":%d,"paused":%d,"started":"%s","project":"%s","branch":"%s"}\n' \
+            "$active" "$wall" "$paused" "$started" "$proj_short" "$branch"
     else
         local line="Active: $(fmt_time $active)  |  Wall: $(fmt_time $wall)  |  Paused: $(fmt_time $paused)  |  Started: $started"
         if [ -n "$proj_short" ]; then
@@ -283,9 +286,11 @@ if [ "$MODE" = "statusline" ]; then
 
     timestamps=()
     project=""
-    while IFS=' ' read -r ts rest; do
+    branch=""
+    while IFS=' ' read -r ts path br; do
         timestamps+=("$ts")
-        [ -n "$rest" ] && project="$rest"
+        [ -n "$path" ] && project="$path"
+        [ -n "$br" ] && branch="$br"
     done <<< "$session_lines"
 
     active=0
@@ -310,7 +315,10 @@ if [ "$MODE" = "statusline" ]; then
     fi
 
     proj_short=""
-    [ -n "$project" ] && proj_short=$(short_project "$project")
+    if [ -n "$project" ]; then
+        proj_short=$(short_project "$project")
+        [ -n "$branch" ] && proj_short="$proj_short ($branch)"
+    fi
 
     if $idle; then
         label="⏸ idle $(fmt_time_short $gap) · $(fmt_time_short $active) ($(fmt_time_short $today_active))"
@@ -403,9 +411,10 @@ if [ "$MODE" = "filter" ] || [ "$MODE" = "range" ]; then
 
     timestamps=$(echo "$lines" | awk '{print $1}')
     project_path=$(echo "$lines" | tail -1 | awk '{print $2}')
+    branch_name=$(echo "$lines" | tail -1 | awk '{print $3}')
     first_ts=$(echo "$timestamps" | head -1)
     active=$(echo "$timestamps" | calc_active)
-    output_result "$active" "$first_ts" "$project_path"
+    output_result "$active" "$first_ts" "$project_path" "$branch_name"
     exit 0
 fi
 
@@ -422,9 +431,11 @@ fi
 
 timestamps=()
 project=""
-while IFS=' ' read -r ts rest; do
+branch=""
+while IFS=' ' read -r ts path br; do
     timestamps+=("$ts")
-    [ -n "$rest" ] && project="$rest"
+    [ -n "$path" ] && project="$path"
+    [ -n "$br" ] && branch="$br"
 done <<< "$session_lines"
 
 active=0
@@ -440,4 +451,4 @@ for ts in "${timestamps[@]}"; do
 done
 
 first="${timestamps[0]}"
-output_result "$active" "$first" "$project"
+output_result "$active" "$first" "$project" "$branch"
