@@ -354,10 +354,17 @@ mode_statusline() {
             fi
             color="$COLOR_BREAK_DUE"
             ;;
-        disabled) ;;
+        disabled)
+            if $is_idle; then tok_break="⏸"
+            else tok_break="⏱"; fi
+            ;;
     esac
 
-    $is_idle && color="$COLOR_IDLE"
+    if $is_idle; then
+        color="$COLOR_IDLE"
+        # Override break token when idle — show pause icon
+        case "$pomo_status" in work:*|break_due:*) tok_break="⏸" ;; esac
+    fi
 
     local format
     if $is_idle; then format="$STATUSLINE_IDLE_FORMAT"
