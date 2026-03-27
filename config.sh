@@ -6,6 +6,7 @@
 #   {session_wall}   — wall clock time since session started
 #   {today}          — today's total active time (all sessions, all projects)
 #   {today_project}  — today's total for current project only
+#   {project_total}  — all-time total for current project (across all days)
 #   {project}        — project name (last 2 path segments)
 #   {branch}         — git branch name
 #   {break}          — pomodoro status indicator (display only)
@@ -67,6 +68,13 @@ COLOR_RESET="\033[0m"
 # STATUSLINE_FORMAT="⏱ project {today_project} · today {today} · {project}"
 # STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · project {today_project} · today {today} · {project}"
 # Result: ⏱ project 45m · today 2h10m · my-org/my-project
+#
+# --- Project today + all-time total ---
+# How much today on this project, and how much total across all days.
+#
+# STATUSLINE_FORMAT="⏱ today {today_project} · total {project_total} · {project}"
+# STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · today {today_project} · total {project_total} · {project}"
+# Result: ⏱ today 45m · total 12h30m · my-org/my-project
 #
 # --- Compact, no labels (once you know the layout) ---
 # Session time, today total in parens, project name.

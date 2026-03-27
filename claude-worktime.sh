@@ -334,13 +334,21 @@ mode_statusline() {
         [.[] | select(.t >= \$since) | select(.p == \$proj)] | sort_by(.t) | calc_active(\$pause)
     " "$LOGFILE")
 
+    # All-time total for current project
+    local project_total_active
+    project_total_active=$(jq -s --argjson pause "$PAUSE_THRESHOLD" --arg proj "$project" "
+        ${JQ_CALC}
+        [.[] | select(.p == \$proj)] | sort_by(.t) | calc_active(\$pause)
+    " "$LOGFILE")
+
     # Build tokens
     local proj_short; proj_short=$(_short_project "$project")
-    local tok_session tok_session_wall tok_today tok_today_project tok_project tok_branch tok_idle tok_break
+    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_idle tok_break
     tok_session=$(_fmt_short "$session_active")
     tok_session_wall=$(_fmt_short "$session_wall")
     tok_today=$(_fmt_short "$today_active")
     tok_today_project=$(_fmt_short "$today_project_active")
+    tok_project_total=$(_fmt_short "$project_total_active")
     tok_project="$proj_short"
     tok_branch="$branch"
     tok_idle=$(_fmt_short "$gap")
@@ -379,6 +387,7 @@ mode_statusline() {
     output="${output//\{session_wall\}/$tok_session_wall}"
     output="${output//\{today\}/$tok_today}"
     output="${output//\{today_project\}/$tok_today_project}"
+    output="${output//\{project_total\}/$tok_project_total}"
     output="${output//\{project\}/$tok_project}"
     output="${output//\{branch\}/$tok_branch}"
     output="${output//\{idle\}/$tok_idle}"
