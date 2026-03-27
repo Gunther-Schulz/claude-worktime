@@ -50,93 +50,35 @@ COLOR_RESET="\033[0m"
 
 # ============================= EXAMPLES ====================================
 #
-# All examples show STATUSLINE_FORMAT and STATUSLINE_IDLE_FORMAT together.
-# The idle format is used when the response→prompt gap exceeds PAUSE_THRESHOLD.
-#
-# --- Labeled, session-based (default) ---
-# Shows session time (resets on new CLI session, persists across --resume)
-# and today's total across all sessions and projects.
-#
-# STATUSLINE_FORMAT="⏱ session {session} · today {today} · {project}"
-# STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · session {session} · today {today} · {project}"
-# Result: ⏱ session 45m · today 2h10m · my-org/my-project
-#
-# --- Labeled, project-based ---
-# Shows today's time for the current project specifically,
-# plus total across all projects. Useful if you switch between projects.
-#
-# STATUSLINE_FORMAT="⏱ project {today_project} · today {today} · {project}"
-# STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · project {today_project} · today {today} · {project}"
-# Result: ⏱ project 45m · today 2h10m · my-org/my-project
-#
-# --- Project today + all-time total ---
-# How much today on this project, and how much total across all days.
-#
+# --- Project-focused: today + all-time for current project ---
 # STATUSLINE_FORMAT="⏱ today {today_project} · total {project_total} · {project}"
 # STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · today {today_project} · total {project_total} · {project}"
 # Result: ⏱ today 45m · total 12h30m · my-org/my-project
 #
-# --- Compact, no labels (once you know the layout) ---
-# Session time, today total in parens, project name.
-#
+# --- Compact: session + today, no labels ---
 # STATUSLINE_FORMAT="⏱ {session} ({today}) · {project}"
 # STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · {session} ({today}) · {project}"
 # Result: ⏱ 45m (2h10m) · my-org/my-project
 #
-# --- Minimal: just today's time ---
-# Nothing but the number. Clean and distraction-free.
+# --- Branch-aware: for feature branch tracking ---
+# STATUSLINE_FORMAT="⏱ {session} · {project} ({branch}) · today {today}"
+# STATUSLINE_IDLE_FORMAT="⏸ idle · {project} ({branch}) · today {today}"
+# Result: ⏱ 45m · my-org/my-project (feature-auth) · today 2h10m
 #
-# STATUSLINE_FORMAT="⏱ {today}"
-# STATUSLINE_IDLE_FORMAT="⏸ {today}"
-# Result: ⏱ 2h10m
-#
-# --- Branch-aware for multi-branch workflows ---
-# Includes the git branch. Useful for feature branch tracking.
-#
-# STATUSLINE_FORMAT="⏱ {session} · {project}/{branch} · today {today}"
-# STATUSLINE_IDLE_FORMAT="⏸ idle · {project}/{branch} · today {today}"
-# Result: ⏱ 45m · my-org/my-project/feature-auth · today 2h10m
-#
-# --- Project time with branch ---
-#
-# STATUSLINE_FORMAT="⏱ project {today_project} · {project} ({branch})"
-# STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · project {today_project} · {project} ({branch})"
-# Result: ⏱ project 45m · my-org/my-project (main)
-#
-# --- Wall clock (how long since session started, including breaks) ---
-#
+# --- Wall clock: active vs total elapsed time ---
 # STATUSLINE_FORMAT="⏱ active {session} · wall {session_wall} · {project}"
 # STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · active {session} · wall {session_wall} · {project}"
 # Result: ⏱ active 45m · wall 1h23m · my-org/my-project
 #
-# --- Pomodoro: standard 25/5 ---
-# Add {break} token and enable pomodoro below.
-#
+# --- Pomodoro: 25min work / 5min break reminders ---
 # POMODORO_ENABLED=true
 # POMODORO_WORK=1500
 # POMODORO_SHORT_BREAK=300
 # POMODORO_LONG_BREAK=900
 # POMODORO_LONG_EVERY=4
 # STATUSLINE_FORMAT="{break} ⏱ session {session} · today {today} · {project}"
-# STATUSLINE_IDLE_FORMAT="{break} ⏸ idle {idle} · session {session} · today {today} · {project}"
+# STATUSLINE_IDLE_FORMAT="{break} ⏸ idle {idle} · today {today} · {project}"
 # Result: 🍅7m ⏱ session 18m · today 2h10m · my-org/my-project
 # Result: ☕ break! ⏱ session 25m · today 2h10m · my-org/my-project
-#
-# --- Pomodoro: short intervals (15/3) ---
-#
-# POMODORO_ENABLED=true
-# POMODORO_WORK=900
-# POMODORO_SHORT_BREAK=180
-# POMODORO_LONG_BREAK=600
-# POMODORO_LONG_EVERY=4
-#
-# --- No color ---
-# Set all colors to empty strings to disable ANSI codes.
-#
-# COLOR_NORMAL=""
-# COLOR_BREAK_DUE=""
-# COLOR_ON_BREAK=""
-# COLOR_IDLE=""
-# COLOR_RESET=""
 #
 # ===========================================================================
