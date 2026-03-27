@@ -22,8 +22,8 @@ PAUSE_THRESHOLD=900  # 15 minutes
 # ---------------------------------------------------------------------------
 # Statusline format
 # ---------------------------------------------------------------------------
-STATUSLINE_FORMAT="{session} ({today}) · {project}"
-STATUSLINE_IDLE_FORMAT="idle {idle} · {session} ({today}) · {project}"
+STATUSLINE_FORMAT="⏱ session {session} · today {today} · {project}"
+STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · session {session} · today {today} · {project}"
 
 # ---------------------------------------------------------------------------
 # Pomodoro / break reminders (display only — does NOT affect time tracking)

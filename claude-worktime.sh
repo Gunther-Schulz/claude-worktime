@@ -32,8 +32,8 @@ CONFIGFILE="${LOGDIR}/config.sh"
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
-STATUSLINE_FORMAT="{session} ({today}) · {project}"
-STATUSLINE_IDLE_FORMAT="idle {idle} · {session} ({today}) · {project}"
+STATUSLINE_FORMAT="⏱ session {session} · today {today} · {project}"
+STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · session {session} · today {today} · {project}"
 POMODORO_ENABLED=false
 POMODORO_WORK=1500
 POMODORO_SHORT_BREAK=300
