@@ -10,7 +10,7 @@ Two lightweight [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-co
 - **UserPromptSubmit** — records each time you send a message
 - **Stop** — appends a daily summary when you exit
 
-The `claude-worktime.sh` script reads these timestamps and calculates active time. Any gap longer than 10 minutes (configurable) between prompts is counted as idle/paused time.
+The `claude-worktime` script reads these timestamps and calculates active time. Any gap longer than 10 minutes (configurable) between prompts is counted as idle/paused time.
 
 ```
 Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app
@@ -38,7 +38,7 @@ Requires: `bash`, `jq`
 Inside Claude Code, type:
 
 ```
-! ~/.claude/scripts/claude-worktime.sh
+! claude-worktime
 ```
 
 Or ask Claude to run it for you.
@@ -46,20 +46,20 @@ Or ask Claude to run it for you.
 ### Commands
 
 ```bash
-claude-worktime.sh                                  # current session
-claude-worktime.sh --today                          # all active time today
-claude-worktime.sh --week                           # this week
-claude-worktime.sh --since 2026-03-25               # since a specific date
-claude-worktime.sh --filter PATH                    # time spent in a project
-claude-worktime.sh --today --filter myproject        # combined filters
-claude-worktime.sh --summary                        # per-project breakdown
-claude-worktime.sh --summary --today                # per-project today
-claude-worktime.sh --summary --week                 # per-project this week
-claude-worktime.sh --csv                            # export all sessions as CSV
-claude-worktime.sh --csv --today                    # export today's sessions
-claude-worktime.sh --statusline                     # compact for statusline
-claude-worktime.sh --rotate                         # archive old entries (monthly)
-claude-worktime.sh --raw                            # JSON output (any mode)
+claude-worktime                                  # current session
+claude-worktime --today                          # all active time today
+claude-worktime --week                           # this week
+claude-worktime --since 2026-03-25               # since a specific date
+claude-worktime --filter PATH                    # time spent in a project
+claude-worktime --today --filter myproject        # combined filters
+claude-worktime --summary                        # per-project breakdown
+claude-worktime --summary --today                # per-project today
+claude-worktime --summary --week                 # per-project this week
+claude-worktime --csv                            # export all sessions as CSV
+claude-worktime --csv --today                    # export today's sessions
+claude-worktime --statusline                     # compact for statusline
+claude-worktime --rotate                         # archive old entries (monthly)
+claude-worktime --raw                            # JSON output (any mode)
 ```
 
 ### Example output
@@ -115,7 +115,7 @@ Environment variables:
 | `~/.claude/worktime/activity.log` | Main activity log (timestamps + working directories) |
 | `~/.claude/worktime/daily.log` | Daily summaries (appended on session exit) |
 | `~/.claude/worktime/activity-YYYY-MM.log` | Monthly archives (created by `--rotate`) |
-| `~/.claude/scripts/claude-worktime.sh` | The script itself |
+| `~/.local/bin/claude-worktime` | The script itself |
 
 ## Uninstall
 

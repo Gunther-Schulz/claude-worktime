@@ -2,17 +2,20 @@
 # Uninstall claude-worktime hooks, statusline, and script
 set -euo pipefail
 
+BIN_DIR="${HOME}/.local/bin"
 CLAUDE_DIR="${HOME}/.claude"
-SCRIPTS_DIR="${CLAUDE_DIR}/scripts"
 SETTINGS="${CLAUDE_DIR}/settings.json"
 
 echo "Uninstalling claude-worktime..."
 
 # Remove script
-if [ -f "$SCRIPTS_DIR/claude-worktime.sh" ]; then
-    rm "$SCRIPTS_DIR/claude-worktime.sh"
-    echo "  Removed script"
+if [ -f "$BIN_DIR/claude-worktime" ]; then
+    rm "$BIN_DIR/claude-worktime"
+    echo "  Removed $BIN_DIR/claude-worktime"
 fi
+
+# Also clean up old location if present
+rm -f "$CLAUDE_DIR/scripts/claude-worktime.sh" "$CLAUDE_DIR/scripts/session-elapsed.sh"
 
 # Remove hooks and statusline from settings.json
 if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
