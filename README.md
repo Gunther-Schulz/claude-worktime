@@ -4,13 +4,14 @@ Track **active** working time in [Claude Code](https://claude.ai/claude-code) se
 
 ## How it works
 
-Two lightweight [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) log timestamps:
+Lightweight [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) log timestamps on every activity:
 
 - **SessionStart** — records when a session begins (with working directory)
 - **UserPromptSubmit** — records each time you send a message
+- **PostToolUse** — records each time Claude uses a tool (Bash, Read, Write, etc.)
 - **Stop** — appends a daily summary when you exit
 
-The `claude-worktime` script reads these timestamps and calculates active time. Any gap longer than 10 minutes (configurable) between prompts is counted as idle/paused time.
+The `claude-worktime` script reads these timestamps and calculates active time. Any gap longer than 10 minutes (configurable) between events is counted as idle/paused time. Because tool use is tracked, long-running Claude tasks (builds, downloads, searches) are correctly counted as active even when you're not typing.
 
 ```
 Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app

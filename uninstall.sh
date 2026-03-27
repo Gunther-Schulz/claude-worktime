@@ -20,7 +20,7 @@ rm -f "$CLAUDE_DIR/scripts/claude-worktime.sh" "$CLAUDE_DIR/scripts/session-elap
 # Remove hooks and statusline from settings.json
 if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
     changed=false
-    for hook in SessionStart UserPromptSubmit Stop; do
+    for hook in SessionStart UserPromptSubmit PostToolUse Stop; do
         if jq -e ".hooks.$hook" "$SETTINGS" &>/dev/null; then
             jq "del(.hooks.$hook)" "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
             changed=true
