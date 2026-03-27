@@ -11,7 +11,7 @@ Lightweight [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/h
 - **PostToolUse** — records each time Claude uses a tool (Bash, Read, Write, etc.)
 - **Stop** — appends a daily summary when you exit
 
-The `claude-worktime` script reads these timestamps and calculates active time. Any gap longer than 10 minutes (configurable) between events is counted as idle/paused time. Because tool use is tracked, long-running Claude tasks (builds, downloads, searches) are correctly counted as active even when you're not typing.
+The `claude-worktime` script reads these timestamps and calculates active time. Any gap longer than 15 minutes (configurable) between events is counted as idle/paused time. Because tool use is tracked, long-running Claude tasks (builds, downloads, searches) are correctly counted as active even when you're not typing.
 
 ```
 Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app
@@ -87,7 +87,7 @@ date,start,end,active_min,wall_min,project
 
 ## Features
 
-- **Active vs idle detection** — gaps >10min between prompts count as paused
+- **Active vs idle detection** — gaps >15min between prompts count as paused
 - **Per-project tracking** — logs working directory, filter with `--filter`
 - **Time ranges** — `--today`, `--week`, `--since DATE`
 - **Project summaries** — `--summary` shows time per project
@@ -106,7 +106,7 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_WORKTIME_PAUSE` | `600` | Seconds of inactivity before counting as paused (default: 10 min) |
+| `CLAUDE_WORKTIME_PAUSE` | `900` | Seconds of inactivity before counting as paused (default: 15 min) |
 | `CLAUDE_WORKTIME_DIR` | `~/.claude/worktime` | Directory for activity logs |
 
 ## Files

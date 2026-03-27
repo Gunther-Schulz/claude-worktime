@@ -2,7 +2,7 @@
 # claude-worktime — show active session time for Claude Code
 #
 # Reads timestamps logged by Claude Code hooks and calculates
-# active working time, excluding idle periods (default: >10min gap).
+# active working time, excluding idle periods (default: >15min gap).
 #
 # Usage:
 #   claude-worktime                                  # current session
@@ -23,7 +23,7 @@ set -euo pipefail
 
 LOGDIR="${CLAUDE_WORKTIME_DIR:-${HOME}/.claude/worktime}"
 LOGFILE="${LOGDIR}/activity.log"
-PAUSE_THRESHOLD="${CLAUDE_WORKTIME_PAUSE:-600}"  # seconds (default: 10min)
+PAUSE_THRESHOLD="${CLAUDE_WORKTIME_PAUSE:-900}"  # seconds (default: 15min)
 
 # Parse arguments
 MODE="session"
