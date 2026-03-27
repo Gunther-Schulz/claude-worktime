@@ -293,7 +293,8 @@ mode_statusline() {
     output="${output//\{idle\}/$tok_idle}"
     output="${output//\{status\}/$tok_status}"
 
-    output=$(echo "$output" | sed 's/  */ /g; s/^ *//; s/ *$//')
+    # Clean up artifacts from empty tokens: collapse runs of · and trim
+    output=$(echo "$output" | sed 's/ *· *· */· /g; s/^ *//; s/ *$//; s/^· *//; s/ *·$//')
 
     printf '%b' "${color}${output}${COLOR_RESET}"
 }
