@@ -301,14 +301,22 @@ if [ "$MODE" = "statusline" ]; then
     gap=$((now - prev))
     idle=$( [ "$gap" -gt "$PAUSE_THRESHOLD" ] && echo true || echo false )
 
+    # Calculate today's total active time
+    today_start=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
+    today_lines=$(grep '^[0-9]' "$LOGFILE" | awk -v since="$today_start" '{if ($1 >= since) print $1}')
+    today_active=0
+    if [ -n "$today_lines" ]; then
+        today_active=$(echo "$today_lines" | calc_active)
+    fi
+
     proj_short=""
     [ -n "$project" ] && proj_short=$(short_project "$project")
 
     if $idle; then
-        label="⏸ idle $(fmt_time_short $gap) · active $(fmt_time_short $active)"
+        label="⏸ idle $(fmt_time_short $gap) · $(fmt_time_short $active) ($(fmt_time_short $today_active))"
         [ -n "$proj_short" ] && label="$label · $proj_short"
     else
-        label="⏱ $(fmt_time_short $active)"
+        label="⏱ $(fmt_time_short $active) ($(fmt_time_short $today_active))"
         [ -n "$proj_short" ] && label="$label · $proj_short"
     fi
     echo "$label"
