@@ -9,28 +9,39 @@
 # Options:
 #   --force         Overwrite existing hooks
 #   --statusline    Enable statusline display
+#   --pomodoro      Enable pomodoro in default config
 
 set -euo pipefail
 
 BIN_DIR="${HOME}/.local/bin"
 CLAUDE_DIR="${HOME}/.claude"
+WORKTIME_DIR="${CLAUDE_DIR}/worktime"
 SETTINGS="${CLAUDE_DIR}/settings.json"
 SCRIPT_NAME="claude-worktime"
 SCRIPT_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/claude-worktime.sh"
+CONFIG_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/config.sh"
 ENABLE_STATUSLINE=false
+ENABLE_POMODORO=false
 FORCE=false
 
 for arg in "$@"; do
     case "$arg" in
         --statusline) ENABLE_STATUSLINE=true ;;
+        --pomodoro) ENABLE_POMODORO=true ;;
         --force) FORCE=true ;;
     esac
 done
 
 echo "Installing claude-worktime..."
 
-# Ensure directories exist
-mkdir -p "$BIN_DIR" "${CLAUDE_DIR}/worktime"
+mkdir -p "$BIN_DIR" "$WORKTIME_DIR"
+
+# Check for jq
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq is required. Install with your package manager."
+    echo "  apt: sudo apt install jq  |  brew: brew install jq  |  pacman: sudo pacman -S jq"
+    exit 1
+fi
 
 # Install the script
 if [ -f "claude-worktime.sh" ]; then
@@ -41,72 +52,78 @@ fi
 chmod +x "$BIN_DIR/$SCRIPT_NAME"
 echo "  Installed $BIN_DIR/$SCRIPT_NAME"
 
+# Install default config (don't overwrite existing)
+if [ ! -f "$WORKTIME_DIR/config.sh" ]; then
+    if [ -f "config.sh" ]; then
+        cp "config.sh" "$WORKTIME_DIR/config.sh"
+    else
+        curl -fsSL "$CONFIG_URL" -o "$WORKTIME_DIR/config.sh"
+    fi
+
+    if $ENABLE_POMODORO; then
+        sed -i 's/^POMODORO_ENABLED=false/POMODORO_ENABLED=true/' "$WORKTIME_DIR/config.sh"
+        sed -i 's/^# POMODORO_WORK=/POMODORO_WORK=/' "$WORKTIME_DIR/config.sh"
+        sed -i 's/^# POMODORO_SHORT_BREAK=/POMODORO_SHORT_BREAK=/' "$WORKTIME_DIR/config.sh"
+        sed -i 's/^# POMODORO_LONG_BREAK=/POMODORO_LONG_BREAK=/' "$WORKTIME_DIR/config.sh"
+        sed -i 's/^# POMODORO_LONG_EVERY=/POMODORO_LONG_EVERY=/' "$WORKTIME_DIR/config.sh"
+    fi
+
+    echo "  Installed default config at $WORKTIME_DIR/config.sh"
+else
+    echo "  Config already exists at $WORKTIME_DIR/config.sh (kept)"
+fi
+
 # Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "$BIN_DIR"; then
     echo "  Note: $BIN_DIR is not on your PATH."
     echo "  Add to your shell profile: export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
 
-# Check for jq
-if ! command -v jq &>/dev/null; then
-    echo "Error: jq is required. Install it with your package manager."
-    echo "  apt: sudo apt install jq"
-    echo "  brew: brew install jq"
-    echo "  pacman: sudo pacman -S jq"
-    exit 1
-fi
-
 # Create settings.json if it doesn't exist
-if [ ! -f "$SETTINGS" ]; then
-    echo '{}' > "$SETTINGS"
-    echo "  Created $SETTINGS"
-fi
+[ ! -f "$SETTINGS" ] && echo '{}' > "$SETTINGS"
 
 # Check if hooks already exist
 if jq -e '.hooks.SessionStart' "$SETTINGS" &>/dev/null && ! $FORCE; then
-    echo "  Warning: SessionStart hook already exists in $SETTINGS"
-    echo "  Skipping hook installation. Use --force to overwrite."
-    echo ""
-    echo "Done (script installed, hooks skipped)."
+    echo "  Warning: Hooks already exist. Use --force to overwrite."
+    echo "Done (script updated, hooks skipped)."
     exit 0
 fi
 
-# Hook commands — clean one-liners that call the script
-SESSION_START_CMD="${BIN_DIR}/${SCRIPT_NAME} log --start"
-ACTIVITY_CMD="${BIN_DIR}/${SCRIPT_NAME} log"
-STOP_CMD="${BIN_DIR}/${SCRIPT_NAME} stop"
+# Hook commands
+# Lifecycle: SessionStart → UserPromptSubmit → PreToolUse → PostToolUse → Stop/StopFailure
+# Idle rule: only response→prompt gap > threshold is idle. All other gaps are work.
+CW="${BIN_DIR}/${SCRIPT_NAME}"
 
-jq --arg ss "$SESSION_START_CMD" \
-   --arg activity "$ACTIVITY_CMD" \
-   --arg stop "$STOP_CMD" \
+jq --arg cw "$CW" \
    '.hooks = (.hooks // {})
-    | .hooks.SessionStart = [{"hooks": [{"type": "command", "command": $ss, "timeout": 5}]}]
-    | .hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": $activity, "timeout": 2}]}]
-    | .hooks.PostToolUse = [{"hooks": [{"type": "command", "command": $activity, "timeout": 2}]}]
-    | .hooks.Stop = [{"hooks": [{"type": "command", "command": $stop, "timeout": 10}]}]' \
+    | .hooks.SessionStart = [{"hooks": [{"type": "command", "command": ($cw + " log --start"), "timeout": 5}]}]
+    | .hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": ($cw + " log --prompt"), "timeout": 2}]}]
+    | .hooks.PreToolUse = [{"hooks": [{"type": "command", "command": ($cw + " log --tool-start"), "timeout": 2}]}]
+    | .hooks.PostToolUse = [{"hooks": [{"type": "command", "command": ($cw + " log --tool-end"), "timeout": 2}]}]
+    | .hooks.Stop = [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}]
+    | .hooks.StopFailure = [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}]' \
    "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
-echo "  Added SessionStart, UserPromptSubmit, PostToolUse, and Stop hooks"
+echo "  Added hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure)"
 
 # Statusline
 if $ENABLE_STATUSLINE; then
-    jq --arg cmd "${BIN_DIR}/${SCRIPT_NAME} --statusline" \
+    jq --arg cmd "${CW} --statusline" \
         '.statusLine = {"type": "command", "command": $cmd}' \
         "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
-    echo "  Enabled statusline display"
+    echo "  Enabled statusline"
 fi
 
 echo ""
 echo "Done! Restart Claude Code to activate."
+echo ""
+echo "Config: $WORKTIME_DIR/config.sh"
 echo ""
 echo "Usage:"
 echo "  claude-worktime              # current session"
 echo "  claude-worktime --today      # today's total"
 echo "  claude-worktime --summary    # per-project"
 echo "  claude-worktime --csv        # export CSV"
-echo ""
-echo "Or inside Claude Code:  ! claude-worktime"
 if ! $ENABLE_STATUSLINE; then
     echo ""
-    echo "Tip: Re-run with --statusline to show active time in the status bar:"
-    echo "  ./install.sh --force --statusline"
+    echo "Tip: Re-run with --statusline to show time in the status bar"
 fi
