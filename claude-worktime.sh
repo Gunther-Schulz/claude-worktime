@@ -305,7 +305,7 @@ if [ "$MODE" = "statusline" ]; then
     [ -n "$project" ] && proj_short=$(short_project "$project")
 
     if $idle; then
-        label="⏸ idle $(fmt_time_short $gap)"
+        label="⏸ idle $(fmt_time_short $gap) · active $(fmt_time_short $active)"
         [ -n "$proj_short" ] && label="$label · $proj_short"
     else
         label="⏱ $(fmt_time_short $active)"
