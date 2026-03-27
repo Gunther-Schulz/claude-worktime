@@ -208,39 +208,25 @@ _pomodoro_status() {
     local entries; entries=$(_session_entries "$sid")
     [ -z "$entries" ] && { echo "work:$POMODORO_WORK"; return; }
 
-    # Get active time and info about last idle gap (= last break)
+    # Find active time since last break.
+    # A "break" for pomodoro = any response→prompt gap >= POMODORO_SHORT_BREAK.
+    # This is separate from the idle threshold used for time accounting.
     local info
-    info=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
+    info=$(echo "$entries" | jq -s --argjson brk "$POMODORO_SHORT_BREAK" --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
-        sort_by(.t) | {
-            active: calc_active(\$pause),
+        sort_by(.t)
+        | . as \$a
+        | (reduce range(1; length) as \$i (0;
+            if (\$a[\$i-1].e == \"response\" or \$a[\$i-1].e == \"start\")
+               and (\$a[\$i].t - \$a[\$i-1].t) >= \$brk
+            then \$i else . end)) as \$after_break
+        | {
+            active_since_break: (\$a[\$after_break:] | calc_active(\$pause)),
+            total_active: calc_active(\$pause),
             last_t: (.[-1].t),
-            last_e: (.[-1].e),
-            active_since_break: (
-                # Find last idle gap (= break), count active time after it
-                . as \$a
-                | (reduce range(1; \$a|length) as \$i (null;
-                    if (\$a[\$i-1].e == \"response\" or \$a[\$i-1].e == \"start\")
-                       and (\$a[\$i].t - \$a[\$i-1].t) > \$pause
-                    then \$i else . end)) as \$break_idx
-                | if \$break_idx == null then calc_active(\$pause)
-                  else .\$break_idx: | calc_active(\$pause)
-                  end)
+            last_e: (.[-1].e)
         }
-    " 2>/dev/null)
-
-    # Fallback if jq fails (active_since_break is tricky)
-    if [ -z "$info" ] || [ "$info" = "null" ]; then
-        info=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
-            ${JQ_CALC}
-            sort_by(.t) | {
-                active: calc_active(\$pause),
-                last_t: (.[-1].t),
-                last_e: (.[-1].e),
-                active_since_break: calc_active(\$pause)
-            }
-        ")
-    fi
+    ")
 
     local active_since_break last_t last_e
     active_since_break=$(echo "$info" | jq -r '.active_since_break')
@@ -249,22 +235,23 @@ _pomodoro_status() {
 
     local gap=$(( now - last_t ))
 
-    local is_idle=false
-    if [ "$gap" -gt "$PAUSE_THRESHOLD" ] && { [ "$last_e" = "response" ] || [ "$last_e" = "start" ]; }; then
-        is_idle=true
+    # Is user currently on a break? (idle since last response)
+    local on_break=false
+    if { [ "$last_e" = "response" ] || [ "$last_e" = "start" ]; } && [ "$gap" -ge "$POMODORO_SHORT_BREAK" ]; then
+        on_break=true
+    fi
+
+    # Determine break target for this interval
+    local total_active
+    total_active=$(echo "$info" | jq -r '.total_active')
+    local completed=$(( total_active / POMODORO_WORK ))
+    local break_target=$POMODORO_SHORT_BREAK
+    if [ "$POMODORO_LONG_EVERY" -gt 0 ] && [ "$(( completed % POMODORO_LONG_EVERY ))" -eq 0 ] && [ "$completed" -gt 0 ]; then
+        break_target=$POMODORO_LONG_BREAK
     fi
 
     if [ "$active_since_break" -ge "$POMODORO_WORK" ]; then
-        if $is_idle; then
-            # User is on a break — show progress
-            # Determine break target
-            local total_active
-            total_active=$(echo "$info" | jq -r '.active')
-            local completed=$(( total_active / POMODORO_WORK ))
-            local break_target=$POMODORO_SHORT_BREAK
-            if [ "$POMODORO_LONG_EVERY" -gt 0 ] && [ "$(( completed % POMODORO_LONG_EVERY ))" -eq 0 ]; then
-                break_target=$POMODORO_LONG_BREAK
-            fi
+        if $on_break; then
             echo "on_break:${gap}/${break_target}"
         else
             echo "break_due:0"
