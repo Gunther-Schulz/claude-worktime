@@ -60,17 +60,23 @@ JQ_CALC='def calc_active($pause):
 
 # Reusable jq: compute phase breakdown
 # Buckets each gap into: tool_exec, claude_thinking, user_time, idle
+# Tracks tool depth to handle parallel tool calls (tool_start→tool_start→tool_end→tool_end)
 JQ_BREAKDOWN='def calc_breakdown($pause):
   . as $a | reduce range(1; $a|length) as $i (
-    {tool_exec: 0, claude_thinking: 0, user_time: 0, idle: 0};
-    ($a[$i].t - $a[$i-1].t) as $gap | $a[$i-1].e as $prev_e | $a[$i].e as $next_e
+    {tool_exec: 0, claude_thinking: 0, user_time: 0, idle: 0, _depth: 0};
+    ($a[$i].t - $a[$i-1].t) as $gap
+    | (if $a[$i-1].e == "tool_start" then ._depth + 1
+       elif $a[$i-1].e == "tool_end" then ([._depth - 1, 0] | max)
+       else ._depth end) as $new_depth
+    | ._depth = $new_depth
     | if $gap <= 0 then .
-      elif $prev_e == "tool_start" and $next_e == "tool_end" then .tool_exec += $gap
-      elif ($prev_e == "response" or $prev_e == "start") and $gap > $pause then .idle += $gap
-      elif $prev_e == "response" or $prev_e == "start" then .user_time += $gap
-      elif $prev_e == "prompt" or $prev_e == "tool_end" then .claude_thinking += $gap
+      elif $new_depth > 0 or ($a[$i-1].e == "tool_start") then .tool_exec += $gap
+      elif ($a[$i-1].e == "response" or $a[$i-1].e == "start") and $gap > $pause then .idle += $gap
+      elif $a[$i-1].e == "response" or $a[$i-1].e == "start" then .user_time += $gap
+      elif $a[$i-1].e == "prompt" or $a[$i-1].e == "tool_end" then .claude_thinking += $gap
       else .claude_thinking += $gap
-      end);'
+      end)
+  | del(._depth);'
 
 # --- Date helpers ---
 _date_at() {
