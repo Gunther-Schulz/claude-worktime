@@ -239,23 +239,54 @@ if [ "$MODE" = "rotate" ]; then
     exit 0
 fi
 
+# ---- Helper: find current work session ----
+# Walks backwards from end of log, collecting all entries that belong
+# to the current continuous work period (no gap > PAUSE_THRESHOLD).
+# Ignores # SESSION markers — a "session" is defined by activity, not CLI restarts.
+find_current_session() {
+    local all_ts=()
+    local all_paths=()
+    while IFS=' ' read -r ts rest; do
+        case "$ts" in '#'*|''|*[!0-9]*) continue ;; esac
+        all_ts+=("$ts")
+        all_paths+=("$rest")
+    done < "$LOGFILE"
+
+    local count=${#all_ts[@]}
+    [ "$count" -eq 0 ] && return
+
+    # Walk backwards from the end, stop when gap > threshold
+    local session_start=$((count - 1))
+    local i=$((count - 1))
+    while [ "$i" -gt 0 ]; do
+        local gap=$(( ${all_ts[$i]} - ${all_ts[$((i-1))]} ))
+        if [ "$gap" -gt "$PAUSE_THRESHOLD" ]; then
+            break
+        fi
+        session_start=$((i - 1))
+        i=$((i - 1))
+    done
+
+    # Output the session entries
+    for (( j=session_start; j<count; j++ )); do
+        echo "${all_ts[$j]} ${all_paths[$j]}"
+    done
+}
+
 # ---- Statusline mode: compact output for Claude Code statusline ----
 if [ "$MODE" = "statusline" ]; then
-    current_session=$(awk '/^# SESSION/{content=""} {content=content"\n"$0} END{print content}' "$LOGFILE")
-    [ -z "$current_session" ] && current_session=$(cat "$LOGFILE")
+    session_lines=$(find_current_session)
+    if [ -z "$session_lines" ]; then
+        echo "⏱ --"
+        exit 0
+    fi
 
     timestamps=()
     project=""
     while IFS=' ' read -r ts rest; do
-        case "$ts" in '#'*|''|*[!0-9]*) continue ;; esac
         timestamps+=("$ts")
         [ -n "$rest" ] && project="$rest"
-    done <<< "$current_session"
-
-    if [ ${#timestamps[@]} -eq 0 ]; then
-        echo "⏱ --"
-        exit 0
-    fi
+    done <<< "$session_lines"
 
     active=0
     prev=""
@@ -370,26 +401,9 @@ if [ "$MODE" = "filter" ] || [ "$MODE" = "range" ]; then
     exit 0
 fi
 
-# ---- Default: current session (after last # SESSION marker) ----
-current_session=$(awk '/^# SESSION/{content=""} {content=content"\n"$0} END{print content}' "$LOGFILE")
-if [ -z "$current_session" ]; then
-    current_session=$(cat "$LOGFILE")
-fi
-
-timestamps=()
-project=""
-while IFS=' ' read -r ts rest; do
-    case "$ts" in
-        '#'*) continue ;;
-        ''|*[!0-9]*) continue ;;
-    esac
-    timestamps+=("$ts")
-    if [ -n "$rest" ]; then
-        project="$rest"
-    fi
-done <<< "$current_session"
-
-if [ ${#timestamps[@]} -eq 0 ]; then
+# ---- Default: current work session (continuous activity, ignoring CLI restarts) ----
+session_lines=$(find_current_session)
+if [ -z "$session_lines" ]; then
     if $RAW; then
         echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}'
     else
@@ -397,6 +411,13 @@ if [ ${#timestamps[@]} -eq 0 ]; then
     fi
     exit 0
 fi
+
+timestamps=()
+project=""
+while IFS=' ' read -r ts rest; do
+    timestamps+=("$ts")
+    [ -n "$rest" ] && project="$rest"
+done <<< "$session_lines"
 
 active=0
 prev=""
