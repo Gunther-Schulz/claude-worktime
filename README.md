@@ -12,12 +12,8 @@ Two lightweight [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-co
 The `claude-worktime.sh` script reads these timestamps and calculates active time. Any gap longer than 10 minutes (configurable) between prompts is counted as idle/paused time.
 
 ```
-Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/Todenbuettel
+Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app
 ```
-
-### Resume-safe
-
-Using `/resume` to continue a previous session starts a new tracking session. Previous session data is preserved in the log but not mixed into the current session's time.
 
 ## Install
 
@@ -43,12 +39,45 @@ Inside Claude Code, type:
 
 Or ask Claude to run it for you.
 
-### JSON output (for scripting/statusline)
+### Commands
 
 ```bash
-~/.claude/scripts/claude-worktime.sh --raw
-# {"active":2820,"wall":4980,"paused":2160,"started":"09:15","project":"Projekte/Todenbuettel"}
+claude-worktime.sh                                  # current session
+claude-worktime.sh --today                          # all active time today
+claude-worktime.sh --week                           # this week
+claude-worktime.sh --since 2026-03-25               # since a specific date
+claude-worktime.sh --filter PATH                    # time spent in a project
+claude-worktime.sh --today --filter myproject        # combined filters
+claude-worktime.sh --summary                        # per-project breakdown
+claude-worktime.sh --summary --today                # per-project today
+claude-worktime.sh --summary --week                 # per-project this week
+claude-worktime.sh --raw                            # JSON output (any mode)
 ```
+
+### Example output
+
+```
+# Current session
+Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app
+
+# Summary
+  Projekte/my-app                          47min
+  dev/other-project                        12min
+
+# JSON
+{"active":2820,"wall":4980,"paused":2160,"started":"09:15","project":"Projekte/my-app"}
+```
+
+## Features
+
+- **Active vs idle detection** — gaps >10min between prompts count as paused
+- **Per-project tracking** — logs working directory, filter with `--filter`
+- **Time ranges** — `--today`, `--week`, `--since DATE`
+- **Project summaries** — `--summary` shows time per project
+- **Resume-safe** — `/resume` starts a new tracking segment without losing history
+- **Persistent log** — stored at `~/.claude/worktime/activity.log`
+- **JSON output** — `--raw` for scripting and statusline integration
+- **Zero dependencies** — just bash + jq (jq only needed for install)
 
 ## Configuration
 
@@ -58,8 +87,6 @@ Environment variables:
 |----------|---------|-------------|
 | `CLAUDE_WORKTIME_PAUSE` | `600` | Seconds of inactivity before counting as paused (default: 10 min) |
 | `CLAUDE_WORKTIME_DIR` | `~/.claude/worktime` | Directory for the activity log |
-
-The activity log is stored at `~/.claude/worktime/activity.log` and persists across reboots.
 
 ## Uninstall
 
@@ -74,6 +101,8 @@ cd claude-worktime
 |---|---|---|---|
 | Tracks active vs idle | **Yes** | No (wall-clock only) | No (documentation tool) |
 | Tracks project/cwd | **Yes** | No | No |
+| Time range queries | **Yes** | No | No |
+| Per-project summaries | **Yes** | No | No |
 | Resume-safe | **Yes** | N/A | N/A |
 | Dependencies | bash + jq | Node.js | None |
 | Mechanism | Native Claude Code hooks | npm wrapper binary | Slash commands |
