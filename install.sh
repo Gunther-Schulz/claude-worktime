@@ -9,7 +9,6 @@
 # Options:
 #   --force         Overwrite existing hooks
 #   --statusline    Enable statusline display
-#   --pomodoro      Enable pomodoro in default config
 
 set -euo pipefail
 
@@ -21,13 +20,11 @@ SCRIPT_NAME="claude-worktime"
 SCRIPT_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/claude-worktime.sh"
 CONFIG_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/config.sh"
 ENABLE_STATUSLINE=false
-ENABLE_POMODORO=false
 FORCE=false
 
 for arg in "$@"; do
     case "$arg" in
         --statusline) ENABLE_STATUSLINE=true ;;
-        --pomodoro) ENABLE_POMODORO=true ;;
         --force) FORCE=true ;;
     esac
 done
@@ -60,12 +57,6 @@ if [ ! -f "$WORKTIME_DIR/config.sh" ]; then
         curl -fsSL "$CONFIG_URL" -o "$WORKTIME_DIR/config.sh"
     fi
 
-    if $ENABLE_POMODORO; then
-        sed -i 's/^POMODORO_ENABLED=false/POMODORO_ENABLED=true/' "$WORKTIME_DIR/config.sh"
-        sed -i 's/^# POMODORO_WORK=/POMODORO_WORK=/' "$WORKTIME_DIR/config.sh"
-        sed -i 's/^# POMODORO_SHORT_BREAK=/POMODORO_SHORT_BREAK=/' "$WORKTIME_DIR/config.sh"
-        sed -i 's/^# POMODORO_LONG_BREAK=/POMODORO_LONG_BREAK=/' "$WORKTIME_DIR/config.sh"
-        sed -i 's/^# POMODORO_LONG_EVERY=/POMODORO_LONG_EVERY=/' "$WORKTIME_DIR/config.sh"
     fi
 
     echo "  Installed default config at $WORKTIME_DIR/config.sh"

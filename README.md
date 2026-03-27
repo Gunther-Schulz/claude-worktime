@@ -2,7 +2,6 @@
 
 Track active working time in [Claude Code](https://claude.com/claude-code) sessions.
 
-Hooks into Claude Code's event lifecycle to log timestamps with session IDs, then computes active time using event-aware idle detection. Includes a configurable statusline, phase breakdowns, and an optional pomodoro timer.
 
 ## How it works
 
@@ -51,7 +50,6 @@ curl -fsSL https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main
 
 Options:
 - `--statusline` — enable the status bar display
-- `--pomodoro` — enable pomodoro timer in default config
 - `--force` — overwrite existing hooks
 
 Then **restart Claude Code** to activate.
@@ -184,7 +182,6 @@ STATUSLINE_IDLE_FORMAT="idle {idle} · {session} ({today}) · {project}"
 | `{today_project}` | Today's total for current project only |
 | `{project}` | Project name (last 2 path segments) |
 | `{branch}` | Git branch name |
-| `{break}` | Pomodoro status indicator |
 | `{idle}` | Idle duration (meaningful in idle format) |
 
 ### Colors
@@ -220,36 +217,6 @@ STATUSLINE_FORMAT="{today_project} · {project} ({branch})"
 |----------|---------|-------------|
 | `CLAUDE_WORKTIME_DIR` | `~/.claude/worktime` | Directory for logs and config |
 | `CLAUDE_WORKTIME_PAUSE` | `900` | Idle threshold in seconds (overrides config) |
-
-## Pomodoro timer
-
-The pomodoro is a **display-only** reminder in the statusline. It does not affect time tracking — your full active time is always counted regardless of whether you take breaks. It's up to you to actually take the break.
-
-Enable in config:
-
-```bash
-POMODORO_ENABLED=true
-POMODORO_WORK=1500         # 25 min work interval
-POMODORO_SHORT_BREAK=300   # 5 min short break target
-POMODORO_LONG_BREAK=900    # 15 min long break target
-POMODORO_LONG_EVERY=4      # long break every 4 intervals
-```
-
-Add `{break}` to your statusline format:
-
-```bash
-STATUSLINE_FORMAT="{break} {session} ({today}) · {project}"
-```
-
-What you'll see:
-
-| State | Display | Color |
-|-------|---------|-------|
-| Working, 7min left in interval | `🍅7m` | Green |
-| 25min of work reached | `☕ break!` | Red |
-| On break, 3 of 5min elapsed | `☕3m/5m` | Yellow |
-
-The timer counts active time since your last break (any idle gap exceeding the threshold). When you stop interacting, it shows your idle time counting toward the break target. When you come back, the work counter resets.
 
 ## Log format
 

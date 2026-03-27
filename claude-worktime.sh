@@ -32,16 +32,9 @@ CONFIGFILE="${LOGDIR}/config.sh"
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
-STATUSLINE_FORMAT="⏱ session {session} · today {today} · {project}"
-STATUSLINE_IDLE_FORMAT="⏸ idle {idle} · session {session} · today {today} · {project}"
-POMODORO_ENABLED=false
-POMODORO_WORK=1500
-POMODORO_SHORT_BREAK=300
-POMODORO_LONG_BREAK=900
-POMODORO_LONG_EVERY=4
+STATUSLINE_FORMAT="{status} session {session} · today {today} · {project}"
+STATUSLINE_IDLE_FORMAT="{status} idle {idle} · session {session} · today {today} · {project}"
 COLOR_NORMAL="\033[32m"
-COLOR_BREAK_DUE="\033[31m"
-COLOR_ON_BREAK="\033[33m"
 COLOR_IDLE="\033[90m"
 COLOR_RESET="\033[0m"
 
@@ -198,64 +191,6 @@ _current_session_id() {
 }
 
 # ============================================================
-# Pomodoro — display-only, does not affect time accounting
-# ============================================================
-
-_pomodoro_status() {
-    $POMODORO_ENABLED || { echo "disabled"; return; }
-
-    local sid=$1 now=$2
-    local entries; entries=$(_session_entries "$sid")
-    [ -z "$entries" ] && { echo "work:$POMODORO_WORK"; return; }
-
-    # Get active time since last real idle (response→prompt gap > PAUSE_THRESHOLD).
-    # If no idle occurred, uses total session active time.
-    local info
-    info=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
-        ${JQ_CALC}
-        sort_by(.t)
-        | . as \$a
-        | (reduce range(1; length) as \$i (0;
-            if (\$a[\$i-1].e == \"response\" or \$a[\$i-1].e == \"start\")
-               and (\$a[\$i].t - \$a[\$i-1].t) > \$pause
-            then \$i else . end)) as \$after_idle
-        | (\$a[\$after_idle:] | calc_active(\$pause)) as \$active_since_idle
-        | {
-            active_since_idle: \$active_since_idle,
-            total_active: calc_active(\$pause)
-        }
-    ")
-
-    local active_since_idle total_active
-    active_since_idle=$(echo "$info" | jq -r '.active_since_idle')
-    total_active=$(echo "$info" | jq -r '.total_active')
-
-    # Pomodoro is a simple cycling timer:
-    # work POMODORO_WORK → show reminder for POMODORO_SHORT_BREAK → repeat
-    # Every POMODORO_LONG_EVERY cycles, show reminder for POMODORO_LONG_BREAK instead
-    local cycle=$((POMODORO_WORK + POMODORO_SHORT_BREAK))
-    local completed=$(( active_since_idle / cycle ))
-    local pos_in_cycle=$(( active_since_idle % cycle ))
-
-    # Check if this should be a long break cycle
-    local break_duration=$POMODORO_SHORT_BREAK
-    if [ "$POMODORO_LONG_EVERY" -gt 0 ] && [ "$(( (completed + 1) % POMODORO_LONG_EVERY ))" -eq 0 ]; then
-        break_duration=$POMODORO_LONG_BREAK
-        cycle=$((POMODORO_WORK + POMODORO_LONG_BREAK))
-        pos_in_cycle=$(( active_since_idle % cycle ))
-    fi
-
-    if [ "$pos_in_cycle" -ge "$POMODORO_WORK" ]; then
-        # In the reminder window
-        local reminder_elapsed=$(( pos_in_cycle - POMODORO_WORK ))
-        echo "break_due:${reminder_elapsed}/${break_duration}"
-    else
-        local remaining=$(( POMODORO_WORK - pos_in_cycle ))
-        echo "work:$remaining"
-    fi
-}
-
-# ============================================================
 # Statusline
 # ============================================================
 
@@ -333,37 +268,14 @@ mode_statusline() {
     tok_branch="$branch"
     tok_idle=$(_fmt_short "$gap")
 
-    # Pomodoro
-    tok_break=""
-    local pomo_status; pomo_status=$(_pomodoro_status "$sid" "$now")
-    local color="$COLOR_NORMAL"
-
-    case "$pomo_status" in
-        work:*)
-            local remaining=${pomo_status#work:}
-            tok_break="🍅$(_fmt_short "$remaining")"
-            ;;
-        break_due:*)
-            local parts=${pomo_status#break_due:}
-            local elapsed=${parts%/*} target=${parts#*/}
-            local left=$(( target - elapsed ))
-            if [ "$left" -gt 0 ]; then
-                tok_break="☕$(_fmt_short "$left")"
-            else
-                tok_break="☕ break!"
-            fi
-            color="$COLOR_BREAK_DUE"
-            ;;
-        disabled)
-            if $is_idle; then tok_break="⏸"
-            else tok_break="⏱"; fi
-            ;;
-    esac
-
+    # Status icon and color
+    local tok_status color
     if $is_idle; then
+        tok_status="⏸"
         color="$COLOR_IDLE"
-        # Override break token when idle — show pause icon
-        case "$pomo_status" in work:*|break_due:*) tok_break="⏸" ;; esac
+    else
+        tok_status="⏱"
+        color="$COLOR_NORMAL"
     fi
 
     local format
@@ -379,7 +291,7 @@ mode_statusline() {
     output="${output//\{project\}/$tok_project}"
     output="${output//\{branch\}/$tok_branch}"
     output="${output//\{idle\}/$tok_idle}"
-    output="${output//\{break\}/$tok_break}"
+    output="${output//\{status\}/$tok_status}"
 
     output=$(echo "$output" | sed 's/  */ /g; s/^ *//; s/ *$//')
 
