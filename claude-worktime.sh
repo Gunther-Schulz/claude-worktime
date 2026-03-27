@@ -9,18 +9,20 @@
 # All other gaps (tool running, Claude thinking/outputting) are active work time.
 #
 # Usage:
-#   claude-worktime log [--EVENT]        # append entry (called by hooks, reads stdin)
-#   claude-worktime stop                 # session end summary (Stop hook, reads stdin)
-#   claude-worktime                      # current session stats
-#   claude-worktime --today              # today's total
-#   claude-worktime --week               # this week
-#   claude-worktime --since 2026-03-25   # since a date
-#   claude-worktime --filter PATH        # filter by project path
-#   claude-worktime --summary [--today]  # per-project breakdown
-#   claude-worktime --csv [--today]      # export as CSV
-#   claude-worktime --statusline         # compact for status bar (reads stdin)
-#   claude-worktime --rotate             # archive old entries
-#   claude-worktime --raw                # JSON output (any mode)
+#   claude-worktime log [--EVENT]           # append entry (called by hooks, reads stdin)
+#   claude-worktime stop                    # session end summary (Stop hook, reads stdin)
+#   claude-worktime                         # current session stats
+#   claude-worktime --today                 # today's total
+#   claude-worktime --week                  # this week
+#   claude-worktime --since 2026-03-25      # since a date
+#   claude-worktime --filter PATH           # filter by project path
+#   claude-worktime --branch BRANCH         # filter by git branch
+#   claude-worktime --breakdown [--today]   # phase breakdown (tool/thinking/user)
+#   claude-worktime --summary [--today]     # per-project breakdown
+#   claude-worktime --csv [--today]         # export as CSV
+#   claude-worktime --statusline            # compact for status bar (reads stdin)
+#   claude-worktime --rotate                # archive old entries
+#   claude-worktime --raw                   # JSON output (any mode)
 
 set -euo pipefail
 
@@ -54,6 +56,20 @@ JQ_CALC='def calc_active($pause):
     | if $gap <= 0 then .
       elif ($a[$i-1].e == "response" or $a[$i-1].e == "start") and $gap > $pause then .
       else . + $gap
+      end);'
+
+# Reusable jq: compute phase breakdown
+# Buckets each gap into: tool_exec, claude_thinking, user_time, idle
+JQ_BREAKDOWN='def calc_breakdown($pause):
+  . as $a | reduce range(1; $a|length) as $i (
+    {tool_exec: 0, claude_thinking: 0, user_time: 0, idle: 0};
+    ($a[$i].t - $a[$i-1].t) as $gap | $a[$i-1].e as $prev_e | $a[$i].e as $next_e
+    | if $gap <= 0 then .
+      elif $prev_e == "tool_start" and $next_e == "tool_end" then .tool_exec += $gap
+      elif ($prev_e == "response" or $prev_e == "start") and $gap > $pause then .idle += $gap
+      elif $prev_e == "response" or $prev_e == "start" then .user_time += $gap
+      elif $prev_e == "prompt" or $prev_e == "tool_end" then .claude_thinking += $gap
+      else .claude_thinking += $gap
       end);'
 
 # --- Date helpers ---
@@ -110,7 +126,6 @@ cmd_log() {
 
     _read_hook_stdin
 
-    # Determine event type from flag
     local event="prompt"
     case "${1:-}" in
         --start)      event="start" ;;
@@ -166,9 +181,10 @@ cmd_stop() {
 # ============================================================
 
 _entries() {
-    local since=${1:-0} filter=${2:-}
+    local since=${1:-0} filter=${2:-} branch_filter=${3:-}
     local jq_filter=". | select(.t >= $since)"
     [ -n "$filter" ] && jq_filter="$jq_filter | select(.p | test(\"$filter\"))"
+    [ -n "$branch_filter" ] && jq_filter="$jq_filter | select(.b // \"\" | test(\"$branch_filter\"))"
     jq -c "$jq_filter" "$LOGFILE" 2>/dev/null || true
 }
 
@@ -182,7 +198,7 @@ _current_session_id() {
 }
 
 # ============================================================
-# Pomodoro
+# Pomodoro — display-only, does not affect time accounting
 # ============================================================
 
 _pomodoro_status() {
@@ -192,48 +208,69 @@ _pomodoro_status() {
     local entries; entries=$(_session_entries "$sid")
     [ -z "$entries" ] && { echo "work:$POMODORO_WORK"; return; }
 
+    # Get active time and info about last idle gap (= last break)
     local info
     info=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
-        sort_by(.t) | { active: calc_active(\$pause), last_t: (.[-1].t), last_e: (.[-1].e) }
-    ")
+        sort_by(.t) | {
+            active: calc_active(\$pause),
+            last_t: (.[-1].t),
+            last_e: (.[-1].e),
+            active_since_break: (
+                # Find last idle gap (= break), count active time after it
+                . as \$a
+                | (reduce range(1; \$a|length) as \$i (null;
+                    if (\$a[\$i-1].e == \"response\" or \$a[\$i-1].e == \"start\")
+                       and (\$a[\$i].t - \$a[\$i-1].t) > \$pause
+                    then \$i else . end)) as \$break_idx
+                | if \$break_idx == null then calc_active(\$pause)
+                  else .\$break_idx: | calc_active(\$pause)
+                  end)
+        }
+    " 2>/dev/null)
 
-    local active last_t last_e
-    active=$(echo "$info" | jq -r '.active')
+    # Fallback if jq fails (active_since_break is tricky)
+    if [ -z "$info" ] || [ "$info" = "null" ]; then
+        info=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
+            ${JQ_CALC}
+            sort_by(.t) | {
+                active: calc_active(\$pause),
+                last_t: (.[-1].t),
+                last_e: (.[-1].e),
+                active_since_break: calc_active(\$pause)
+            }
+        ")
+    fi
+
+    local active_since_break last_t last_e
+    active_since_break=$(echo "$info" | jq -r '.active_since_break')
     last_t=$(echo "$info" | jq -r '.last_t')
     last_e=$(echo "$info" | jq -r '.last_e')
 
     local gap=$(( now - last_t ))
 
-    # Only idle if last event was tool_end and gap > threshold
     local is_idle=false
     if [ "$gap" -gt "$PAUSE_THRESHOLD" ] && { [ "$last_e" = "response" ] || [ "$last_e" = "start" ]; }; then
         is_idle=true
     fi
 
-    local interval_time=$((POMODORO_WORK + POMODORO_SHORT_BREAK))
-    local completed=$(( active / interval_time ))
-    local time_in_current=$(( active % interval_time ))
-
-    local break_target=$POMODORO_SHORT_BREAK
-    if [ "$POMODORO_LONG_EVERY" -gt 0 ] && [ "$(( (completed + 1) % POMODORO_LONG_EVERY ))" -eq 0 ]; then
-        break_target=$POMODORO_LONG_BREAK
-    fi
-
-    if [ "$time_in_current" -ge "$POMODORO_WORK" ]; then
+    if [ "$active_since_break" -ge "$POMODORO_WORK" ]; then
         if $is_idle; then
-            local break_elapsed=$gap
-            if [ "$break_elapsed" -ge "$break_target" ]; then
-                echo "work:$POMODORO_WORK"
-            else
-                echo "on_break:${break_elapsed}/${break_target}"
+            # User is on a break — show progress
+            # Determine break target
+            local total_active
+            total_active=$(echo "$info" | jq -r '.active')
+            local completed=$(( total_active / POMODORO_WORK ))
+            local break_target=$POMODORO_SHORT_BREAK
+            if [ "$POMODORO_LONG_EVERY" -gt 0 ] && [ "$(( completed % POMODORO_LONG_EVERY ))" -eq 0 ]; then
+                break_target=$POMODORO_LONG_BREAK
             fi
+            echo "on_break:${gap}/${break_target}"
         else
-            local overdue=$(( time_in_current - POMODORO_WORK ))
-            echo "break_due:$overdue"
+            echo "break_due:0"
         fi
     else
-        local remaining=$(( POMODORO_WORK - time_in_current ))
+        local remaining=$(( POMODORO_WORK - active_since_break ))
         echo "work:$remaining"
     fi
 }
@@ -277,7 +314,6 @@ mode_statusline() {
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
 
-    # Idle only when: last event was tool_end/start AND gap > threshold
     local is_idle=false
     if [ "$gap" -gt "$PAUSE_THRESHOLD" ] && { [ "$last_e" = "response" ] || [ "$last_e" = "start" ]; }; then
         is_idle=true
@@ -334,7 +370,6 @@ mode_statusline() {
 
     $is_idle && color="$COLOR_IDLE"
 
-    # Format
     local format
     if $is_idle; then format="$STATUSLINE_IDLE_FORMAT"
     else format="$STATUSLINE_FORMAT"; fi
@@ -349,7 +384,6 @@ mode_statusline() {
     output="${output//\{idle\}/$tok_idle}"
     output="${output//\{break\}/$tok_break}"
 
-    # Clean up double spaces from empty tokens
     output=$(echo "$output" | sed 's/  */ /g; s/^ *//; s/ *$//')
 
     printf '%b' "${color}${output}${COLOR_RESET}"
@@ -386,8 +420,8 @@ mode_session() {
 }
 
 mode_range() {
-    local raw=$1 since=$2 filter=$3
-    local entries; entries=$(_entries "$since" "$filter")
+    local raw=$1 since=$2 filter=$3 branch_filter=$4
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
 
     if [ -z "$entries" ]; then
         if $raw; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
@@ -433,9 +467,63 @@ _output_info() {
     fi
 }
 
+mode_breakdown() {
+    local raw=$1 since=$2 filter=$3 branch_filter=$4
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
+
+    if [ -z "$entries" ]; then
+        if $raw; then echo '{"tool_exec":0,"claude_thinking":0,"user_time":0,"idle":0,"active":0}';
+        else echo "No activity recorded"; fi; return; fi
+
+    local result
+    result=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
+        ${JQ_CALC}
+        ${JQ_BREAKDOWN}
+        sort_by(.t) | {
+            breakdown: calc_breakdown(\$pause),
+            active: calc_active(\$pause)
+        }
+    ")
+
+    local tool_exec claude_thinking user_time idle active
+    tool_exec=$(echo "$result" | jq '.breakdown.tool_exec')
+    claude_thinking=$(echo "$result" | jq '.breakdown.claude_thinking')
+    user_time=$(echo "$result" | jq '.breakdown.user_time')
+    idle=$(echo "$result" | jq '.breakdown.idle')
+    active=$(echo "$result" | jq '.active')
+
+    if $raw; then
+        echo "$result" | jq '{
+            tool_exec: .breakdown.tool_exec,
+            claude_thinking: .breakdown.claude_thinking,
+            user_time: .breakdown.user_time,
+            idle: .breakdown.idle,
+            active: .active
+        }'
+    else
+        # Calculate percentages of active time
+        local pct_tool=0 pct_claude=0 pct_user=0
+        if [ "$active" -gt 0 ]; then
+            pct_tool=$(( tool_exec * 100 / active ))
+            pct_claude=$(( claude_thinking * 100 / active ))
+            pct_user=$(( user_time * 100 / active ))
+        fi
+
+        echo "Phase breakdown:"
+        printf "  Tool execution:    %-12s %d%%\n" "$(_fmt $tool_exec)" "$pct_tool"
+        printf "  Claude thinking:   %-12s %d%%\n" "$(_fmt $claude_thinking)" "$pct_claude"
+        printf "  User reading:      %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
+        echo "  ─────────────────────────────"
+        printf "  Active total:      %s\n" "$(_fmt $active)"
+        if [ "$idle" -gt 0 ]; then
+            printf "  Idle (excluded):   %s\n" "$(_fmt $idle)"
+        fi
+    fi
+}
+
 mode_summary() {
-    local raw=$1 since=$2 filter=$3
-    local entries; entries=$(_entries "$since" "$filter")
+    local raw=$1 since=$2 filter=$3 branch_filter=$4
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
 
     if [ -z "$entries" ]; then
         if $raw; then echo '{}'; else echo "No activity recorded"; fi; return; fi
@@ -459,8 +547,8 @@ mode_summary() {
 }
 
 mode_csv() {
-    local since=$1 filter=$2
-    local entries; entries=$(_entries "$since" "$filter")
+    local since=$1 filter=$2 branch_filter=$3
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
 
     echo "date,start,end,active_min,wall_min,project,session_id"
     [ -z "$entries" ] && return
@@ -471,7 +559,7 @@ mode_csv() {
         | reduce range(1; length) as \$i (
             [[\$all[0]]];
             if (\$all[\$i].s != .[-1][-1].s) or
-               ((\$all[\$i-1].e == \"tool_end\" or \$all[\$i-1].e == \"start\") and (\$all[\$i].t - .[-1][-1].t) > \$pause)
+               ((\$all[\$i-1].e == \"response\" or \$all[\$i-1].e == \"start\") and (\$all[\$i].t - .[-1][-1].t) > \$pause)
             then . + [[\$all[\$i]]]
             else .[-1] += [\$all[\$i]] end)
         | .[] | . as \$s | {
@@ -520,16 +608,19 @@ _require_jq
 MODE="session"
 RAW=false
 FILTER_PATH=""
+FILTER_BRANCH=""
 SINCE_TS=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --raw) RAW=true ;;
         --summary) MODE="summary" ;;
+        --breakdown) MODE="breakdown" ;;
         --csv) MODE="csv" ;;
         --statusline) MODE="statusline" ;;
         --rotate) MODE="rotate" ;;
         --filter) shift; FILTER_PATH="${1:-}"; [ "$MODE" = "session" ] && MODE="range" ;;
+        --branch) shift; FILTER_BRANCH="${1:-}"; [ "$MODE" = "session" ] && MODE="range" ;;
         --today) SINCE_TS=$(_today_start); [ "$MODE" = "session" ] && MODE="range" ;;
         --week) SINCE_TS=$(_week_start); [ "$MODE" = "session" ] && MODE="range" ;;
         --since) shift; SINCE_TS=$(_date_parse "$1"); [ "$MODE" = "session" ] && MODE="range" ;;
@@ -547,9 +638,10 @@ fi
 
 case "$MODE" in
     session)    mode_session "$RAW" ;;
-    range)      mode_range "$RAW" "$SINCE_TS" "$FILTER_PATH" ;;
-    summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" ;;
-    csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" ;;
+    range)      mode_range "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
+    breakdown)  mode_breakdown "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
+    summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
+    csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     statusline) mode_statusline ;;
     rotate)     mode_rotate ;;
 esac

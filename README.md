@@ -1,67 +1,145 @@
 # claude-worktime
 
-Track **active** working time in [Claude Code](https://claude.ai/claude-code) sessions. Unlike wall-clock timers, this tool detects idle periods and only counts time you're actually working.
+Track active working time in [Claude Code](https://claude.com/claude-code) sessions.
+
+Hooks into Claude Code's event lifecycle to log timestamps with session IDs, then computes active time using event-aware idle detection. Includes a configurable statusline, phase breakdowns, and an optional pomodoro timer.
 
 ## How it works
 
-Lightweight [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) log timestamps on every activity:
+Six hooks log events to a JSONL file:
 
-- **SessionStart** — records when a session begins (with working directory)
-- **UserPromptSubmit** — records each time you send a message
-- **PostToolUse** — records each time Claude uses a tool (Bash, Read, Write, etc.)
-- **Stop** — appends a daily summary when you exit
+| Hook | Event | Meaning |
+|------|-------|---------|
+| SessionStart | `start` | CLI starts or resumes |
+| UserPromptSubmit | `prompt` | User sends a message |
+| PreToolUse | `tool_start` | Tool about to execute |
+| PostToolUse | `tool_end` | Tool finished executing |
+| Stop | `response` | Claude finished responding |
+| StopFailure | `response` | API error (still counts as work) |
 
-The `claude-worktime` script reads these timestamps and calculates active time. Any gap longer than 15 minutes (configurable) between events is counted as idle/paused time. Because tool use is tracked, long-running Claude tasks (builds, downloads, searches) are correctly counted as active even when you're not typing.
+### Idle detection
 
-```
-Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app
-```
+Only one type of gap can be idle: **`response` → `prompt`** — the moment between Claude finishing its response and the user sending the next message. If this gap exceeds `PAUSE_THRESHOLD` (default: 15 minutes), it's counted as idle.
+
+All other gaps are always active work:
+- `tool_start` → `tool_end` — tool running (even if it takes 20 minutes)
+- `prompt` → `tool_start` — Claude thinking before using a tool
+- `tool_end` → `response` — Claude generating output after tools
+- `prompt` → `response` — Claude thinking (text-only, no tools)
+
+This means long-running tools never get misclassified as idle time.
+
+### Session tracking
+
+Each log entry includes the `session_id` from Claude Code. This ID persists across `--resume` and `/resume`, so resuming a session continues the same time counter. Starting a new CLI session without resume creates a new ID.
 
 ## Install
 
+**Requirements:** [jq](https://jqlang.github.io/jq/)
+
 ```bash
-# Option 1: Clone and install
 git clone https://github.com/Gunther-Schulz/claude-worktime.git
 cd claude-worktime
-./install.sh
-
-# Option 2: One-liner
-curl -fsSL https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/install.sh | bash
-
-# With statusline (shows active time in Claude Code UI)
 ./install.sh --statusline
 ```
 
-Requires: `bash`, `jq`
+Or with curl:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/install.sh | bash -s -- --statusline
+```
+
+Options:
+- `--statusline` — enable the status bar display
+- `--pomodoro` — enable pomodoro timer in default config
+- `--force` — overwrite existing hooks
+
+Then **restart Claude Code** to activate.
+
+## Uninstall
+
+```bash
+./uninstall.sh
+```
+
+Removes hooks, statusline config, and the script. Logs are preserved at `~/.claude/worktime/`.
 
 ## Usage
 
-Inside Claude Code, type:
+### Statusline
+
+Shows in Claude Code's status bar:
 
 ```
-! claude-worktime
+5m (2h 10m) · Hendrik/26-05 Todenbuettel
+│    │         │
+│    │         └── project (last 2 path segments)
+│    └── today total (all sessions, all projects)
+└── current session active time (by session ID)
 ```
 
-Or ask Claude to run it for you.
+When idle (response→prompt gap > 15min):
+```
+idle 18m · 5m (2h 10m) · Hendrik/26-05 Todenbuettel
+```
 
-### Commands
+### CLI queries
 
 ```bash
-claude-worktime                                  # current session
-claude-worktime --today                          # all active time today
-claude-worktime --week                           # this week
-claude-worktime --since 2026-03-25               # since a specific date
-claude-worktime --filter PATH                    # time spent in a project
-claude-worktime --today --filter myproject        # combined filters
-claude-worktime --summary                        # per-project breakdown
-claude-worktime --summary --today                # per-project today
-claude-worktime --summary --week                 # per-project this week
-claude-worktime --csv                            # export all sessions as CSV
-claude-worktime --csv --today                    # export today's sessions
-claude-worktime --statusline                     # compact for statusline
-claude-worktime --rotate                         # archive old entries (monthly)
-claude-worktime --raw                            # JSON output (any mode)
+# Current session
+claude-worktime
+
+# Time ranges
+claude-worktime --today
+claude-worktime --week
+claude-worktime --since 2026-03-25
+
+# Filter by project path or git branch
+claude-worktime --today --filter Todenbuettel
+claude-worktime --today --branch feature/auth
+
+# Phase breakdown — where your time actually goes
+claude-worktime --breakdown
+claude-worktime --breakdown --today
+claude-worktime --breakdown --branch main
+
+# Per-project summary
+claude-worktime --summary
+claude-worktime --summary --today
+
+# CSV export
+claude-worktime --csv
+claude-worktime --csv --today
+
+# JSON output (works with any mode)
+claude-worktime --raw
+claude-worktime --breakdown --raw
+
+# Log rotation (archive entries older than current month)
+claude-worktime --rotate
 ```
+
+All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`) can be combined with any mode.
+
+### Phase breakdown
+
+`--breakdown` shows how time splits across phases:
+
+```
+Phase breakdown:
+  Tool execution:    12min        35%
+  Claude thinking:    8min        24%
+  User reading:      14min        41%
+  ─────────────────────────────
+  Active total:      34min
+```
+
+| Phase | What it measures |
+|-------|-----------------|
+| Tool execution | Time between `tool_start` → `tool_end` |
+| Claude thinking | Claude processing: `prompt` → first tool or response |
+| User reading | You reading output and typing: `response` → `prompt` (within threshold) |
+| Idle | `response` → `prompt` gaps over threshold (excluded from active total) |
 
 ### Example output
 
@@ -69,78 +147,152 @@ claude-worktime --raw                            # JSON output (any mode)
 # Current session
 Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app
 
-# Statusline
-⏱ 47m · Projekte/my-app
-
 # Summary
-  Projekte/my-app                          47min
-  dev/other-project                        12min
-
-# CSV
-date,start,end,active_min,wall_min,project
-2026-03-27,09:15,12:30,47,195,Projekte/my-app
-2026-03-27,14:00,15:10,12,70,dev/other-project
+  Projekte/my-app      47min
+  dev/other-project    12min
 
 # JSON
-{"active":2820,"wall":4980,"paused":2160,"started":"09:15","project":"Projekte/my-app"}
+{"active":2820,"wall":4980,"paused":2160,"started":"09:15","project":"Projekte/my-app","session_id":"abc-123"}
+
+# CSV
+date,start,end,active_min,wall_min,project,session_id
+2026-03-27,09:15,12:30,47,195,Projekte/my-app,abc-123
 ```
-
-## Features
-
-- **Active vs idle detection** — gaps >15min between prompts count as paused
-- **Per-project tracking** — logs working directory, filter with `--filter`
-- **Time ranges** — `--today`, `--week`, `--since DATE`
-- **Project summaries** — `--summary` shows time per project
-- **CSV export** — `--csv` for importing into spreadsheets or time tracking tools
-- **Statusline** — shows active time in Claude Code UI (install with `--statusline`)
-- **Daily log** — `Stop` hook appends daily totals to `~/.claude/worktime/daily.log`
-- **Log rotation** — `--rotate` archives entries older than current month
-- **Resume-safe** — `/resume` and `claude --resume` both work correctly
-- **Persistent log** — stored at `~/.claude/worktime/activity.log`
-- **JSON output** — `--raw` for scripting and integration
-- **Zero dependencies** — just bash + jq (jq only needed for install)
 
 ## Configuration
 
-Environment variables:
+Config file: `~/.claude/worktime/config.sh` — plain bash key-value pairs with comments.
+
+A default config with examples is created on install.
+
+### Defaults
+
+```bash
+PAUSE_THRESHOLD=900  # 15 min idle threshold
+
+STATUSLINE_FORMAT="{session} ({today}) · {project}"
+STATUSLINE_IDLE_FORMAT="idle {idle} · {session} ({today}) · {project}"
+```
+
+### Format tokens
+
+| Token | Description |
+|-------|-------------|
+| `{session}` | Active time in current session (by session ID) |
+| `{session_wall}` | Wall clock time since session started |
+| `{today}` | Today's total active time (all sessions, all projects) |
+| `{today_project}` | Today's total for current project only |
+| `{project}` | Project name (last 2 path segments) |
+| `{branch}` | Git branch name |
+| `{break}` | Pomodoro status indicator |
+| `{idle}` | Idle duration (meaningful in idle format) |
+
+### Colors
+
+ANSI escape codes rendered in the terminal:
+
+```bash
+COLOR_NORMAL="\033[32m"       # green — working
+COLOR_BREAK_DUE="\033[31m"    # red — break overdue
+COLOR_ON_BREAK="\033[33m"     # yellow — on break
+COLOR_IDLE="\033[90m"         # gray — idle
+```
+
+Set any color to `""` to disable it.
+
+### Example configurations
+
+```bash
+# Minimal
+STATUSLINE_FORMAT="{session}"
+STATUSLINE_IDLE_FORMAT="idle {idle}"
+
+# Branch-aware
+STATUSLINE_FORMAT="{session} · {project}/{branch} ({today})"
+
+# Project-focused
+STATUSLINE_FORMAT="{today_project} · {project} ({branch})"
+```
+
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_WORKTIME_PAUSE` | `900` | Seconds of inactivity before counting as paused (default: 15 min) |
-| `CLAUDE_WORKTIME_DIR` | `~/.claude/worktime` | Directory for activity logs |
+| `CLAUDE_WORKTIME_DIR` | `~/.claude/worktime` | Directory for logs and config |
+| `CLAUDE_WORKTIME_PAUSE` | `900` | Idle threshold in seconds (overrides config) |
 
-## Files
+## Pomodoro timer
+
+The pomodoro is a **display-only** reminder in the statusline. It does not affect time tracking — your full active time is always counted regardless of whether you take breaks. It's up to you to actually take the break.
+
+Enable in config:
+
+```bash
+POMODORO_ENABLED=true
+POMODORO_WORK=1500         # 25 min work interval
+POMODORO_SHORT_BREAK=300   # 5 min short break target
+POMODORO_LONG_BREAK=900    # 15 min long break target
+POMODORO_LONG_EVERY=4      # long break every 4 intervals
+```
+
+Add `{break}` to your statusline format:
+
+```bash
+STATUSLINE_FORMAT="{break} {session} ({today}) · {project}"
+```
+
+What you'll see:
+
+| State | Display | Color |
+|-------|---------|-------|
+| Working, 7min left in interval | `🍅7m` | Green |
+| 25min of work reached | `☕ break!` | Red |
+| On break, 3 of 5min elapsed | `☕3m/5m` | Yellow |
+
+The timer counts active time since your last break (any idle gap exceeding the threshold). When you stop interacting, it shows your idle time counting toward the break target. When you come back, the work counter resets.
+
+## Log format
+
+JSONL at `~/.claude/worktime/activity.log`:
+
+```jsonl
+{"t":1774632641,"p":"/path/to/project","b":"main","s":"session-uuid","e":"start"}
+{"t":1774632642,"p":"/path/to/project","b":"main","s":"session-uuid","e":"prompt"}
+{"t":1774632643,"p":"/path/to/project","b":"main","s":"session-uuid","e":"tool_start"}
+{"t":1774632650,"p":"/path/to/project","b":"main","s":"session-uuid","e":"tool_end"}
+{"t":1774632655,"p":"/path/to/project","b":"main","s":"session-uuid","e":"response"}
+```
+
+| Field | Description |
+|-------|-------------|
+| `t` | Unix timestamp |
+| `p` | Project path (from cwd) |
+| `b` | Git branch (omitted if not in a git repo) |
+| `s` | Session ID (persists across `--resume`) |
+| `e` | Event type: `start`, `prompt`, `tool_start`, `tool_end`, `response` |
+
+### Files
 
 | Path | Purpose |
 |------|---------|
-| `~/.claude/worktime/activity.log` | Main activity log (timestamps + working directories) |
-| `~/.claude/worktime/daily.log` | Daily summaries (appended on session exit) |
-| `~/.claude/worktime/activity-YYYY-MM.log` | Monthly archives (created by `--rotate`) |
-| `~/.local/bin/claude-worktime` | The script itself |
+| `~/.claude/worktime/activity.log` | Active log (JSONL) |
+| `~/.claude/worktime/config.sh` | Configuration |
+| `~/.claude/worktime/activity-YYYY-MM.log` | Monthly archives (from `--rotate`) |
+| `~/.local/bin/claude-worktime` | The script |
 
-## Uninstall
+### Log rotation
 
 ```bash
-cd claude-worktime
-./uninstall.sh
+claude-worktime --rotate
 ```
 
-## How it compares
+Archives entries older than the current month to `activity-YYYY-MM.log`.
 
-| | claude-worktime | claude-timer | claude-sessions |
-|---|---|---|---|
-| Tracks active vs idle | **Yes** | No (wall-clock only) | No (documentation tool) |
-| Tracks project/cwd | **Yes** | No | No |
-| Time range queries | **Yes** | No | No |
-| Per-project summaries | **Yes** | No | No |
-| CSV export | **Yes** | No | No |
-| Statusline | **Yes** | No | No |
-| Daily log | **Yes** | No | No |
-| Log rotation | **Yes** | No | No |
-| Resume-safe | **Yes** | N/A | N/A |
-| Dependencies | bash + jq | Node.js | None |
-| Mechanism | Native Claude Code hooks | npm wrapper binary | Slash commands |
-| Purpose | Know how long you worked | Billing window alerts | Context preservation |
+## Dependencies
+
+- **jq** — required (log parsing, JSON output)
+
+That's it. No python, no node, no extra runtimes.
 
 ## License
 

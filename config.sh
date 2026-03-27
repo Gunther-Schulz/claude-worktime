@@ -8,13 +8,15 @@
 #   {today_project}  — today's total for current project only
 #   {project}        — project name (last 2 path segments)
 #   {branch}         — git branch name
-#   {break}          — pomodoro status indicator
+#   {break}          — pomodoro status indicator (display only)
 #   {idle}           — idle duration (only meaningful when idle)
 
 # ---------------------------------------------------------------------------
 # Idle detection
 # ---------------------------------------------------------------------------
-# Gap (seconds) between events that counts as "not working"
+# A gap is idle ONLY when: Claude finished responding (response event) and the
+# user hasn't sent the next prompt within this threshold. All other gaps
+# (tool execution, Claude thinking) are always counted as active work.
 PAUSE_THRESHOLD=900  # 15 minutes
 
 # ---------------------------------------------------------------------------
@@ -24,12 +26,16 @@ STATUSLINE_FORMAT="{session} ({today}) · {project}"
 STATUSLINE_IDLE_FORMAT="idle {idle} · {session} ({today}) · {project}"
 
 # ---------------------------------------------------------------------------
-# Pomodoro / break reminders
+# Pomodoro / break reminders (display only — does NOT affect time tracking)
 # ---------------------------------------------------------------------------
+# The pomodoro timer is purely a visual reminder in the statusline.
+# It counts active work time and nudges you to take breaks.
+# It does NOT deduct break time from active time — if you ignore the
+# reminder and keep working, your full time is still counted.
 POMODORO_ENABLED=false
-# POMODORO_WORK=1500         # 25 min work interval
-# POMODORO_SHORT_BREAK=300   # 5 min short break
-# POMODORO_LONG_BREAK=900    # 15 min long break
+# POMODORO_WORK=1500         # 25 min — remind to take a break after this
+# POMODORO_SHORT_BREAK=300   # 5 min — short break target
+# POMODORO_LONG_BREAK=900    # 15 min — long break target
 # POMODORO_LONG_EVERY=4      # long break every N work intervals
 
 # ---------------------------------------------------------------------------
