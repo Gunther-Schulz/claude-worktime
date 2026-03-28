@@ -270,16 +270,20 @@ mode_statusline() {
     tok_idle=$(_fmt_short "$gap")
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_7d="" tok_context="" tok_cost="" tok_model=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_7d="" tok_rate_7d_reset="" tok_context="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
-        local r5h r7d ctx cst mdl
+        local r5h r5h_reset r7d r7d_reset ctx cst mdl
         r5h=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null || true)
+        r5h_reset=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.five_hour.resets_at // empty' 2>/dev/null || true)
         r7d=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null || true)
+        r7d_reset=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null || true)
         ctx=$(echo "$_STDIN_JSON" | jq -r '.context_window.used_percentage // empty' 2>/dev/null || true)
         cst=$(echo "$_STDIN_JSON" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true)
         mdl=$(echo "$_STDIN_JSON" | jq -r '.model.display_name // empty' 2>/dev/null || true)
         [ -n "$r5h" ] && tok_rate_5h=$(printf "%.0f%%" "$r5h")
+        [ -n "$r5h_reset" ] && tok_rate_5h_reset=$(_fmt_short $(( r5h_reset - now )))
         [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
+        [ -n "$r7d_reset" ] && tok_rate_7d_reset=$(_fmt_short $(( r7d_reset - now )))
         [ -n "$ctx" ] && tok_context=$(printf "%.0f%%" "$ctx")
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         [ -n "$mdl" ] && tok_model="$mdl"
@@ -322,7 +326,9 @@ mode_statusline() {
         fi
     }
     _replace_or_remove '{rate_5h}' "$tok_rate_5h"
+    _replace_or_remove '{rate_5h_reset}' "$tok_rate_5h_reset"
     _replace_or_remove '{rate_7d}' "$tok_rate_7d"
+    _replace_or_remove '{rate_7d_reset}' "$tok_rate_7d_reset"
     _replace_or_remove '{context}' "$tok_context"
     _replace_or_remove '{cost}' "$tok_cost"
     _replace_or_remove '{model}' "$tok_model"
