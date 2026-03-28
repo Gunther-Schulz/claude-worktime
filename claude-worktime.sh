@@ -651,18 +651,25 @@ mode_statusline() {
             local cc=${cache_create%.*} cr=${cache_read%.*}
 
             # Accumulate cache ratio across the 5h window via state file
+            # State: reset_ts total_cc total_cr prev_cc prev_cr
+            # Uses deltas (current - previous) so absolute totals are meaningful
             local cache_state="${LOGDIR}/.cache_ratio"
-            local stored_reset=0 total_cc=0 total_cr=0
+            local stored_reset=0 total_cc=0 total_cr=0 prev_cc=0 prev_cr=0
             if [ -f "$cache_state" ]; then
-                read -r stored_reset total_cc total_cr < "$cache_state" 2>/dev/null || true
+                read -r stored_reset total_cc total_cr prev_cc prev_cr < "$cache_state" 2>/dev/null || true
             fi
             # Reset if window changed
             if [ -n "$r5h_reset" ] && [ "$stored_reset" != "$r5h_reset" ]; then
-                total_cc=0; total_cr=0; stored_reset="$r5h_reset"
+                total_cc=0; total_cr=0; prev_cc=0; prev_cr=0; stored_reset="$r5h_reset"
             fi
-            total_cc=$(( total_cc + ${cc:-0} ))
-            total_cr=$(( total_cr + ${cr:-0} ))
-            echo "${stored_reset:-0} $total_cc $total_cr" > "$cache_state" 2>/dev/null
+            # Compute deltas; negative means new conversation (values reset)
+            local delta_cc=$(( ${cc:-0} - prev_cc ))
+            local delta_cr=$(( ${cr:-0} - prev_cr ))
+            [ "$delta_cc" -lt 0 ] && delta_cc=${cc:-0}
+            [ "$delta_cr" -lt 0 ] && delta_cr=${cr:-0}
+            total_cc=$(( total_cc + delta_cc ))
+            total_cr=$(( total_cr + delta_cr ))
+            echo "${stored_reset:-0} $total_cc $total_cr ${cc:-0} ${cr:-0}" > "$cache_state" 2>/dev/null
 
             local total=$(( total_cc + total_cr ))
             if [ "$total" -gt 0 ]; then
