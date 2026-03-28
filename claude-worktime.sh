@@ -646,11 +646,13 @@ mode_statusline() {
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
 
-        # Cache indicator: ⟳ when cache was rebuilt (creation >> read)
+        # Cache indicator: ⟳ cold (rebuilt), ✓ warm (cached)
         if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
             local cc=${cache_create%.*} cr=${cache_read%.*}
             if [ "${cc:-0}" -gt 10000 ] && [ "${cc:-0}" -gt $(( ${cr:-0} * 5 )) ]; then
                 tok_cache="⟳"
+            else
+                tok_cache="✓"
             fi
         fi
 
