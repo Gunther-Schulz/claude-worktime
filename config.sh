@@ -56,6 +56,12 @@ COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate limit ≥100%
 COLOR_RESET="\033[0m"
 
 # ---------------------------------------------------------------------------
+# Auto-rotation — archive old log entries on session start
+# ---------------------------------------------------------------------------
+AUTO_ROTATE=true
+ROTATE_INTERVAL=monthly    # monthly, weekly, daily
+
+# ---------------------------------------------------------------------------
 # Projections
 # ---------------------------------------------------------------------------
 # Minimum days elapsed before showing 7d rate limit projection.

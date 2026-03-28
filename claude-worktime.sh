@@ -44,6 +44,8 @@ COLOR_RATE_WARNING="\033[33m"
 COLOR_RATE_CRITICAL="\033[31m"
 COLOR_RESET="\033[0m"
 RATE_7D_PROJ_MIN_DAYS=0.5
+AUTO_ROTATE=true
+ROTATE_INTERVAL=monthly  # monthly, weekly, daily
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -160,6 +162,8 @@ cmd_log() {
     fi
 
     if [ "$event" = "start" ]; then
+        # Auto-rotate on session start
+        $AUTO_ROTATE && [ -f "$LOGFILE" ] && _do_rotate true
         printf '{"systemMessage":"Session timer started at %s"}' "$(date +%H:%M)"
     fi
 }
@@ -204,7 +208,8 @@ mode_statusline() {
     local all_info
     all_info=$(jq -s --argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" "
         ${JQ_CALC}
-        . as \$all
+        . as \$raw
+        | [.[] | select((.type // null) == null)] as \$all
         | (\$all | map(select(.s == \$sid)) | sort_by(.t)) as \$session
         | (\$all | map(select(.t >= \$since)) | sort_by(.t)) as \$today
         | (\$session | if length > 0 then ([.[] | .p] | last) else \"\" end) as \$proj
@@ -217,7 +222,10 @@ mode_statusline() {
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
             today_active: (\$today | calc_active(\$pause)),
             today_project_active: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause)),
-            project_total_active: (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause))
+            project_total_active: (
+                (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause))
+                + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
+            )
         }
     " "$LOGFILE")
 
@@ -603,25 +611,87 @@ mode_csv() {
     done
 }
 
-mode_rotate() {
-    local month_start
-    month_start=$(date -d "$(date +%Y-%m-01)" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-01)" +%s 2>/dev/null)
-    local archive_month
-    archive_month=$(date -d "last month" +%Y-%m 2>/dev/null || date -j -v-1m +%Y-%m 2>/dev/null)
-    local archive="${LOGDIR}/activity-${archive_month}.log"
+# Compute the cutoff timestamp and archive suffix for the current rotation interval
+_rotate_boundaries() {
+    case "$ROTATE_INTERVAL" in
+        daily)
+            ROTATE_CUTOFF=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
+            ROTATE_SUFFIX=$(date -d "yesterday" +%Y-%m-%d 2>/dev/null || date -j -v-1d +%Y-%m-%d 2>/dev/null)
+            ;;
+        weekly)
+            local dow; dow=$(date +%u)
+            if [ "$dow" = "1" ]; then
+                ROTATE_CUTOFF=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
+            else
+                ROTATE_CUTOFF=$(date -d "last monday" +%s 2>/dev/null || date -j -v-monday +%s 2>/dev/null)
+            fi
+            ROTATE_SUFFIX=$(date -d "@$((ROTATE_CUTOFF - 1))" +%Y-W%V 2>/dev/null || date -r "$((ROTATE_CUTOFF - 1))" +%Y-W%V 2>/dev/null)
+            ;;
+        monthly|*)
+            ROTATE_CUTOFF=$(date -d "$(date +%Y-%m-01)" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-01)" +%s 2>/dev/null)
+            ROTATE_SUFFIX=$(date -d "last month" +%Y-%m 2>/dev/null || date -j -v-1m +%Y-%m 2>/dev/null)
+            ;;
+    esac
+}
 
-    # Single pass: split into old and current
-    local old_entries current_entries
-    old_entries=$(jq -c --argjson since "$month_start" 'select(.t < $since)' "$LOGFILE" 2>/dev/null || true)
-    [ -z "$old_entries" ] && { echo "Nothing to rotate (all entries are from this month)"; return; }
+_do_rotate() {
+    local quiet=${1:-false}
+    [ ! -f "$LOGFILE" ] && return
 
+    _rotate_boundaries
+
+    # Check if there are old event entries (skip summaries)
+    local first_event_ts
+    first_event_ts=$(jq -r 'select((.type // null) == null) | .t' "$LOGFILE" 2>/dev/null | head -1 || true)
+    [ -z "$first_event_ts" ] || [ "$first_event_ts" -ge "$ROTATE_CUTOFF" ] && return
+
+    # Write per-project summaries before archiving
+    local summaries
+    summaries=$(jq -sc --argjson since "$ROTATE_CUTOFF" --argjson pause "$PAUSE_THRESHOLD" "
+        ${JQ_CALC}
+        [.[] | select(.t < \$since)] | group_by(.p) | map({
+            type: \"summary\",
+            p: .[0].p,
+            active: (sort_by(.t) | calc_active(\$pause)),
+            period: \"$ROTATE_SUFFIX\"
+        }) | .[]
+    " "$LOGFILE" 2>/dev/null || true)
+
+    # Archive old event entries (not summaries)
+    local old_entries
+    old_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t < $since)' "$LOGFILE" 2>/dev/null || true)
+    [ -z "$old_entries" ] && return
+
+    local archive="${LOGDIR}/activity-${ROTATE_SUFFIX}.log"
     echo "$old_entries" >> "$archive"
-    jq -c --argjson since "$month_start" 'select(.t >= $since)' "$LOGFILE" > "${LOGFILE}.tmp" \
-        && mv "${LOGFILE}.tmp" "$LOGFILE"
 
-    local old_count
-    old_count=$(echo "$old_entries" | wc -l)
-    echo "Rotated $old_count entries to $archive"
+    # Keep: existing summaries + new summaries + current event entries
+    local existing_summaries current_entries
+    existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null || true)
+    current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null || true)
+
+    { [ -n "$existing_summaries" ] && echo "$existing_summaries"
+      [ -n "$summaries" ] && echo "$summaries"
+      [ -n "$current_entries" ] && echo "$current_entries"
+    } > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
+
+    if ! $quiet; then
+        local old_count
+        old_count=$(echo "$old_entries" | wc -l)
+        echo "Rotated $old_count entries to $archive"
+    fi
+}
+
+mode_rotate() {
+    [ ! -f "$LOGFILE" ] && { echo "No log file to rotate"; return; }
+    _rotate_boundaries
+    local first_event_ts
+    first_event_ts=$(jq -r 'select((.type // null) == null) | .t' "$LOGFILE" 2>/dev/null | head -1 || true)
+    if [ -z "$first_event_ts" ] || [ "$first_event_ts" -ge "$ROTATE_CUTOFF" ]; then
+        echo "Nothing to rotate (all entries are from current $ROTATE_INTERVAL period)"
+        return
+    fi
+    _do_rotate false
 }
 
 # ============================================================
