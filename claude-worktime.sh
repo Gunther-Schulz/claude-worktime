@@ -302,10 +302,14 @@ _read_hook_stdin() {
     HOOK_CWD=""
     _STDIN_JSON=""
     if read -t 0.1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
-        local parsed
-        parsed=$(echo "$_STDIN_JSON" | jq -r '[.session_id // "", .cwd // ""] | @tsv' 2>/dev/null || true)
-        HOOK_SESSION_ID="${parsed%%	*}"
-        HOOK_CWD="${parsed#*	}"
+        # Fast bash parsing — avoid jq on the hot path
+        # Extract "session_id":"VALUE" and "cwd":"VALUE" with parameter expansion
+        local tmp="${_STDIN_JSON#*\"session_id\":\"}"
+        HOOK_SESSION_ID="${tmp%%\"*}"
+        [ "$HOOK_SESSION_ID" = "$_STDIN_JSON" ] && HOOK_SESSION_ID=""
+        tmp="${_STDIN_JSON#*\"cwd\":\"}"
+        HOOK_CWD="${tmp%%\"*}"
+        [ "$HOOK_CWD" = "$_STDIN_JSON" ] && HOOK_CWD=""
     fi
 }
 
@@ -357,13 +361,14 @@ cmd_log() {
     branch=$(git -C "$path" branch --show-current 2>/dev/null || true)
     session_id="${HOOK_SESSION_ID:-unknown}"
 
-    # Write JSONL — use jq for proper JSON string escaping
+    # Write JSONL directly — escape \ and " for valid JSON, avoid jq on hot path
+    local jp="${path//\\/\\\\}"; jp="${jp//\"/\\\"}"
+    local jb="${branch//\\/\\\\}"; jb="${jb//\"/\\\"}"
+    local js="${session_id//\\/\\\\}"; js="${js//\"/\\\"}"
     if [ -n "$branch" ]; then
-        jq -nc --argjson t "$ts" --arg p "$path" --arg b "$branch" --arg s "$session_id" --arg e "$event" \
-            '{t:$t,p:$p,b:$b,s:$s,e:$e}' >> "$LOGFILE"
+        printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$jb" "$js" "$event" >> "$LOGFILE"
     else
-        jq -nc --argjson t "$ts" --arg p "$path" --arg s "$session_id" --arg e "$event" \
-            '{t:$t,p:$p,s:$s,e:$e}' >> "$LOGFILE"
+        printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$js" "$event" >> "$LOGFILE"
     fi
 
     if [ "$event" = "start" ]; then
