@@ -268,6 +268,22 @@ mode_statusline() {
     tok_branch="$branch"
     tok_idle=$(_fmt_short "$gap")
 
+    # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
+    local tok_rate_5h="" tok_rate_7d="" tok_context="" tok_cost="" tok_model=""
+    if [ -n "${_STDIN_JSON:-}" ]; then
+        local r5h r7d ctx cst mdl
+        r5h=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null || true)
+        r7d=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null || true)
+        ctx=$(echo "$_STDIN_JSON" | jq -r '.context_window.used_percentage // empty' 2>/dev/null || true)
+        cst=$(echo "$_STDIN_JSON" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true)
+        mdl=$(echo "$_STDIN_JSON" | jq -r '.model.display_name // empty' 2>/dev/null || true)
+        [ -n "$r5h" ] && tok_rate_5h=$(printf "%.0f%%" "$r5h")
+        [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
+        [ -n "$ctx" ] && tok_context=$(printf "%.0f%%" "$ctx")
+        [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
+        [ -n "$mdl" ] && tok_model="$mdl"
+    fi
+
     # Status icon and color
     local tok_status color
     if $is_idle; then
@@ -292,9 +308,26 @@ mode_statusline() {
     output="${output//\{branch\}/$tok_branch}"
     output="${output//\{idle\}/$tok_idle}"
     output="${output//\{status\}/$tok_status}"
+    # For tokens that may be empty (from stdin JSON), remove the whole
+    # segment between · separators if the value is empty
+    _replace_or_remove() {
+        local token=$1 value=$2
+        if [ -n "$value" ]; then
+            output="${output//$token/$value}"
+        else
+            # Remove the · segment containing this token
+            # Match: "· words {token} words ·" or at start/end
+            output=$(echo "$output" | sed "s/ *· *[^·]*${token}[^·]*//g; s/[^·]*${token}[^·]* *· *//g; s/[^·]*${token}[^·]*//g")
+        fi
+    }
+    _replace_or_remove '{rate_5h}' "$tok_rate_5h"
+    _replace_or_remove '{rate_7d}' "$tok_rate_7d"
+    _replace_or_remove '{context}' "$tok_context"
+    _replace_or_remove '{cost}' "$tok_cost"
+    _replace_or_remove '{model}' "$tok_model"
 
-    # Clean up artifacts from empty tokens: collapse runs of · and trim
-    output=$(echo "$output" | sed 's/ *· *· */· /g; s/^ *//; s/ *$//; s/^· *//; s/ *·$//')
+    # Clean up: normalize separators (ensure " · " spacing), collapse, trim
+    output=$(echo "$output" | sed 's/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
 
     printf '%b' "${color}${output}${COLOR_RESET}"
 }
