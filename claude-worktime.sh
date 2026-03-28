@@ -18,6 +18,7 @@
 #   claude-worktime --branch BRANCH         # filter by git branch
 #   claude-worktime --breakdown [--today]   # phase breakdown (Claude/You)
 #   claude-worktime --gaps [--today]        # gap distribution (tune threshold)
+#   claude-worktime --cost [--today]        # cost analysis (needs LOG_COST=true)
 #   claude-worktime --summary [--today]     # per-project breakdown
 #   claude-worktime --csv [--today]         # export as CSV
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
@@ -47,6 +48,7 @@ RATE_7D_PROJ_MIN_DAYS=0.5
 AUTO_ROTATE=true
 ROTATE_INTERVAL=monthly  # monthly, weekly, daily
 GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
+LOG_COST=false  # log session cost snapshots (for API/extra usage billing)
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -534,17 +536,25 @@ mode_statusline() {
         # Single jq call to extract all fields
         local stdin_parsed
         stdin_parsed=$(echo "$_STDIN_JSON" | jq -r '[
-            (.rate_limits.five_hour.used_percentage // ""),
-            (.rate_limits.five_hour.resets_at // ""),
-            (.rate_limits.seven_day.used_percentage // ""),
-            (.rate_limits.seven_day.resets_at // ""),
-            (.context_window.used_percentage // ""),
-            (.cost.total_cost_usd // ""),
-            (.model.display_name // "")
-        ] | @tsv' 2>/dev/null || true)
+            (.rate_limits.five_hour.used_percentage // "_"),
+            (.rate_limits.five_hour.resets_at // "_"),
+            (.rate_limits.seven_day.used_percentage // "_"),
+            (.rate_limits.seven_day.resets_at // "_"),
+            (.context_window.used_percentage // "_"),
+            (.cost.total_cost_usd // "_"),
+            (.model.display_name // "_")
+        ] | join("\t")' 2>/dev/null || true)
 
         local r5h r5h_reset r7d r7d_reset ctx cst mdl
         IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cst mdl <<< "$stdin_parsed"
+        # Replace placeholder with empty
+        [ "$r5h" = "_" ] && r5h=""
+        [ "$r5h_reset" = "_" ] && r5h_reset=""
+        [ "$r7d" = "_" ] && r7d=""
+        [ "$r7d_reset" = "_" ] && r7d_reset=""
+        [ "$ctx" = "_" ] && ctx=""
+        [ "$cst" = "_" ] && cst=""
+        [ "$mdl" = "_" ] && mdl=""
 
         if [ -n "$r5h" ]; then
             local r5h_int; r5h_int=$(printf "%.0f" "$r5h")
@@ -606,6 +616,18 @@ mode_statusline() {
                     tok_rate_7d_proj="→${proj}%"
                 fi
             fi
+        fi
+    fi
+
+    # Log cost snapshot if enabled and cost changed
+    if $LOG_COST && [ -n "${cst:-}" ]; then
+        local last_cost
+        last_cost=$(jq -r '[.[] | select(.type == "cost") | .cost] | last // 0' <(jq -Rc 'fromjson? // empty' "$LOGFILE") 2>/dev/null || echo 0)
+        if [ "$last_cost" != "$cst" ]; then
+            jq -nc --argjson t "$now" --arg p "$project" --arg s "$sid" \
+                --argjson cost "$cst" --arg b "${branch:-}" \
+                'if $b == "" then {type:"cost",t:$t,p:$p,s:$s,cost:$cost}
+                 else {type:"cost",t:$t,p:$p,b:$b,s:$s,cost:$cost} end' >> "$LOGFILE"
         fi
     fi
 
@@ -799,6 +821,68 @@ mode_summary() {
         echo "$result" | jq -r '.[] | "  \(.project)  \(
             if .active >= 3600 then "\(.active / 3600 | floor)h \((.active % 3600) / 60 | floor)min"
             else "\(.active / 60 | floor)min" end)"'
+    fi
+}
+
+mode_cost() {
+    local raw=$1 since=$2 filter=$3 branch_filter=$4
+
+    # Get cost entries from all relevant log files
+    local files
+    mapfile -t files < <(_log_files "$since")
+    local cost_filter='. | select(.type == "cost")'
+    [ "$since" -gt 0 ] && cost_filter="$cost_filter | select(.t >= $since)"
+    [ -n "$filter" ] && cost_filter="$cost_filter | select(.p | test(\"$filter\"))"
+    [ -n "$branch_filter" ] && cost_filter="$cost_filter | select(.b // \"\" | test(\"$branch_filter\"))"
+
+    local cost_entries
+    cost_entries=$(cat "${files[@]}" 2>/dev/null | jq -Rc 'fromjson? // empty' 2>/dev/null | jq -c "$cost_filter" 2>/dev/null || true)
+
+    if [ -z "$cost_entries" ]; then
+        if $raw; then echo '{"total":0,"sessions":{}}'
+        else echo "No cost data recorded. Enable with LOG_COST=true in config."; fi
+        return
+    fi
+
+    if $raw; then
+        echo "$cost_entries" | jq -s '
+            group_by(.s) | map({
+                session: .[0].s,
+                project: ([.[] | .p] | last | split("/") | if length >= 2 then [.[-2], .[-1]] | join("/") else last end),
+                branch: ([.[] | .b // empty] | if length > 0 then last else "" end),
+                cost: (if length > 1 then (.[-1].cost - .[0].cost) else .[-1].cost end)
+            }) | {
+                total: (map(.cost) | add // 0),
+                by_project: (group_by(.project) | map({project: .[0].project, cost: ([.[].cost] | add)}) | sort_by(-.cost))
+            }'
+    else
+        # Per-session cost (diff of first and last cost entry per session)
+        local result
+        result=$(echo "$cost_entries" | jq -s '
+            group_by(.s) | map({
+                session: .[0].s[:12],
+                project: ([.[] | .p] | last | split("/") | if length >= 2 then [.[-2], .[-1]] | join("/") else last end),
+                branch: ([.[] | .b // empty] | if length > 0 then last else "" end),
+                cost: (if length > 1 then (.[-1].cost - .[0].cost) else .[-1].cost end),
+                cost_abs: .[-1].cost
+            }) | sort_by(-.cost)
+        ')
+
+        local total
+        total=$(echo "$result" | jq '[.[].cost] | add // 0')
+
+        # Per-project summary
+        echo "Cost by project:"
+        echo "$result" | jq -r '
+            group_by(.project) | map({
+                project: .[0].project,
+                cost: ([.[].cost] | add)
+            }) | sort_by(-.cost) | .[]
+            | "  \(.project)  $\(.cost | . * 100 | round / 100)"
+        '
+
+        echo ""
+        printf "  Total: $%.2f\n" "$total"
     fi
 }
 
@@ -1018,6 +1102,7 @@ while [ $# -gt 0 ]; do
         --summary) MODE="summary" ;;
         --breakdown) MODE="breakdown" ;;
         --gaps) MODE="gaps" ;;
+        --cost) MODE="cost" ;;
         --csv) MODE="csv" ;;
         --statusline) MODE="statusline" ;;
         --rotate) MODE="rotate" ;;
@@ -1043,6 +1128,7 @@ case "$MODE" in
     range)      mode_range "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     breakdown)  mode_breakdown "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     gaps)       mode_gaps "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
+    cost)       mode_cost "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     statusline) mode_statusline ;;

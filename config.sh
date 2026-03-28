@@ -72,6 +72,15 @@ RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
 # Helps you tune PAUSE_THRESHOLD by seeing where your gaps cluster.
 GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
 
+# ---------------------------------------------------------------------------
+# Cost tracking
+# ---------------------------------------------------------------------------
+# Log API-equivalent session cost on each statusline update.
+# Shows what your session would cost at API rates ($15/$75 per MTok for Opus).
+# On subscription plans (Pro/Max), this is informational — not your actual bill.
+# Your real budget is the rate limit windows ({rate_5h}, {rate_7d}).
+LOG_COST=false
+
 # ============================= EXAMPLES ====================================
 #
 # --- Two-line: time + break info + git, rate limits below ---

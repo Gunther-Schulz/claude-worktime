@@ -113,6 +113,11 @@ claude-worktime --csv --today
 claude-worktime --raw
 claude-worktime --breakdown --raw
 
+# Cost analysis (needs LOG_COST=true)
+claude-worktime --cost
+claude-worktime --cost --today
+claude-worktime --cost --filter Todenbuettel
+
 # Log rotation
 claude-worktime --rotate
 ```
@@ -155,6 +160,19 @@ Between sessions (downtime):
 ```
 
 Use this to tune `PAUSE_THRESHOLD` — if many gaps cluster just under the threshold, they might be breaks that are being counted as active time. The bucket boundaries are configurable via `GAP_BUCKETS`.
+
+### Cost analysis
+
+`--cost` shows API-equivalent cost per project (requires `LOG_COST=true` in config):
+
+```
+Cost by project:
+  Hendrik/26-05 Todenbuettel  $3.46
+
+  Total: $3.46
+```
+
+This shows what your session would cost at API rates ($15/$75 per MTok for Opus 4.6). On subscription plans (Pro/Max), this is **informational** — not your actual bill. Your real budget constraint is the rate limit windows. Useful for understanding compute consumption and comparing session intensity.
 
 ## Configuration
 
