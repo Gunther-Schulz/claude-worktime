@@ -99,7 +99,7 @@ LOG_COST=false
 # STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
 # STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
 # Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
-#         ▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · 5% 7d ↻Sat
+#         ▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · 5% 7d ↻Sat
 #
 # --- Single-line compact ---
 # STATUSLINE_FORMAT="{project} · {status}  {session} ({today}) · {rate_5h}"
@@ -110,7 +110,7 @@ LOG_COST=false
 # STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
 # STATUSLINE_FORMAT_3="{model} · ctx {context} · {cost}"
 # Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
-#         ▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51%
+#         ▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51%
 #         Opus 4.6 · ctx 12% · $1.23
 #
 # ===========================================================================
