@@ -78,7 +78,7 @@ With rate limits, git, and break info (via config):
 ◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
 ```
 
-**Note:** The statusline is not real-time — Claude Code updates it after each assistant response, not on a timer. During long multi-tool responses, the display stays frozen until Claude finishes. The underlying time tracking is accurate regardless; only the display is event-driven.
+**Note:** The statusline is not real-time. Claude Code only refreshes it after each assistant response — not when you send a prompt, not during tool execution, and not on a timer. The display stays frozen until Claude finishes responding. The underlying time tracking is accurate regardless; only the display is event-driven.
 
 ### CLI queries
 
