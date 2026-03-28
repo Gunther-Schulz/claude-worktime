@@ -46,29 +46,29 @@ COLOR_RESET="\033[0m"
 
 # ============================= EXAMPLES ====================================
 #
-# --- Project today + all-time total ---
-# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · today {today_project} · total {project_total} · {project}"
-# Result: ⏱  today 45m · total 12h30m · my-org/my-project
+# --- Project-focused with rate limits ---
+# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {rate_5h} ↻{rate_5h_reset} · {rate_7d} 7d · {project}"
+# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · today {today_project} · total {project_total} · {rate_5h} ↻{rate_5h_reset} · {rate_7d} 7d · {project}"
+# Result: ⏱  today 45m · total 12h30m · 20% ↻3h21m · 5% 7d · my-org/my-project
 #
-# --- With rate limit and context usage ---
-# STATUSLINE_FORMAT="{status}  today {today_project} · {rate_5h} used · ctx {context} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · today {today_project} · {rate_5h} used · {project}"
-# Result: ⏱  today 45m · 23% used · ctx 12% · my-org/my-project
+# --- Session-based with rate limit ---
+# STATUSLINE_FORMAT="{status}  session {session} · today {today} · {rate_5h} ↻{rate_5h_reset} · {project}"
+# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · session {session} · today {today} · {project}"
+# Result: ⏱  session 45m · today 2h10m · 20% ↻3h21m · my-org/my-project
 #
-# --- With session cost ---
-# STATUSLINE_FORMAT="{status} {session} · {cost} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status} idle · {cost} · {project}"
-# Result: ⏱ 45m · $1.23 · my-org/my-project
-#
-# --- Compact with rate limit ---
+# --- Compact, no labels ---
 # STATUSLINE_FORMAT="{status} {session} ({today}) · {rate_5h} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status} idle {idle} · {rate_5h} · {project}"
-# Result: ⏱ 45m (2h10m) · 23% · my-org/my-project
+# STATUSLINE_IDLE_FORMAT="{status} idle {idle} · {session} ({today}) · {project}"
+# Result: ⏱ 45m (2h10m) · 20% · my-org/my-project
 #
 # --- Branch-aware ---
 # STATUSLINE_FORMAT="{status} {session} · {project} ({branch}) · today {today}"
 # STATUSLINE_IDLE_FORMAT="{status} idle · {project} ({branch}) · today {today}"
 # Result: ⏱ 45m · my-org/my-project (feature-auth) · today 2h10m
+#
+# --- Kitchen sink: cost, context, rate limits ---
+# STATUSLINE_FORMAT="{status}  {session} · {cost} · ctx {context} · {rate_5h} ↻{rate_5h_reset} · {project}"
+# STATUSLINE_IDLE_FORMAT="{status}  idle · {cost} · {rate_5h} · {project}"
+# Result: ⏱  45m · $1.23 · ctx 12% · 20% ↻3h21m · my-org/my-project
 #
 # ===========================================================================
