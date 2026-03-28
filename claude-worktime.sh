@@ -228,7 +228,7 @@ mode_statusline() {
 
     # Single jq call: compute session info + today + today_project + project_total
     local all_info
-    all_info=$(jq -s --argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" "
+    all_info=$(jq -sr --argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" "
         ${JQ_CALC}
         . as \$raw
         | [.[] | select((.type // null) == null)] as \$all
