@@ -103,7 +103,7 @@ All three auto-hide when no data is available.
 | `{rate_7d_reset}` | Time until 7d window resets |
 | `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
 | `{rate_7d_proj}` | Projected 7d usage (daily average) |
-| `{context}` | `77% ⟳99%` — context window usage + KV cache hit ratio. 77% = how full the context is (auto-compacts at ~95%). ⟳99% = what fraction of context was served from Anthropic's server-side cache vs recomputed. Drops after a long break (cache expires), recovers on subsequent responses. Ratio accumulates across the 5h window. |
+| `{context}` | `77% ⟳93%` — context window usage + cache hit ratio. **77%** = how full your context window is (Claude auto-compacts at ~95%). **⟳93%** = how much of your conversation the API served from its server-side cache vs had to reprocess from scratch. High (>95%) in steady conversation; drops during tool-heavy work (each new tool output is new content that must be processed for the first time) or after long breaks (the server-side cache expires after ~5 minutes of inactivity). Accumulates across the 5h rate limit window and resets with it. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name (e.g. `Opus 4.6`) |
 
