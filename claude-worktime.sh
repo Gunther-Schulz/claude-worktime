@@ -21,6 +21,7 @@
 #   claude-worktime --csv [--today]         # export as CSV
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
 #   claude-worktime --rotate                # archive old entries
+#   claude-worktime --check                 # verify dependencies
 #   claude-worktime --raw                   # JSON output (any mode)
 
 set -euo pipefail
@@ -74,23 +75,69 @@ JQ_BREAKDOWN='def calc_breakdown($pause):
       else .claude += $gap
       end);'
 
-# --- Date helpers ---
-_date_at() {
-    date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null
-}
-_today_start() {
-    date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null
-}
+# --- Date helpers (GNU coreutils, BSD fallback) ---
+_date_at() { date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null; }
+_today_start() { date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null; }
 _week_start() {
     local dow; dow=$(date +%u)
     if [ "$dow" = "1" ]; then _today_start
     else date -d "last monday" +%s 2>/dev/null || date -j -v-monday +%s 2>/dev/null; fi
 }
-_date_parse() {
-    date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2>/dev/null || echo 0
-}
-_require_jq() {
-    command -v jq &>/dev/null || { echo "Error: jq is required." >&2; exit 1; }
+_date_parse() { date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2>/dev/null || echo 0; }
+
+# --- Dependency check ---
+_require_jq() { command -v jq &>/dev/null || { echo "Error: jq is required." >&2; exit 1; }; }
+
+# Minimum versions: bash 4.0, jq 1.6, git 2.22
+cmd_check() {
+    local ok=true
+
+    # bash
+    local bash_ver="${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"
+    if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+        printf "  bash %s  ✓  (need ≥4.0)\n" "$bash_ver"
+    else
+        printf "  bash %s  ✗  (need ≥4.0 — mapfile, read -t fractional)\n" "$bash_ver"
+        ok=false
+    fi
+
+    # jq
+    if command -v jq &>/dev/null; then
+        local jq_ver; jq_ver=$(jq --version 2>/dev/null | sed 's/jq-//')
+        local jq_major; jq_major=$(echo "$jq_ver" | cut -d. -f1)
+        local jq_minor; jq_minor=$(echo "$jq_ver" | cut -d. -f2)
+        if [ "$jq_major" -ge 1 ] && [ "$jq_minor" -ge 6 ]; then
+            printf "  jq %s  ✓  (need ≥1.6)\n" "$jq_ver"
+        else
+            printf "  jq %s  ✗  (need ≥1.6 — @tsv, try-catch, def args)\n" "$jq_ver"
+            ok=false
+        fi
+    else
+        printf "  jq  ✗  (not installed)\n"
+        ok=false
+    fi
+
+    # git (optional)
+    if command -v git &>/dev/null; then
+        local git_ver; git_ver=$(git --version | sed 's/git version //')
+        printf "  git %s  ✓  (optional, for {git} token)\n" "$git_ver"
+    else
+        printf "  git  —  (not installed, {git} token unavailable)\n"
+    fi
+
+    # date
+    if date -d "today 00:00" +%s &>/dev/null; then
+        printf "  date (GNU coreutils)  ✓\n"
+    elif date -j -f "%Y-%m-%d" "2026-01-01" +%s &>/dev/null; then
+        printf "  date (BSD)  ✓\n"
+    else
+        printf "  date  ✗  (neither GNU nor BSD date found)\n"
+        ok=false
+    fi
+
+    echo ""
+    $ok && echo "All dependencies met." || echo "Some dependencies missing or outdated."
+    $ok
 }
 
 # --- Read hook stdin JSON ---
@@ -720,6 +767,7 @@ case "${1:-}" in
         sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
         exit 0
         ;;
+    --check) cmd_check; exit $? ;;
 esac
 
 _require_jq

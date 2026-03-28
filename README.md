@@ -254,9 +254,16 @@ Archives entries older than the current month to `activity-YYYY-MM.log`.
 
 ## Dependencies
 
-- **jq** — required (log parsing, JSON output)
+| Tool | Min version | Required | Used for |
+|------|-------------|----------|----------|
+| **bash** | 4.0 | yes | `mapfile`, `read -t 0.1`, arrays |
+| **jq** | 1.6 | yes | JSONL parsing, `@tsv`, `def` functions |
+| **git** | 2.22 | no | `{git}` status token, branch logging |
+| **date** | GNU coreutils or BSD | yes | timestamp conversion |
 
-That's it. No python, no node, no extra runtimes.
+Run `claude-worktime --check` to verify your system meets these requirements.
+
+No python, no node, no extra runtimes.
 
 ## License
 

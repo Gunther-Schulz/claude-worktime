@@ -102,6 +102,10 @@ if $ENABLE_STATUSLINE; then
 fi
 
 echo ""
+# Verify dependencies
+echo ""
+"$BIN_DIR/$SCRIPT_NAME" --check
+echo ""
 echo "Done! Restart Claude Code to activate."
 echo ""
 echo "Config: $WORKTIME_DIR/config.sh"
