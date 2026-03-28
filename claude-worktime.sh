@@ -646,12 +646,27 @@ mode_statusline() {
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
 
-        # Merge cache hit rate into context token: "77%·99%"
+        # Merge cache hit rate into context token: "77% ⟳99%"
         if [ -n "$ctx" ] && [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
             local cc=${cache_create%.*} cr=${cache_read%.*}
-            local total=$(( ${cc:-0} + ${cr:-0} ))
+
+            # Accumulate cache ratio across the 5h window via state file
+            local cache_state="${LOGDIR}/.cache_ratio"
+            local stored_reset=0 total_cc=0 total_cr=0
+            if [ -f "$cache_state" ]; then
+                read -r stored_reset total_cc total_cr < "$cache_state" 2>/dev/null || true
+            fi
+            # Reset if window changed
+            if [ -n "$r5h_reset" ] && [ "$stored_reset" != "$r5h_reset" ]; then
+                total_cc=0; total_cr=0; stored_reset="$r5h_reset"
+            fi
+            total_cc=$(( total_cc + ${cc:-0} ))
+            total_cr=$(( total_cr + ${cr:-0} ))
+            echo "${stored_reset:-0} $total_cc $total_cr" > "$cache_state" 2>/dev/null
+
+            local total=$(( total_cc + total_cr ))
             if [ "$total" -gt 0 ]; then
-                local cache_pct=$(( ${cr:-0} * 100 / total ))
+                local cache_pct=$(( total_cr * 100 / total ))
                 tok_context="$(printf "%.0f" "$ctx")% ⟳${cache_pct}%"
             else
                 tok_context=$(printf "%.0f%%" "$ctx")
