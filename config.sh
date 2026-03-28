@@ -44,14 +44,15 @@ PAUSE_THRESHOLD=900  # 15 minutes
 # Empty groups (all tokens unavailable) are hidden automatically.
 
 GROUP_PROJECT="{project} ({git})"
-GROUP_TIME="{status} today {today_project} · total {project_total}"
+GROUP_TODAY="{status} today {today_project}"
+GROUP_TOTAL="total {project_total}"
 GROUP_TIMELINE="{timeline} {today}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
 
-STATUSLINE_1="PROJECT TIME"
+STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
 STATUSLINE_3=""
 GROUP_DIVIDER=" · "

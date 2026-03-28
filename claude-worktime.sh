@@ -800,11 +800,11 @@ mode_statusline() {
     local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
     local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
 
-    # Substitute all tokens in a string, return result
+    # Substitute all tokens in a string. Output: "0:text" or "1:text"
+    # where prefix indicates whether any token resolved to non-empty.
     _subst_tokens() {
         local output="$1"
-        _SUBST_NONEMPTY=0
-        local _had_empty_opt=0
+        local nonempty=0
 
         # Always-available tokens
         local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_project}' '{project_total}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
@@ -812,7 +812,7 @@ mode_statusline() {
         local i
         for i in "${!_atokens[@]}"; do
             [[ "$output" != *"${_atokens[$i]}"* ]] && continue
-            [ -n "${_avalues[$i]}" ] && _SUBST_NONEMPTY=1
+            [ -n "${_avalues[$i]}" ] && nonempty=1
             output="${output//${_atokens[$i]}/${_avalues[$i]}}"
         done
 
@@ -820,37 +820,40 @@ mode_statusline() {
         for i in "${!opt_tokens[@]}"; do
             [[ "$output" != *"${opt_tokens[$i]}"* ]] && continue
             if [ -n "${opt_values[$i]}" ]; then
-                _SUBST_NONEMPTY=1
+                nonempty=1
                 output="${output//${opt_tokens[$i]}/${opt_values[$i]}}"
             else
-                _had_empty_opt=1
                 output=$(echo "$output" | sed "s/ *· *[^·]*${opt_tokens[$i]}[^·]*//g; s/[^·]*${opt_tokens[$i]}[^·]* *· *//g; s/[^·]*${opt_tokens[$i]}[^·]*//g")
             fi
         done
 
         # Clean up artifacts
         output=$(echo "$output" | sed 's/ *() *//g; s/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
-        echo "$output"
+        echo "${nonempty}:${output}"
     }
 
     # Legacy: render a full format string (backwards compatible)
     _render_line() {
-        _subst_tokens "$1"
+        local result
+        result=$(_subst_tokens "$1")
+        echo "${result#?:}"
     }
 
     # Group-based: render a line from space-separated group names
     _render_groups() {
         local group_names="$1"
         local divider="${GROUP_DIVIDER:- · }"
-        local result="" name var_name template rendered
+        local result="" name var_name template raw nonempty rendered
 
         for name in $group_names; do
             var_name="GROUP_${name}"
             template="${!var_name:-}"
             [ -z "$template" ] && continue
 
-            rendered=$(_subst_tokens "$template")
-            if [ "$_SUBST_NONEMPTY" -eq 1 ] && [ -n "$rendered" ]; then
+            raw=$(_subst_tokens "$template")
+            nonempty="${raw%%:*}"
+            rendered="${raw#?:}"
+            if [ "$nonempty" = "1" ] && [ -n "$rendered" ]; then
                 if [ -n "$result" ]; then
                     result="${result}${divider}${rendered}"
                 else
