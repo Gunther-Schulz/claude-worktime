@@ -40,5 +40,8 @@ fi
 
 echo ""
 echo "Done. Restart Claude Code to deactivate."
-echo "Note: Activity logs preserved at ~/.claude/worktime/"
-echo "  To remove all data: rm -rf ~/.claude/worktime/"
+echo "Note: Data preserved at:"
+echo "  Config: ${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime/"
+echo "  Logs:   ${XDG_DATA_HOME:-$HOME/.local/share}/claude-worktime/"
+echo "  Legacy: ~/.claude/worktime/ (if present)"
+echo "  To remove all: rm -rf ~/.config/claude-worktime ~/.local/share/claude-worktime ~/.claude/worktime"

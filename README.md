@@ -273,8 +273,11 @@ Set any color to `""` to disable it.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_WORKTIME_DIR` | `~/.claude/worktime` | Directory for logs and config |
+| `CLAUDE_WORKTIME_CONFIG` | `~/.config/claude-worktime` | Config directory |
+| `CLAUDE_WORKTIME_DATA` | `~/.local/share/claude-worktime` | Data directory (logs, archives) |
 | `CLAUDE_WORKTIME_PAUSE` | `900` | Idle threshold in seconds (overrides config) |
+
+Paths follow the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/). You can also set `DATADIR` in `config.sh` to override the data location.
 
 ## Diagnostics
 
@@ -326,9 +329,9 @@ Corrupt lines are tolerated — all readers skip invalid JSON entries gracefully
 
 | Path | Purpose |
 |------|---------|
-| `~/.claude/worktime/activity.log` | Active log (JSONL) |
-| `~/.claude/worktime/config.sh` | Configuration |
-| `~/.claude/worktime/activity-*.log` | Rotated archives |
+| `~/.config/claude-worktime/config.sh` | Configuration |
+| `~/.local/share/claude-worktime/activity.log` | Active log (JSONL) |
+| `~/.local/share/claude-worktime/activity-*.log` | Rotated archives |
 | `~/.local/bin/claude-worktime` | The script |
 
 ## Dependencies

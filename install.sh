@@ -14,11 +14,18 @@ set -euo pipefail
 
 BIN_DIR="${HOME}/.local/bin"
 CLAUDE_DIR="${HOME}/.claude"
-WORKTIME_DIR="${CLAUDE_DIR}/worktime"
 SETTINGS="${CLAUDE_DIR}/settings.json"
 SCRIPT_NAME="claude-worktime"
 SCRIPT_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/claude-worktime.sh"
 CONFIG_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/config.sh"
+
+# XDG paths
+CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
+DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-worktime}"
+
+# Legacy path
+LEGACY_DIR="${CLAUDE_DIR}/worktime"
+
 ENABLE_STATUSLINE=false
 FORCE=false
 
@@ -31,13 +38,33 @@ done
 
 echo "Installing claude-worktime..."
 
-mkdir -p "$BIN_DIR" "$WORKTIME_DIR"
+mkdir -p "$BIN_DIR" "$CONFIGDIR" "$DATADIR"
 
 # Check for jq
 if ! command -v jq &>/dev/null; then
     echo "Error: jq is required. Install with your package manager."
     echo "  apt: sudo apt install jq  |  brew: brew install jq  |  pacman: sudo pacman -S jq"
     exit 1
+fi
+
+# Migrate from legacy location (~/.claude/worktime/)
+if [ -d "$LEGACY_DIR" ]; then
+    echo "  Migrating from legacy location ($LEGACY_DIR)..."
+    # Move config
+    if [ -f "$LEGACY_DIR/config.sh" ] && [ ! -f "$CONFIGDIR/config.sh" ]; then
+        cp "$LEGACY_DIR/config.sh" "$CONFIGDIR/config.sh"
+        echo "    Config → $CONFIGDIR/config.sh"
+    fi
+    # Move data files
+    for f in "$LEGACY_DIR"/activity*.log; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f")
+        if [ ! -f "$DATADIR/$local_name" ]; then
+            cp "$f" "$DATADIR/$local_name"
+            echo "    $local_name → $DATADIR/"
+        fi
+    done
+    echo "  Migration complete. Legacy files kept at $LEGACY_DIR (safe to remove)."
 fi
 
 # Install the script
@@ -50,15 +77,15 @@ chmod +x "$BIN_DIR/$SCRIPT_NAME"
 echo "  Installed $BIN_DIR/$SCRIPT_NAME"
 
 # Install default config (don't overwrite existing)
-if [ ! -f "$WORKTIME_DIR/config.sh" ]; then
+if [ ! -f "$CONFIGDIR/config.sh" ]; then
     if [ -f "config.sh" ]; then
-        cp "config.sh" "$WORKTIME_DIR/config.sh"
+        cp "config.sh" "$CONFIGDIR/config.sh"
     else
-        curl -fsSL "$CONFIG_URL" -o "$WORKTIME_DIR/config.sh"
+        curl -fsSL "$CONFIG_URL" -o "$CONFIGDIR/config.sh"
     fi
-    echo "  Installed default config at $WORKTIME_DIR/config.sh"
+    echo "  Installed default config at $CONFIGDIR/config.sh"
 else
-    echo "  Config already exists at $WORKTIME_DIR/config.sh (kept)"
+    echo "  Config already exists at $CONFIGDIR/config.sh (kept)"
 fi
 
 # Check PATH
@@ -78,8 +105,6 @@ if jq -e '.hooks.SessionStart' "$SETTINGS" &>/dev/null && ! $FORCE; then
 fi
 
 # Hook commands
-# Lifecycle: SessionStart → UserPromptSubmit → PreToolUse → PostToolUse → Stop/StopFailure
-# Idle rule: only response→prompt gap > threshold is idle. All other gaps are work.
 CW="${BIN_DIR}/${SCRIPT_NAME}"
 
 jq --arg cw "$CW" \
@@ -101,14 +126,14 @@ if $ENABLE_STATUSLINE; then
     echo "  Enabled statusline"
 fi
 
-echo ""
 # Verify dependencies
 echo ""
 "$BIN_DIR/$SCRIPT_NAME" --check
 echo ""
 echo "Done! Restart Claude Code to activate."
 echo ""
-echo "Config: $WORKTIME_DIR/config.sh"
+echo "Config: $CONFIGDIR/config.sh"
+echo "Data:   $DATADIR/"
 echo ""
 echo "Usage:"
 echo "  claude-worktime              # current session"

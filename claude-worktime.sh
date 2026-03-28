@@ -31,9 +31,10 @@
 set -euo pipefail
 export LC_ALL=C
 
-LOGDIR="${CLAUDE_WORKTIME_DIR:-${HOME}/.claude/worktime}"
-LOGFILE="${LOGDIR}/activity.log"
-CONFIGFILE="${LOGDIR}/config.sh"
+# Paths: env vars > XDG spec > defaults
+CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
+CONFIGFILE="${CONFIGDIR}/config.sh"
+DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-worktime}"
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
@@ -51,6 +52,10 @@ GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
 LOG_COST=false  # log session cost snapshots (for API/extra usage billing)
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
+
+# DATADIR can be overridden in config.sh, so set LOGDIR/LOGFILE after sourcing
+LOGDIR="${DATADIR}"
+LOGFILE="${LOGDIR}/activity.log"
 
 # Reusable jq: compute active seconds using event-aware idle detection
 # A gap is idle ONLY when: previous event is "response" (or "start") AND gap > pause threshold
@@ -161,11 +166,9 @@ cmd_debug() {
 
     # Paths
     echo "Paths:"
-    echo "  LOGDIR:     $LOGDIR"
-    echo "  LOGFILE:    $LOGFILE"
-    echo "  CONFIGFILE: $CONFIGFILE"
-    echo "  Log exists: $([ -f "$LOGFILE" ] && echo "yes" || echo "NO")"
-    echo "  Config exists: $([ -f "$CONFIGFILE" ] && echo "yes" || echo "NO")"
+    echo "  Config:     $CONFIGFILE $([ -f "$CONFIGFILE" ] && echo "✓" || echo "✗")"
+    echo "  Data dir:   $LOGDIR"
+    echo "  Log file:   $LOGFILE $([ -f "$LOGFILE" ] && echo "✓" || echo "✗")"
     echo ""
 
     # Log stats
