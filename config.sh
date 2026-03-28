@@ -45,19 +45,22 @@ STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5
 STATUSLINE_FORMAT_3=""
 
 # ---------------------------------------------------------------------------
-# Colors (ANSI escape codes, set to "" to disable)
+# Colors — use preset names or raw ANSI codes
 # ---------------------------------------------------------------------------
-COLOR_NORMAL="\033[32m"           # green — working
-COLOR_IDLE="\033[90m"             # gray — idle
-COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate limit ≥90%
-COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate limit ≥100%
-COLOR_TIMELINE_WORK=""            # color for ▮ blocks (empty = same as line)
-COLOR_TIMELINE_BREAK=""           # color for ▯ blocks (empty = same as line)
+# Presets: black, red, green, yellow, blue, magenta, cyan, white, gray,
+#          orange, pink, purple, bright-green, bright-red, bright-yellow,
+#          bright-blue, bright-white, dim, none
+# Raw:     "\033[32m", "\033[38;5;208m", etc.
+COLOR_NORMAL="green"
+COLOR_RATE_WARNING="yellow"
+COLOR_RATE_CRITICAL="red"
+COLOR_TIMELINE_WORK=""             # empty = same as line color
+COLOR_TIMELINE_BREAK=""            # empty = same as line color
 COLOR_RESET="\033[0m"
 
-# Example: green work blocks, dim gray break blocks
-# COLOR_TIMELINE_WORK="\033[32m"
-# COLOR_TIMELINE_BREAK="\033[90m"
+# Example: green work blocks, orange break blocks
+# COLOR_TIMELINE_WORK="green"
+# COLOR_TIMELINE_BREAK="orange"
 
 # ---------------------------------------------------------------------------
 # Auto-rotation — archive old log entries on session start

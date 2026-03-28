@@ -96,6 +96,40 @@ JQ_BREAKDOWN='def calc_breakdown($pause):
       else .claude += $gap
       end);'
 
+# --- Color name resolver: "red" → "\033[31m", passthrough for raw codes ---
+_resolve_color() {
+    case "${1:-}" in
+        black)        echo "\033[30m" ;;
+        red)          echo "\033[31m" ;;
+        green)        echo "\033[32m" ;;
+        yellow)       echo "\033[33m" ;;
+        blue)         echo "\033[34m" ;;
+        magenta)      echo "\033[35m" ;;
+        cyan)         echo "\033[36m" ;;
+        white)        echo "\033[37m" ;;
+        gray|grey)    echo "\033[90m" ;;
+        orange)       echo "\033[38;5;208m" ;;
+        pink)         echo "\033[38;5;213m" ;;
+        purple)       echo "\033[38;5;141m" ;;
+        bright-green) echo "\033[1;32m" ;;
+        bright-red)   echo "\033[1;31m" ;;
+        bright-yellow) echo "\033[1;33m" ;;
+        bright-blue)  echo "\033[1;34m" ;;
+        bright-white) echo "\033[1;37m" ;;
+        dim)          echo "\033[2m" ;;
+        ""|none)      echo "" ;;
+        *)            echo "$1" ;;  # passthrough raw ANSI codes
+    esac
+}
+
+# Resolve all color config values
+COLOR_NORMAL=$(_resolve_color "$COLOR_NORMAL")
+COLOR_RATE_WARNING=$(_resolve_color "$COLOR_RATE_WARNING")
+COLOR_RATE_CRITICAL=$(_resolve_color "$COLOR_RATE_CRITICAL")
+COLOR_TIMELINE_WORK=$(_resolve_color "$COLOR_TIMELINE_WORK")
+COLOR_TIMELINE_BREAK=$(_resolve_color "$COLOR_TIMELINE_BREAK")
+COLOR_RESET=$(_resolve_color "${COLOR_RESET:-"\033[0m"}")
+
 # --- Date helpers (GNU coreutils, BSD fallback) ---
 _date_at() { date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null; }
 _today_start() { date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null; }
