@@ -617,7 +617,7 @@ mode_statusline() {
     fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model="" tok_cache=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
@@ -627,20 +627,32 @@ mode_statusline() {
             (.rate_limits.seven_day.used_percentage // "_"),
             (.rate_limits.seven_day.resets_at // "_"),
             (.context_window.used_percentage // "_"),
+            (.context_window.current_usage.cache_creation_input_tokens // "_"),
+            (.context_window.current_usage.cache_read_input_tokens // "_"),
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_")
         ] | join("\t")' 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cst mdl
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cst mdl <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read cst mdl
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read cst mdl <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
         [ "$r7d" = "_" ] && r7d=""
         [ "$r7d_reset" = "_" ] && r7d_reset=""
         [ "$ctx" = "_" ] && ctx=""
+        [ "$cache_create" = "_" ] && cache_create=""
+        [ "$cache_read" = "_" ] && cache_read=""
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
+
+        # Cache indicator: ⟳ when cache was rebuilt (creation >> read)
+        if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
+            local cc=${cache_create%.*} cr=${cache_read%.*}
+            if [ "${cc:-0}" -gt 10000 ] && [ "${cc:-0}" -gt $(( ${cr:-0} * 5 )) ]; then
+                tok_cache="⟳"
+            fi
+        fi
 
         if [ -n "$r5h" ]; then
             local r5h_int; r5h_int=$(printf "%.0f" "$r5h")
@@ -742,8 +754,8 @@ mode_statusline() {
         output="${output//\{git\}/$tok_git}"
         output="${output//\{timeline\}/$tok_timeline}"
         # Optional tokens: replace if set, remove entire · segment if empty
-        local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
-        local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
+        local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cache}' '{cost}' '{model}' )
+        local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cache" "$tok_cost" "$tok_model" )
         local i
         for i in "${!opt_tokens[@]}"; do
             [[ "$output" != *"${opt_tokens[$i]}"* ]] && continue
