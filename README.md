@@ -174,7 +174,8 @@ A default config with examples is created on install.
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_project}` | Today's total for current project only |
 | `{project_total}` | All-time total for current project |
-| `{last_break}` | Duration of last break this session (empty if none) |
+| `{last_break}` | Last break with ⏸ icon (empty if no break this session) |
+| `{since_break}` | Work time since last break with ▶ icon (empty if no break) |
 
 **Project tokens:**
 

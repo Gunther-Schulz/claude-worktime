@@ -437,6 +437,12 @@ mode_statusline() {
             last_break: ([range(length-1; 0; -1) as \$i
                 | select(\$session[\$i].e == \"prompt\" and (\$session[\$i-1].e == \"response\" or \$session[\$i-1].e == \"start\"))
                 | (\$session[\$i].t - \$session[\$i-1].t) | select(. > \$pause)] | first // 0),
+            since_break: (\$session | . as \$s |
+                ([range(length-1; 0; -1) as \$i
+                    | select(\$s[\$i].e == \"prompt\" and (\$s[\$i-1].e == \"response\" or \$s[\$i-1].e == \"start\")
+                        and (\$s[\$i].t - \$s[\$i-1].t) > \$pause)
+                    | \$i] | first) as \$brk_idx
+                | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
             project: \$proj,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
             today_active: (\$today | calc_active(\$pause)),
@@ -446,7 +452,7 @@ mode_statusline() {
                 + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
             )
         }
-        | [.session_active, .first_t, .last_t, .last_e, .last_break, .project, .branch, .today_active, .today_project_active, .project_total_active]
+        | [.session_active, .first_t, .last_t, .last_e, .last_break, .since_break, .project, .branch, .today_active, .today_project_active, .project_total_active]
         | @tsv
     "
     local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid")
@@ -455,8 +461,8 @@ mode_statusline() {
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
-    local session_active session_first session_last last_e last_break project branch today_active today_project_active project_total_active
-    IFS=$'\t' read -r session_active session_first session_last last_e last_break project branch today_active today_project_active project_total_active <<< "$all_info"
+    local session_active session_first session_last last_e last_break since_break project branch today_active today_project_active project_total_active
+    IFS=$'\t' read -r session_active session_first session_last last_e last_break since_break project branch today_active today_project_active project_total_active <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
@@ -464,7 +470,7 @@ mode_statusline() {
 
     # Build tokens
     local proj_short; proj_short=$(_short_project "$project")
-    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_git
+    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_since_break tok_git
     tok_session=$(_fmt_short "$session_active")
     tok_session_wall=$(_fmt_short "$session_wall")
     tok_today=$(_fmt_short "$today_active")
@@ -474,9 +480,12 @@ mode_statusline() {
     tok_branch="$branch"
     # Only show if there was an actual break (over threshold) this session
     tok_last_break=""
+    tok_since_break=""
     local lb=${last_break:-0}
+    local sb=${since_break:-0}
     if [ "$lb" -gt 0 ]; then
         tok_last_break="⏸ $(_fmt_short "$lb")"
+        tok_since_break="▶$(_fmt_short "$sb")"
     fi
 
 
@@ -607,11 +616,10 @@ mode_statusline() {
         output="${output//\{project\}/$tok_project}"
         output="${output//\{branch\}/$tok_branch}"
         output="${output//\{status\}/$tok_status}"
-        output="${output//\{last_break\}/$tok_last_break}"
         output="${output//\{git\}/$tok_git}"
         # Optional tokens: replace if set, remove entire · segment if empty
-        local -a opt_tokens=( '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
-        local -a opt_values=( "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
+        local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
+        local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
         local i
         for i in "${!opt_tokens[@]}"; do
             [[ "$output" != *"${opt_tokens[$i]}"* ]] && continue
