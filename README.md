@@ -112,7 +112,7 @@ All three auto-hide when no data is available.
 | `{rate_7d_reset}` | Time until 7d window resets |
 | `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
 | `{rate_7d_proj}` | Projected 7d usage (daily average) |
-| `{context}` | `77% ⟳93%` — context window usage + cache hit ratio. **77%** = how full your context window is (Claude auto-compacts at ~95%). **⟳93%** = KV cache hit ratio — how much of your conversation the API served from its server-side cache vs had to reprocess from scratch. High (>95%) in steady conversation; drops during tool-heavy work (each new tool output is new content that must be processed for the first time) or after long breaks (the server-side cache expires after ~5 minutes of inactivity). Accumulates across the 5h rate limit window and resets with it. |
+| `{context}` | `77% ⟳93%` — context window usage + cache hit ratio. **77%** = how full your context window is (Claude auto-compacts at ~95%). **⟳93%** = KV cache hit ratio — how much of your conversation the API served from its server-side cache vs had to reprocess from scratch. High (>95%) in steady conversation; drops during tool-heavy work (each new tool output is new content that must be processed for the first time) or after long breaks (the server-side cache expires after ~5 minutes of inactivity). Accumulates across the 5h rate limit window and resets with it. Note: this only reflects Claude Code sessions — web app usage is not included. In contrast, `{rate_5h}` and `{rate_7d}` reflect all usage across all clients (CLI, web app, API) on your account. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name (e.g. `Opus 4.6`) |
 
