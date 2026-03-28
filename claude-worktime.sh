@@ -646,13 +646,12 @@ mode_statusline() {
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
 
-        # Cache indicator: ⟳ cold (rebuilt), ✓ warm (cached)
+        # Cache hit percentage: what fraction of context was read from cache
         if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
             local cc=${cache_create%.*} cr=${cache_read%.*}
-            if [ "${cc:-0}" -gt 10000 ] && [ "${cc:-0}" -gt $(( ${cr:-0} * 5 )) ]; then
-                tok_cache="⟳"
-            else
-                tok_cache="✓"
+            local total=$(( ${cc:-0} + ${cr:-0} ))
+            if [ "$total" -gt 0 ]; then
+                tok_cache="$(( ${cr:-0} * 100 / total ))%"
             fi
         fi
 
