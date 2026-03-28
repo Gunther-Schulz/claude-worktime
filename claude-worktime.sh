@@ -788,7 +788,9 @@ mode_statusline() {
         [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_RESET}${color}}"
     fi
 
-    # Shared optional token arrays
+    # Token arrays (constant per statusline refresh, shared by all groups)
+    local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_project}' '{project_total}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
+    local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_project" "$tok_project_total" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
     local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
     local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
 
@@ -796,12 +798,11 @@ mode_statusline() {
     # where prefix indicates whether any token resolved to non-empty.
     _subst_tokens() {
         local output="$1"
-        local nonempty=0
+        # Fast path: no token placeholders at all
+        [[ "$output" != *"{"* ]] && { echo "1:${output}"; return; }
+        local nonempty=0 i
 
         # Always-available tokens
-        local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_project}' '{project_total}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
-        local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_project" "$tok_project_total" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-        local i
         for i in "${!_atokens[@]}"; do
             [[ "$output" != *"${_atokens[$i]}"* ]] && continue
             [ -n "${_avalues[$i]}" ] && nonempty=1
@@ -819,8 +820,11 @@ mode_statusline() {
             fi
         done
 
-        # Clean up artifacts
-        output=$(echo "$output" | sed 's/ *() *//g; s/^ *//; s/ *$//')
+        # Clean up artifacts (pure bash, no sed/subshell)
+        output="${output// ()/}"; output="${output//()/}"
+        # Trim leading/trailing whitespace
+        output="${output#"${output%%[![:space:]]*}"}"
+        output="${output%"${output##*[![:space:]]}"}"
         echo "${nonempty}:${output}"
     }
 
