@@ -29,9 +29,15 @@ All other gaps are always active work:
 
 This means long-running tools never get misclassified as idle time.
 
-### Session tracking
+### Tracking dimensions
 
-Each log entry includes the `session_id` from Claude Code. This ID persists across `--resume` and `/resume`, so resuming a session continues the same time counter. Starting a new CLI session without resume creates a new ID.
+Each log entry records three dimensions: **session ID**, **project path**, and **git branch**. You can view and filter time by any of these:
+
+- **Session** (`{session}`, `--session`) — tied to the Claude Code session ID. Persists across `--resume` and `/resume`. A new CLI start without resume creates a new ID.
+- **Project** (`{today_project}`, `{project_total}`, `--filter`) — based on the working directory path. Tracks time per project regardless of which session.
+- **Branch** (`{branch}`, `{git}`, `--branch`) — git branch at the time of each event. Track time per feature branch.
+
+The statusline tokens and CLI filters can be combined freely. For example, `{today_project}` shows today's time for the current project across all sessions, while `{session}` shows the current session across all projects.
 
 ## Install
 
