@@ -9,41 +9,6 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 Time tracking, break detection, rate limit projections, git status, cost analysis — all in a configurable statusline. Event-aware idle detection ensures long-running tools are never misclassified as breaks.
 
-## How it works
-
-Six hooks log events to a JSONL file:
-
-| Hook | Event | Meaning |
-|------|-------|---------|
-| SessionStart | `start` | CLI starts or resumes |
-| UserPromptSubmit | `prompt` | User sends a message |
-| PreToolUse | `tool_start` | Tool about to execute |
-| PostToolUse | `tool_end` | Tool finished executing |
-| Stop | `response` | Claude finished responding |
-| StopFailure | `response` | API error (still counts as work) |
-
-### Idle detection
-
-Only one type of gap can be idle: **`response` → `prompt`** — the moment between Claude finishing its response and the user sending the next message. If this gap exceeds `PAUSE_THRESHOLD` (default: 15 minutes), it's counted as idle.
-
-All other gaps are always active work:
-- `tool_start` → `tool_end` — tool running (even if it takes 20 minutes)
-- `prompt` → `tool_start` — Claude thinking before using a tool
-- `tool_end` → `response` — Claude generating output after tools
-- `prompt` → `response` — Claude thinking (text-only, no tools)
-
-This means long-running tools never get misclassified as idle time.
-
-### Tracking dimensions
-
-Each log entry records three dimensions: **session ID**, **project path**, and **git branch**. You can view and filter time by any of these:
-
-- **Session** (`{session}`, `--session`) — tied to the Claude Code session ID. Persists across `--resume` and `/resume`. A new CLI start without resume creates a new ID.
-- **Project** (`{today_project}`, `{project_total}`, `--filter`) — based on the working directory path. Tracks time per project regardless of which session.
-- **Branch** (`{branch}`, `{git}`, `--branch`) — git branch at the time of each event. Track time per feature branch.
-
-The statusline tokens and CLI filters can be combined freely. For example, `{today_project}` shows today's time for the current project across all sessions, while `{session}` shows the current session across all projects.
-
 ## Install
 
 ```bash
@@ -72,9 +37,7 @@ The installer verifies dependencies automatically. Then **restart Claude Code** 
 
 Removes hooks, statusline config, and the script. Logs are preserved in the data directory.
 
-## Usage
-
-### Statusline
+## Statusline
 
 Up to 3 configurable lines in Claude Code's status bar. Every element is a configurable token — mix and match to show what matters to you.
 
@@ -109,7 +72,7 @@ Up to 3 configurable lines in Claude Code's status bar. Every element is a confi
 │     │       │      └── {rate_7d} 7d ↻{rate_7d_day} — weekly limit + reset day
 │     │       └── {rate_5h_proj} — projected: will reach 51% at window reset
 │     └── {rate_5h_reset} — 5h window resets in 3h21m
-└── {rate_5h} — 30% of 5h limit used (◔<25% ◑<50% ◕<75% ●75%+)
+└── {rate_5h} — 30% of 5h limit used (○<10% ◔<25% ◑<50% ◕<75% ●75%+)
 ```
 
 **Compact single line:**
@@ -119,7 +82,108 @@ Up to 3 configurable lines in Claude Code's status bar. Every element is a confi
 
 **Note:** The statusline is not real-time. Claude Code only refreshes it after each assistant response — not when you send a prompt, not during tool execution, and not on a timer. The display stays frozen until Claude finishes responding. The underlying time tracking is accurate regardless; only the display is event-driven.
 
-### CLI queries
+## Configuration
+
+Config file: `~/.config/claude-worktime/config.sh` — plain bash key-value pairs with comments.
+
+A default config with examples is created on install.
+
+### Format tokens
+
+**Time tokens** (computed from activity log):
+
+| Token | Description |
+|-------|-------------|
+| `{status}` | ⏱ icon |
+| `{session}` | Active time in current session (by session ID) |
+| `{session_wall}` | Wall clock time since session started |
+| `{today}` | Today's total active time (all sessions, all projects) |
+| `{today_project}` | Today's total for current project only |
+| `{project_total}` | All-time total for current project |
+| `{since_break}` | ▶2h40m — continuous work time since most recent break |
+| `{last_break}` | ⏸ 41m — duration of most recent break |
+
+Both `{since_break}` and `{last_break}` auto-hide when no break has occurred this session.
+
+**Project tokens:**
+
+| Token | Description |
+|-------|-------------|
+| `{project}` | Project name (last 2 path segments) |
+| `{branch}` | Git branch name |
+| `{git}` | Branch + state: `main ✓` `main ✗` `main +` `main ?` `main ↑2` `main ↓1` |
+
+**Claude Code tokens** (from statusline stdin JSON):
+
+| Token | Description |
+|-------|-------------|
+| `{rate_5h}` | 5-hour rate limit with pie icon: `○5%` `◔15%` `◑35%` `◕60%` `●80%` |
+| `{rate_5h_reset}` | Time until 5h window resets (e.g. `3h21m`) |
+| `{rate_5h_proj}` | Projected 5h usage at reset (e.g. `→51%`) |
+| `{rate_7d}` | 7-day rate limit usage (e.g. `5%`) |
+| `{rate_7d_reset}` | Time until 7d window resets |
+| `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
+| `{rate_7d_proj}` | Projected 7d usage (daily average) |
+| `{context}` | Context window usage (e.g. `45%`) |
+| `{cost}` | Session cost (e.g. `$1.23`) |
+| `{model}` | Model name (e.g. `Opus 4.6`) |
+
+Empty tokens are automatically removed along with their surrounding separators.
+
+### Multi-line statusline
+
+Up to 3 lines. Set `STATUSLINE_FORMAT_2` and `_3` for additional rows:
+
+```bash
+STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
+STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
+```
+
+### Rate limit projections
+
+The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Projection color is configurable via `COLOR_RATE_WARNING` (default: yellow at ≥90%) and `COLOR_RATE_CRITICAL` (default: red at ≥100%). Set to `""` to disable.
+
+The 7d projection uses daily averages and requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
+
+### Auto-rotation
+
+Old log entries are automatically archived on session start. Configure in `config.sh`:
+
+```bash
+AUTO_ROTATE=true
+ROTATE_INTERVAL=monthly    # monthly, weekly, daily
+```
+
+Archive filenames adapt to the interval:
+- `monthly` → `activity-2026-03.log`
+- `weekly` → `activity-2026-W13.log`
+- `daily` → `activity-2026-03-28.log`
+
+Per-project summary entries are preserved in the active log so `{project_total}` survives rotation. CLI queries (`--since`, `--summary`, `--csv`, etc.) automatically search archived logs for historical data.
+
+Manual rotation: `claude-worktime --rotate`
+
+### Colors
+
+```bash
+COLOR_NORMAL="\033[32m"           # green — working
+COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate ≥90%
+COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate ≥100%
+```
+
+Set any color to `""` to disable it.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAUDE_WORKTIME_CONFIG` | `~/.config/claude-worktime` | Config directory |
+| `CLAUDE_WORKTIME_DATA` | `~/.local/share/claude-worktime` | Data directory (logs, archives) |
+| `CLAUDE_WORKTIME_PAUSE` | `900` | Idle threshold in seconds (overrides config) |
+
+Paths follow the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/). You can also set `DATADIR` in `config.sh` to override the data location.
+
+## CLI queries
 
 ```bash
 # Current session
@@ -216,108 +280,6 @@ Cost by project:
 
 This shows what your session would cost at API rates ($15/$75 per MTok for Opus 4.6). On subscription plans (Pro/Max), this is **informational** — not your actual bill. Your real budget constraint is the rate limit windows. Useful for understanding compute consumption and comparing session intensity.
 
-## Configuration
-
-Config file: `~/.config/claude-worktime/config.sh` — plain bash key-value pairs with comments.
-
-A default config with examples is created on install.
-
-### Format tokens
-
-**Time tokens** (computed from activity log):
-
-| Token | Description |
-|-------|-------------|
-| `{status}` | ⏱ icon |
-| `{session}` | Active time in current session (by session ID) |
-| `{session_wall}` | Wall clock time since session started |
-| `{today}` | Today's total active time (all sessions, all projects) |
-| `{today_project}` | Today's total for current project only |
-| `{project_total}` | All-time total for current project |
-| `{since_break}` | ▶2h40m — continuous work time since most recent break |
-| `{last_break}` | ⏸ 41m — duration of most recent break |
-
-Both `{since_break}` and `{last_break}` auto-hide when no break has occurred this session.
-
-**Project tokens:**
-
-| Token | Description |
-|-------|-------------|
-| `{project}` | Project name (last 2 path segments) |
-| `{branch}` | Git branch name |
-| `{git}` | Branch + state: `main ✓` `main ✗` `main +` `main ?` `main ↑2` `main ↓1` |
-
-**Claude Code tokens** (from statusline stdin JSON):
-
-| Token | Description |
-|-------|-------------|
-| `{rate_5h}` | 5-hour rate limit with pie icon: `○5%` `◔15%` `◑35%` `◕60%` `●80%` |
-| `{rate_5h_reset}` | Time until 5h window resets (e.g. `3h21m`) |
-| `{rate_5h_proj}` | Projected 5h usage at reset (e.g. `→51%`) |
-| `{rate_7d}` | 7-day rate limit usage (e.g. `5%`) |
-| `{rate_7d_reset}` | Time until 7d window resets |
-| `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
-| `{rate_7d_proj}` | Projected 7d usage (daily average) |
-| `{context}` | Context window usage (e.g. `45%`) |
-| `{cost}` | Session cost (e.g. `$1.23`) |
-| `{model}` | Model name (e.g. `Opus 4.6`) |
-
-Empty tokens are automatically removed along with their surrounding separators.
-
-### Multi-line statusline
-
-Up to 3 lines. Set `STATUSLINE_FORMAT_2` and `_3` for additional rows:
-
-```bash
-STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
-STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
-```
-
-
-### Rate limit projections
-
-The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Projection color is configurable via `COLOR_RATE_WARNING` (default: yellow at ≥90%) and `COLOR_RATE_CRITICAL` (default: red at ≥100%). Set to `""` to disable.
-
-The 7d projection uses daily averages and requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
-
-### Auto-rotation
-
-Old log entries are automatically archived on session start. Configure in `config.sh`:
-
-```bash
-AUTO_ROTATE=true
-ROTATE_INTERVAL=monthly    # monthly, weekly, daily
-```
-
-Archive filenames adapt to the interval:
-- `monthly` → `activity-2026-03.log`
-- `weekly` → `activity-2026-W13.log`
-- `daily` → `activity-2026-03-28.log`
-
-Per-project summary entries are preserved in the active log so `{project_total}` survives rotation. CLI queries (`--since`, `--summary`, `--csv`, etc.) automatically search archived logs for historical data.
-
-Manual rotation: `claude-worktime --rotate`
-
-### Colors
-
-```bash
-COLOR_NORMAL="\033[32m"           # green — working
-COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate ≥90%
-COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate ≥100%
-```
-
-Set any color to `""` to disable it.
-
-### Environment variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLAUDE_WORKTIME_CONFIG` | `~/.config/claude-worktime` | Config directory |
-| `CLAUDE_WORKTIME_DATA` | `~/.local/share/claude-worktime` | Data directory (logs, archives) |
-| `CLAUDE_WORKTIME_PAUSE` | `900` | Idle threshold in seconds (overrides config) |
-
-Paths follow the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/). You can also set `DATADIR` in `config.sh` to override the data location.
-
 ## Diagnostics
 
 ```bash
@@ -339,6 +301,41 @@ claude-worktime --repair
 - Hook status (which hooks are installed)
 - Statusline performance timing
 - Dependency versions
+
+## How it works
+
+Six hooks log events to a JSONL file:
+
+| Hook | Event | Meaning |
+|------|-------|---------|
+| SessionStart | `start` | CLI starts or resumes |
+| UserPromptSubmit | `prompt` | User sends a message |
+| PreToolUse | `tool_start` | Tool about to execute |
+| PostToolUse | `tool_end` | Tool finished executing |
+| Stop | `response` | Claude finished responding |
+| StopFailure | `response` | API error (still counts as work) |
+
+### Idle detection
+
+Only one type of gap can be idle: **`response` → `prompt`** — the moment between Claude finishing its response and the user sending the next message. If this gap exceeds `PAUSE_THRESHOLD` (default: 15 minutes), it's counted as idle.
+
+All other gaps are always active work:
+- `tool_start` → `tool_end` — tool running (even if it takes 20 minutes)
+- `prompt` → `tool_start` — Claude thinking before using a tool
+- `tool_end` → `response` — Claude generating output after tools
+- `prompt` → `response` — Claude thinking (text-only, no tools)
+
+This means long-running tools never get misclassified as idle time.
+
+### Tracking dimensions
+
+Each log entry records three dimensions: **session ID**, **project path**, and **git branch**. You can view and filter time by any of these:
+
+- **Session** (`{session}`, `--session`) — tied to the Claude Code session ID. Persists across `--resume` and `/resume`. A new CLI start without resume creates a new ID.
+- **Project** (`{today_project}`, `{project_total}`, `--filter`) — based on the working directory path. Tracks time per project regardless of which session.
+- **Branch** (`{branch}`, `{git}`, `--branch`) — git branch at the time of each event. Track time per feature branch.
+
+The statusline tokens and CLI filters can be combined freely. For example, `{today_project}` shows today's time for the current project across all sessions, while `{session}` shows the current session across all projects.
 
 ## Log format
 
