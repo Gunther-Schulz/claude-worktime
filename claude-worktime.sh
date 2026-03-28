@@ -546,7 +546,14 @@ mode_statusline() {
         local r5h r5h_reset r7d r7d_reset ctx cst mdl
         IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cst mdl <<< "$stdin_parsed"
 
-        [ -n "$r5h" ] && tok_rate_5h=$(printf "%.0f%%" "$r5h")
+        if [ -n "$r5h" ]; then
+            local r5h_int; r5h_int=$(printf "%.0f" "$r5h")
+            local r5h_icon="◔"
+            [ "$r5h_int" -ge 25 ] && r5h_icon="◑"
+            [ "$r5h_int" -ge 50 ] && r5h_icon="◕"
+            [ "$r5h_int" -ge 75 ] && r5h_icon="●"
+            tok_rate_5h="${r5h_icon}${r5h_int}%"
+        fi
         [ -n "$r5h_reset" ] && tok_rate_5h_reset=$(_fmt_short $(( r5h_reset - now )))
         [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
         [ -n "$r7d_reset" ] && tok_rate_7d_reset=$(_fmt_short $(( r7d_reset - now )))
