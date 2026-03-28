@@ -312,7 +312,26 @@ mode_statusline() {
             fi
         }
         [ -n "$r5h" ] && [ -n "$r5h_reset" ] && tok_rate_5h_proj=$(_project_rate "$r5h" "$r5h_reset" 18000)
-        [ -n "$r7d" ] && [ -n "$r7d_reset" ] && tok_rate_7d_proj=$(_project_rate "$r7d" "$r7d_reset" 604800)
+        # 7d projection: average by daily buckets (resets Fridays)
+        if [ -n "$r7d" ] && [ -n "$r7d_reset" ]; then
+            local days_elapsed days_total=7
+            days_elapsed=$(awk "BEGIN { d = ($days_total * 86400 - ($r7d_reset - $now)) / 86400; printf \"%.1f\", (d > 0.1 ? d : 0) }")
+            if [ "$days_elapsed" != "0.0" ]; then
+                local proj
+                proj=$(awk "BEGIN { daily = $r7d / $days_elapsed; printf \"%.0f\", daily * $days_total }")
+                local proj_color=""
+                if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+                    proj_color="$COLOR_RATE_CRITICAL"
+                elif [ "$proj" -ge 90 ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+                    proj_color="$COLOR_RATE_WARNING"
+                fi
+                if [ -n "$proj_color" ]; then
+                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
+                else
+                    tok_rate_7d_proj="→${proj}%"
+                fi
+            fi
+        fi
     fi
 
     # Status icon and color
