@@ -617,7 +617,7 @@ mode_statusline() {
     fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model="" tok_cache=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
@@ -646,13 +646,18 @@ mode_statusline() {
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
 
-        # Cache hit percentage: what fraction of context was read from cache
-        if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
+        # Merge cache hit rate into context token: "77%·99%"
+        if [ -n "$ctx" ] && [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
             local cc=${cache_create%.*} cr=${cache_read%.*}
             local total=$(( ${cc:-0} + ${cr:-0} ))
             if [ "$total" -gt 0 ]; then
-                tok_cache="$(( ${cr:-0} * 100 / total ))%"
+                local cache_pct=$(( ${cr:-0} * 100 / total ))
+                tok_context="$(printf "%.0f" "$ctx")%·${cache_pct}%"
+            else
+                tok_context=$(printf "%.0f%%" "$ctx")
             fi
+        elif [ -n "$ctx" ]; then
+            tok_context=$(printf "%.0f%%" "$ctx")
         fi
 
         if [ -n "$r5h" ]; then
@@ -755,8 +760,8 @@ mode_statusline() {
         output="${output//\{git\}/$tok_git}"
         output="${output//\{timeline\}/$tok_timeline}"
         # Optional tokens: replace if set, remove entire · segment if empty
-        local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cache}' '{cost}' '{model}' )
-        local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cache" "$tok_cost" "$tok_model" )
+        local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
+        local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
         local i
         for i in "${!opt_tokens[@]}"; do
             [[ "$output" != *"${opt_tokens[$i]}"* ]] && continue
