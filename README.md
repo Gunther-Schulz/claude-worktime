@@ -140,16 +140,6 @@ GROUP_DIVIDER=" · "
 
 Reorder groups by moving names. Add a third line with `STATUSLINE_3="MODEL"` and `GROUP_MODEL="{model} · {cost}"`. Create custom groups with any mix of tokens.
 
-### Legacy format strings
-
-The old flat format strings still work. If `STATUSLINE_1` is empty, the legacy `STATUSLINE_FORMAT` / `_2` / `_3` variables are used instead:
-
-```bash
-STATUSLINE_1=""  # disable groups, use legacy
-STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
-STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
-```
-
 ### Rate limit projections
 
 The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Projection color is configurable via `COLOR_RATE_WARNING` (default: yellow at ≥90%) and `COLOR_RATE_CRITICAL` (default: red at ≥100%). Set to `""` to disable.

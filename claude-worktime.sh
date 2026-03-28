@@ -47,13 +47,17 @@ DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-wor
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
-STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
-STATUSLINE_FORMAT_3=""
-# Group-based statusline (opt-in: set STATUSLINE_1 to enable)
+GROUP_PROJECT="{project} ({git})"
+GROUP_TODAY="{status} today {today_project}"
+GROUP_TOTAL="total {project_total}"
+GROUP_TIMELINE="{timeline} {today}"
+GROUP_BREAKS="{since_break} {last_break}"
+GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
+GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+GROUP_CONTEXT="ctx {context}"
 GROUP_DIVIDER=" · "
-STATUSLINE_1=""
-STATUSLINE_2=""
+STATUSLINE_1="PROJECT TODAY TOTAL"
+STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
 STATUSLINE_3=""
 COLOR_NORMAL="green"
 COLOR_RATE_WARNING="yellow"
@@ -295,23 +299,15 @@ cmd_debug() {
     echo "  AUTO_ROTATE:        $AUTO_ROTATE"
     echo "  ROTATE_INTERVAL:    $ROTATE_INTERVAL"
     echo "  RATE_7D_PROJ_MIN:   ${RATE_7D_PROJ_MIN_DAYS} days"
-    if [ -n "${STATUSLINE_1:-}" ]; then
-        echo "  Mode:               groups"
-        echo "  STATUSLINE_1:       $STATUSLINE_1"
-        [ -n "${STATUSLINE_2:-}" ] && echo "  STATUSLINE_2:       $STATUSLINE_2"
-        [ -n "${STATUSLINE_3:-}" ] && echo "  STATUSLINE_3:       $STATUSLINE_3"
-        echo "  GROUP_DIVIDER:      '${GROUP_DIVIDER}'"
-        local _v
-        for _v in $(compgen -A variable GROUP_ 2>/dev/null); do
-            [[ "$_v" == "GROUP_DIVIDER" ]] && continue
-            echo "  ${_v}:$(printf '%*s' $((18 - ${#_v})) '')${!_v}"
-        done
-    else
-        echo "  Mode:               legacy"
-        echo "  STATUSLINE_FORMAT:  $STATUSLINE_FORMAT"
-        [ -n "${STATUSLINE_FORMAT_2:-}" ] && echo "  STATUSLINE_FORMAT_2: $STATUSLINE_FORMAT_2"
-        [ -n "${STATUSLINE_FORMAT_3:-}" ] && echo "  STATUSLINE_FORMAT_3: $STATUSLINE_FORMAT_3"
-    fi
+    echo "  STATUSLINE_1:       $STATUSLINE_1"
+    [ -n "${STATUSLINE_2:-}" ] && echo "  STATUSLINE_2:       $STATUSLINE_2"
+    [ -n "${STATUSLINE_3:-}" ] && echo "  STATUSLINE_3:       $STATUSLINE_3"
+    echo "  GROUP_DIVIDER:      '${GROUP_DIVIDER}'"
+    local _v
+    for _v in $(compgen -A variable GROUP_ 2>/dev/null); do
+        [[ "$_v" == "GROUP_DIVIDER" ]] && continue
+        echo "  ${_v}:$(printf '%*s' $((18 - ${#_v})) '')${!_v}"
+    done
     echo ""
 
     # Hooks
@@ -563,15 +559,11 @@ mode_statusline() {
     "
     local tl_width=${TIMELINE_WIDTH:-20}
     local all_formats=""
-    if [ -n "${STATUSLINE_1:-}" ]; then
-        local _gname _gvar
-        for _gname in ${STATUSLINE_1:-} ${STATUSLINE_2:-} ${STATUSLINE_3:-}; do
-            _gvar="GROUP_${_gname}"
-            all_formats="${all_formats}${!_gvar:-}"
-        done
-    else
-        all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}"
-    fi
+    local _gname _gvar
+    for _gname in ${STATUSLINE_1:-} ${STATUSLINE_2:-} ${STATUSLINE_3:-}; do
+        _gvar="GROUP_${_gname}"
+        all_formats="${all_formats}${!_gvar:-}"
+    done
     [[ "$all_formats" != *"{timeline}"* ]] && tl_width=0
     local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson width "$tl_width")
 
@@ -796,11 +788,11 @@ mode_statusline() {
         [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_RESET}${color}}"
     fi
 
-    # Shared token arrays (used by both _render_line and _render_group)
+    # Shared optional token arrays
     local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
     local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
 
-    # Substitute all tokens in a string. Output: "0:text" or "1:text"
+    # Substitute all tokens in a group template. Output: "0:text" or "1:text"
     # where prefix indicates whether any token resolved to non-empty.
     _subst_tokens() {
         local output="$1"
@@ -823,23 +815,16 @@ mode_statusline() {
                 nonempty=1
                 output="${output//${opt_tokens[$i]}/${opt_values[$i]}}"
             else
-                output=$(echo "$output" | sed "s/ *· *[^·]*${opt_tokens[$i]}[^·]*//g; s/[^·]*${opt_tokens[$i]}[^·]* *· *//g; s/[^·]*${opt_tokens[$i]}[^·]*//g")
+                output="${output//${opt_tokens[$i]}/}"
             fi
         done
 
         # Clean up artifacts
-        output=$(echo "$output" | sed 's/ *() *//g; s/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
+        output=$(echo "$output" | sed 's/ *() *//g; s/^ *//; s/ *$//')
         echo "${nonempty}:${output}"
     }
 
-    # Legacy: render a full format string (backwards compatible)
-    _render_line() {
-        local result
-        result=$(_subst_tokens "$1")
-        echo "${result#?:}"
-    }
-
-    # Group-based: render a line from space-separated group names
+    # Render a line from space-separated group names
     _render_groups() {
         local group_names="$1"
         local divider="${GROUP_DIVIDER:- · }"
@@ -865,30 +850,13 @@ mode_statusline() {
     }
 
     # Output
-    if [ -n "${STATUSLINE_1:-}" ]; then
-        # Group-based rendering
-        printf '%b' "${color}$(_render_groups "$STATUSLINE_1")${COLOR_RESET}"
-        local _sl_extra _sl_rendered
-        for _sl_extra in "${STATUSLINE_2:-}" "${STATUSLINE_3:-}"; do
-            [ -z "$_sl_extra" ] && continue
-            _sl_rendered=$(_render_groups "$_sl_extra")
-            [ -n "$_sl_rendered" ] && printf '\n%b' "${color}${_sl_rendered}${COLOR_RESET}"
-        done
-    else
-        # Legacy format string rendering
-        local fmt1="$STATUSLINE_FORMAT"
-        local fmt2="${STATUSLINE_FORMAT_2:-}"
-        local fmt3="${STATUSLINE_FORMAT_3:-}"
-
-        printf '%b' "${color}$(_render_line "$fmt1")${COLOR_RESET}"
-
-        local extra line
-        for extra in "$fmt2" "$fmt3"; do
-            [ -z "$extra" ] && continue
-            line=$(_render_line "$extra")
-            [ -n "$line" ] && printf '\n%b' "${color}${line}${COLOR_RESET}"
-        done
-    fi
+    printf '%b' "${color}$(_render_groups "$STATUSLINE_1")${COLOR_RESET}"
+    local _sl_extra _sl_rendered
+    for _sl_extra in "${STATUSLINE_2:-}" "${STATUSLINE_3:-}"; do
+        [ -z "$_sl_extra" ] && continue
+        _sl_rendered=$(_render_groups "$_sl_extra")
+        [ -n "$_sl_rendered" ] && printf '\n%b' "${color}${_sl_rendered}${COLOR_RESET}"
+    done
 }
 
 # ============================================================

@@ -121,11 +121,6 @@ LOG_COST=false
 #
 # --- Custom group with session wall time ---
 # GROUP_WALL="{session}/{session_wall}"
-# STATUSLINE_1="PROJECT TIME WALL"
-#
-# --- Legacy format strings (still supported, used when STATUSLINE_1 is empty) ---
-# STATUSLINE_1=""
-# STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
+# STATUSLINE_1="PROJECT TODAY TOTAL WALL"
 #
 # ===========================================================================
