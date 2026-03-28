@@ -15,6 +15,9 @@
 #   Project tokens:
 #   {project}        — project name (last 2 path segments)
 #   {branch}         — git branch name
+#   {git}            — branch + state: "main ✓" clean, "main ✗" dirty,
+#                      "main +" staged, "main ?" untracked, "main ↑2" ahead,
+#                      "main ↓1" behind (combines: "main +✗↑2")
 #
 #   Claude Code tokens (from statusline stdin JSON):
 #   {rate_5h}        — 5-hour rate limit usage (e.g. "23%")
@@ -55,29 +58,24 @@ RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
 
 # ============================= EXAMPLES ====================================
 #
-# --- Project-focused with both rate limits and projections ---
-# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · today {today_project} · total {project_total} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · {project}"
-# Result: ⏱  today 45m · total 12h30m · 20% ↻3h21m →51% · 5% 7d ↻Sat →35% · my-org/my-project
+# --- Project-focused with rate limits, git status ---
+# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · {project} ({git})"
+# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · today {today_project} · total {project_total} · {project} ({git})"
+# Result: ⏱  today 45m · total 12h30m · 20% ↻3h21m →51% · 5% 7d ↻Sat →35% · my-org/my-project (main ✓)
 #
-# --- Session-based, compact rate info ---
-# STATUSLINE_FORMAT="{status}  session {session} · today {today} · {rate_5h} {rate_5h_proj} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · session {session} · today {today} · {project}"
-# Result: ⏱  session 45m · today 2h10m · 20% →51% · my-org/my-project
+# --- Session-based with git ---
+# STATUSLINE_FORMAT="{status}  session {session} · today {today} · {rate_5h} {rate_5h_proj} · {project} ({git})"
+# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · session {session} · today {today} · {project} ({git})"
+# Result: ⏱  session 45m · today 2h10m · 20% →51% · my-org/my-project (main ✗↑2)
 #
-# --- Compact, no labels ---
+# --- Compact ---
 # STATUSLINE_FORMAT="{status} {session} ({today}) · {rate_5h} · {project}"
 # STATUSLINE_IDLE_FORMAT="{status} idle {idle} · {session} ({today}) · {project}"
 # Result: ⏱ 45m (2h10m) · 20% · my-org/my-project
 #
-# --- Branch-aware ---
-# STATUSLINE_FORMAT="{status} {session} · {project} ({branch}) · today {today}"
-# STATUSLINE_IDLE_FORMAT="{status} idle · {project} ({branch}) · today {today}"
-# Result: ⏱ 45m · my-org/my-project (feature-auth) · today 2h10m
-#
-# --- Kitchen sink: cost, context, all rate limits ---
-# STATUSLINE_FORMAT="{status}  {session} · {cost} · ctx {context} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status}  idle · {cost} · {rate_5h} · {rate_7d} 7d · {project}"
-# Result: ⏱  45m · $1.23 · ctx 12% · 20% ↻3h21m →51% · 5% 7d ↻Sat →35% · my-org/my-project
+# --- Kitchen sink: cost, context, git, all rate limits ---
+# STATUSLINE_FORMAT="{status}  {session} · {cost} · ctx {context} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · {project} ({git})"
+# STATUSLINE_IDLE_FORMAT="{status}  idle · {cost} · {rate_5h} · {project} ({git})"
+# Result: ⏱  45m · $1.23 · ctx 12% · 20% ↻3h21m →51% · 5% 7d ↻Sat →35% · my-org/my-project (main +✗↑2)
 #
 # ===========================================================================

@@ -262,7 +262,7 @@ mode_statusline() {
 
     # Build tokens
     local proj_short; proj_short=$(_short_project "$project")
-    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_idle tok_break
+    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_idle tok_git
     tok_session=$(_fmt_short "$session_active")
     tok_session_wall=$(_fmt_short "$session_wall")
     tok_today=$(_fmt_short "$today_active")
@@ -271,6 +271,46 @@ mode_statusline() {
     tok_project="$proj_short"
     tok_branch="$branch"
     tok_idle=$(_fmt_short "$gap")
+
+    # Git status — only compute if {git} is in the format string
+    tok_git=""
+    local format_check
+    if $is_idle; then format_check="$STATUSLINE_IDLE_FORMAT"; else format_check="$STATUSLINE_FORMAT"; fi
+    if [[ "$format_check" == *"{git}"* ]] && [ -n "$project" ]; then
+        local git_status git_str=""
+        git_status=$(git -C "$project" status --porcelain -b 2>/dev/null || true)
+        if [ -n "$git_status" ]; then
+            local git_branch_line git_state=""
+            git_branch_line=$(echo "$git_status" | head -1)
+            # Branch name from "## branch...tracking"
+            local gb
+            gb=$(echo "$git_branch_line" | sed 's/^## //; s/\.\.\..*//')
+            # Ahead/behind
+            local ahead="" behind=""
+            [[ "$git_branch_line" == *"ahead "* ]] && ahead=$(echo "$git_branch_line" | sed 's/.*ahead \([0-9]*\).*/\1/')
+            [[ "$git_branch_line" == *"behind "* ]] && behind=$(echo "$git_branch_line" | sed 's/.*behind \([0-9]*\).*/\1/')
+            # Working tree state
+            local dirty=false staged=false untracked=false
+            local file_lines
+            file_lines=$(echo "$git_status" | tail -n +2)
+            if [ -n "$file_lines" ]; then
+                echo "$file_lines" | grep -q '^[MADRC]' && staged=true
+                echo "$file_lines" | grep -q '^.[MDRC]' && dirty=true
+                echo "$file_lines" | grep -q '^??' && untracked=true
+            fi
+            # Build state string
+            if ! $dirty && ! $staged && ! $untracked; then
+                git_state="✓"
+            else
+                $staged && git_state="${git_state}+"
+                $dirty && git_state="${git_state}✗"
+                $untracked && git_state="${git_state}?"
+            fi
+            [ -n "$ahead" ] && git_state="${git_state}↑${ahead}"
+            [ -n "$behind" ] && git_state="${git_state}↓${behind}"
+            tok_git="${gb} ${git_state}"
+        fi
+    fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
     local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
@@ -362,7 +402,7 @@ mode_statusline() {
     output="${output//\{branch\}/$tok_branch}"
     output="${output//\{idle\}/$tok_idle}"
     output="${output//\{status\}/$tok_status}"
-    # For tokens that may be empty (from stdin JSON), remove the whole
+    # For tokens that may be empty (from stdin JSON or git), remove the whole
     # segment between · separators if the value is empty
     _replace_or_remove() {
         local token=$1 value=$2
@@ -374,6 +414,7 @@ mode_statusline() {
             output=$(echo "$output" | sed "s/ *· *[^·]*${token}[^·]*//g; s/[^·]*${token}[^·]* *· *//g; s/[^·]*${token}[^·]*//g")
         fi
     }
+    output="${output//\{git\}/$tok_git}"
     _replace_or_remove '{rate_5h}' "$tok_rate_5h"
     _replace_or_remove '{rate_5h_reset}' "$tok_rate_5h_reset"
     _replace_or_remove '{rate_5h_proj}' "$tok_rate_5h_proj"
@@ -385,8 +426,8 @@ mode_statusline() {
     _replace_or_remove '{cost}' "$tok_cost"
     _replace_or_remove '{model}' "$tok_model"
 
-    # Clean up: normalize separators (ensure " · " spacing), collapse, trim
-    output=$(echo "$output" | sed 's/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
+    # Clean up: remove empty parens, normalize separators, collapse, trim
+    output=$(echo "$output" | sed 's/ *() *//g; s/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
 
     printf '%b' "${color}${output}${COLOR_RESET}"
 }
