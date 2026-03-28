@@ -733,10 +733,10 @@ mode_statusline() {
         if [ -n "$r5h" ]; then
             local r5h_int="${r5h%%.*}"
             local r5h_icon="○"
-            [ "$r5h_int" -ge 10 ] && r5h_icon="◔"
-            [ "$r5h_int" -ge 25 ] && r5h_icon="◑"
-            [ "$r5h_int" -ge 50 ] && r5h_icon="◕"
-            [ "$r5h_int" -ge 75 ] && r5h_icon="●"
+            [ "$r5h_int" -ge 13 ] && r5h_icon="◔"
+            [ "$r5h_int" -ge 38 ] && r5h_icon="◑"
+            [ "$r5h_int" -ge 63 ] && r5h_icon="◕"
+            [ "$r5h_int" -ge 88 ] && r5h_icon="●"
             tok_rate_5h="${r5h_icon}${r5h_int}%"
         fi
         if [ -n "$r5h_reset" ]; then _fmt_short_v $(( r5h_reset - now )); tok_rate_5h_reset="$_V"; fi
@@ -1308,7 +1308,7 @@ Statusline token reference:
     45m            current session active time
 
   Rate limits (from Claude Code)
-    ◑30%           5h rate limit usage (○◔◑◕● = 0/10/25/50/75%+)
+    ◑50%           5h rate limit usage (○◔◑◕● matches visual fill)
     ↻3h21m         time until 5h window resets
     →51%           projected 5h usage at reset (yellow ≥90%, red ≥100%)
     ⑦5%            7-day rate limit usage

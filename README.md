@@ -105,7 +105,7 @@ All three auto-hide when no data is available.
 
 | Token | Description |
 |-------|-------------|
-| `{rate_5h}` | 5-hour rate limit with pie icon: `○5%` `◔15%` `◑35%` `◕60%` `●80%` |
+| `{rate_5h}` | 5-hour rate limit with pie icon: `○5%` `◔25%` `◑50%` `◕75%` `●95%` |
 | `{rate_5h_reset}` | Time until 5h window resets (e.g. `3h21m`) |
 | `{rate_5h_proj}` | Projected 5h usage at reset (e.g. `→51%`) |
 | `{rate_7d}` | 7-day rate limit usage (e.g. `5%`) |
