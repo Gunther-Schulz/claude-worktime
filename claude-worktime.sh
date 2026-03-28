@@ -512,8 +512,6 @@ mode_statusline() {
         | {
             session_active: (\$session | calc_active(\$pause)),
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
-            last_t: (\$session | if length > 0 then .[-1].t else 0 end),
-            last_e: (\$session | if length > 0 then .[-1].e else \"\" end),
             last_break: ([range(\$today|length-1; 0; -1) as \$i
                 | select(\$today[\$i].e == \"prompt\" and (\$today[\$i-1].e == \"response\" or \$today[\$i-1].e == \"start\"))
                 | (\$today[\$i].t - \$today[\$i-1].t) | select(. > \$pause)] | first // 0),
@@ -525,7 +523,6 @@ mode_statusline() {
                 | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
             project: \$proj,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
-            today_first_t: (\$today | if length > 0 then .[0].t else 0 end),
             today_active: (\$today | calc_active(\$pause)),
             today_project_active: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause)),
             project_total_active: (
@@ -554,7 +551,7 @@ mode_statusline() {
                 ] | join(\"\")
               else \"\" end)
         }
-        | [.session_active, .first_t, .last_t, .last_e, .last_break, .since_break, .today_first_t, .project, .branch, .today_active, .today_project_active, .project_total_active, .timeline]
+        | [.session_active, .first_t, .last_break, .since_break, .project, .branch, .today_active, .today_project_active, .project_total_active, .timeline]
         | map(. // \"\" | tostring) | join(\"\\u001e\")
     "
     local tl_width=${TIMELINE_WIDTH:-20}
@@ -571,11 +568,10 @@ mode_statusline() {
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
-    local session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active tok_timeline
-    IFS=$'\x1e' read -r session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active tok_timeline <<< "$all_info"
+    local session_active session_first last_break since_break project branch today_active today_project_active project_total_active tok_timeline
+    IFS=$'\x1e' read -r session_active session_first last_break since_break project branch today_active today_project_active project_total_active tok_timeline <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
-    local gap=$(( now - session_last ))
 
 
     # Build tokens
@@ -602,28 +598,29 @@ mode_statusline() {
     # Git status — only compute if {git} is in any format string
     tok_git=""
     if [[ "$all_formats" == *"{git}"* ]] && [ -n "$project" ]; then
-        local git_status git_str=""
+        local git_status
         git_status=$(git -C "$project" status --porcelain -b 2>/dev/null || true)
         if [ -n "$git_status" ]; then
-            local git_branch_line git_state=""
-            git_branch_line=$(echo "$git_status" | head -1)
-            # Branch name from "## branch...tracking"
-            local gb
-            gb=$(echo "$git_branch_line" | sed 's/^## //; s/\.\.\..*//')
-            # Ahead/behind
-            local ahead="" behind=""
-            [[ "$git_branch_line" == *"ahead "* ]] && ahead=$(echo "$git_branch_line" | sed 's/.*ahead \([0-9]*\).*/\1/')
-            [[ "$git_branch_line" == *"behind "* ]] && behind=$(echo "$git_branch_line" | sed 's/.*behind \([0-9]*\).*/\1/')
-            # Working tree state
+            local git_state="" gb="" ahead="" behind=""
             local dirty=false staged=false untracked=false
-            local file_lines
-            file_lines=$(echo "$git_status" | tail -n +2)
-            if [ -n "$file_lines" ]; then
-                echo "$file_lines" | grep -q '^[MADRC]' && staged=true
-                echo "$file_lines" | grep -q '^.[MDRC]' && dirty=true
-                echo "$file_lines" | grep -q '^??' && untracked=true
-            fi
-            # Build state string
+            local _line _first=true
+            while IFS= read -r _line; do
+                if $_first; then
+                    _first=false
+                    # Parse "## branch...tracking [ahead N, behind N]"
+                    gb="${_line#\#\# }"; gb="${gb%%...*}"
+                    [[ "$_line" =~ ahead\ ([0-9]+) ]] && ahead="${BASH_REMATCH[1]}"
+                    [[ "$_line" =~ behind\ ([0-9]+) ]] && behind="${BASH_REMATCH[1]}"
+                else
+                    case "${_line:0:2}" in
+                        '??') untracked=true ;;
+                        *)
+                            [[ "${_line:0:1}" == [MADRC] ]] && staged=true
+                            [[ "${_line:1:1}" == [MDRC] ]] && dirty=true
+                            ;;
+                    esac
+                fi
+            done <<< "$git_status"
             if ! $dirty && ! $staged && ! $untracked; then
                 git_state="✓"
             else
@@ -695,16 +692,16 @@ mode_statusline() {
             local total=$(( total_cc + total_cr ))
             if [ "$total" -gt 0 ]; then
                 local cache_pct=$(( total_cr * 100 / total ))
-                tok_context="$(printf "%.0f" "$ctx")% ⟳${cache_pct}%"
+                tok_context="${ctx%%.*}% ⟳${cache_pct}%"
             else
-                tok_context=$(printf "%.0f%%" "$ctx")
+                tok_context="${ctx%%.*}%"
             fi
         elif [ -n "$ctx" ]; then
-            tok_context=$(printf "%.0f%%" "$ctx")
+            tok_context="${ctx%%.*}%"
         fi
 
         if [ -n "$r5h" ]; then
-            local r5h_int; r5h_int=$(printf "%.0f" "$r5h")
+            local r5h_int="${r5h%%.*}"
             local r5h_icon="○"
             [ "$r5h_int" -ge 10 ] && r5h_icon="◔"
             [ "$r5h_int" -ge 25 ] && r5h_icon="◑"
@@ -713,7 +710,7 @@ mode_statusline() {
             tok_rate_5h="${r5h_icon}${r5h_int}%"
         fi
         [ -n "$r5h_reset" ] && tok_rate_5h_reset=$(_fmt_short $(( r5h_reset - now )))
-        [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
+        [ -n "$r7d" ] && tok_rate_7d="${r7d%%.*}%"
         [ -n "$r7d_reset" ] && tok_rate_7d_reset=$(_fmt_short $(( r7d_reset - now )))
         [ -n "$r7d_reset" ] && tok_rate_7d_day=$(date -d "@$r7d_reset" +%a 2>/dev/null || date -r "$r7d_reset" +%a 2>/dev/null)
         # tok_context already set above (with cache merge)
@@ -742,15 +739,15 @@ mode_statusline() {
             fi
         }
         [ -n "$r5h" ] && [ -n "$r5h_reset" ] && tok_rate_5h_proj=$(_project_rate "$r5h" "$r5h_reset" 18000)
-        # 7d projection: average by daily buckets (resets Fridays)
+        # 7d projection: single awk call for days_elapsed check + projection
         if [ -n "$r7d" ] && [ -n "$r7d_reset" ]; then
-            local days_elapsed days_total=7
-            days_elapsed=$(awk "BEGIN { d = ($days_total * 86400 - ($r7d_reset - $now)) / 86400; printf \"%.2f\", (d > 0.01 ? d : 0.01) }")
-            local enough_data
-            enough_data=$(awk "BEGIN { print ($days_elapsed >= ${RATE_7D_PROJ_MIN_DAYS}) ? 1 : 0 }")
-            if [ "$enough_data" = "1" ]; then
-                local proj
-                proj=$(awk "BEGIN { daily = $r7d / $days_elapsed; printf \"%.0f\", daily * $days_total }")
+            local proj
+            proj=$(awk "BEGIN {
+                d = (7 * 86400 - ($r7d_reset - $now)) / 86400
+                if (d < 0.01) d = 0.01
+                if (d >= ${RATE_7D_PROJ_MIN_DAYS}) { printf \"%.0f\", ($r7d / d) * 7 }
+            }")
+            if [ -n "$proj" ]; then
                 local proj_color=""
                 if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
                     proj_color="$COLOR_RATE_CRITICAL"
