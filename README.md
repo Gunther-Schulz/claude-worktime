@@ -71,17 +71,45 @@ Removes hooks, statusline config, and the script. Logs are preserved in the data
 
 ### Statusline
 
-Up to 3 configurable lines in Claude Code's status bar. Default:
+Up to 3 configurable lines in Claude Code's status bar. Every element is a configurable token — mix and match to show what matters to you.
 
+**Default (single line):**
 ```
-⏱ session 45m · today 2h10m · my-org/my-project
+⏱  session 45m · today 2h10m · my-org/my-project
+│   │             │              │
+│   │             │              └── {project} — project name
+│   │             └── {today} — today's total, all projects
+│   └── {session} — active time this session
+└── {status} — ⏱ icon
 ```
 
-With rate limits, git, and break info (via config):
+**Project-focused with break tracking:**
+```
+⏱  today 45m · total 12h30m · my-org/my-project · ▶1h12m ⏸ 20m
+│   │            │              │                   │       │
+│   │            │              │                   │       └── {last_break} — last break was 20min
+│   │            │              │                   └── {since_break} — working 1h12m since that break
+│   │            │              └── {project}
+│   │            └── {project_total} — all-time on this project
+│   └── {today_project} — today on this project only
+└── {status}
+```
 
+**Two-line with rate limits and git:**
 ```
 ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
 ◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
+│     │       │      │        │
+│     │       │      │        └── {rate_7d_proj} — projected weekly usage
+│     │       │      └── {rate_7d} 7d ↻{rate_7d_day} — weekly limit + reset day
+│     │       └── {rate_5h_proj} — projected: will reach 51% at window reset
+│     └── {rate_5h_reset} — 5h window resets in 3h21m
+└── {rate_5h} — 30% of 5h limit used (◔<25% ◑<50% ◕<75% ●75%+)
+```
+
+**Compact single line:**
+```
+⏱  45m (2h10m) · ◑20% · my-org/my-project
 ```
 
 **Note:** The statusline is not real-time. Claude Code only refreshes it after each assistant response — not when you send a prompt, not during tool execution, and not on a timer. The display stays frozen until Claude finishes responding. The underlying time tracking is accurate regardless; only the display is event-driven.
