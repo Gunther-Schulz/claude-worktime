@@ -665,7 +665,7 @@ mode_statusline() {
             local used=$1 reset_at=$2 window=$3
             local remaining=$(( reset_at - now ))
             local elapsed=$(( window - remaining ))
-            [ "$elapsed" -le 60 ] && return  # need at least 1min of data
+            [ "$elapsed" -le 1800 ] && return  # need at least 30min of data
             local proj
             proj=$(awk "BEGIN { rate = $used / $elapsed; proj = $used + rate * $remaining; printf \"%.0f\", proj }")
             local proj_color=""
