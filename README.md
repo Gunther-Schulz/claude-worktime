@@ -41,29 +41,7 @@ Removes hooks, statusline config, and the script. Logs are preserved in the data
 
 Up to 3 configurable lines in Claude Code's status bar. Every element is a configurable token — mix and match to show what matters to you.
 
-**Default (single line):**
-```
-⏱  session 45m · today 2h10m · my-org/my-project
-│   │             │              │
-│   │             │              └── {project} — project name
-│   │             └── {today} — today's total, all projects
-│   └── {session} — active time this session
-└── {status} — ⏱ icon
-```
-
-**Project-focused with break tracking:**
-```
-⏱  today 45m · total 12h30m · my-org/my-project · ▶1h12m ⏸ 20m
-│   │            │              │                   │       │
-│   │            │              │                   │       └── {last_break} — last break was 20min
-│   │            │              │                   └── {since_break} — working 1h12m since that break
-│   │            │              └── {project}
-│   │            └── {project_total} — all-time on this project
-│   └── {today_project} — today on this project only
-└── {status}
-```
-
-**Two-line with rate limits and git:**
+**Default (two lines):**
 ```
 ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
 ◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%

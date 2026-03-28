@@ -39,8 +39,8 @@ PAUSE_THRESHOLD=900  # 15 minutes
 # Statusline format
 # ---------------------------------------------------------------------------
 # Up to 3 lines supported. Leave _2 and _3 empty for single-line display.
-STATUSLINE_FORMAT="{status}session {session} · today {today} · {project}"
-STATUSLINE_FORMAT_2=""
+STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git}) · {since_break} {last_break}"
+STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
 STATUSLINE_FORMAT_3=""
 
 # ---------------------------------------------------------------------------
