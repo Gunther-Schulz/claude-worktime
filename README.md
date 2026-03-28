@@ -82,6 +82,7 @@ A default config with examples is created on install.
 | `{session}` | Active time in current session (by session ID) |
 | `{session_wall}` | Wall clock time since session started |
 | `{today}` | Today's total active time (all sessions, all projects) |
+| `{today_wall}` | Wall clock span of today's timeline (first event to now) |
 | `{today_project}` | Today's total for current project only |
 | `{project_total}` | All-time total for current project |
 | `{since_break}` | ▶2h40m — continuous work time since most recent break |
@@ -126,7 +127,7 @@ Define named groups, then compose lines by listing group names. The divider (`GR
 GROUP_PROJECT="{project} ({git})"
 GROUP_TODAY="{status} today {today_project}"
 GROUP_TOTAL="total {project_total}"
-GROUP_TIMELINE="{timeline} {today}"
+GROUP_TIMELINE="{timeline} {today_wall}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"

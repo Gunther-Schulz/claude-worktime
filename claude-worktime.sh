@@ -50,7 +50,7 @@ PAUSE_THRESHOLD=900
 GROUP_PROJECT="{project} ({git})"
 GROUP_TODAY="{status} today {today_project}"
 GROUP_TOTAL="total {project_total}"
-GROUP_TIMELINE="{timeline} {today}"
+GROUP_TIMELINE="{timeline} {today_wall}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
@@ -551,6 +551,7 @@ mode_statusline() {
                 | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
             project: \$proj,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
+            today_first_t: (\$today | if length > 0 then .[0].t else 0 end),
             today_active: (\$today | calc_active(\$pause)),
             today_project_active: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause)),
             project_total_active: (
@@ -579,7 +580,7 @@ mode_statusline() {
                 ] | join(\"\")
               else \"\" end)
         }
-        | [.session_active, .first_t, .last_break, .since_break, .project, .branch, .today_active, .today_project_active, .project_total_active, .timeline]
+        | [.session_active, .first_t, .last_break, .since_break, .project, .branch, .today_first_t, .today_active, .today_project_active, .project_total_active, .timeline]
         | map(. // \"\" | tostring) | join(\"\\u001e\")
     "
     local tl_width=${TIMELINE_WIDTH:-20}
@@ -596,17 +597,19 @@ mode_statusline() {
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
-    local session_active session_first last_break since_break project branch today_active today_project_active project_total_active tok_timeline
-    IFS=$'\x1e' read -r session_active session_first last_break since_break project branch today_active today_project_active project_total_active tok_timeline <<< "$all_info"
+    local session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active tok_timeline
+    IFS=$'\x1e' read -r session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active tok_timeline <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
-
+    local today_wall=0
+    [ "${today_first:-0}" -gt 0 ] && today_wall=$(( now - today_first ))
 
     # Build tokens (using _v variants to avoid subshells)
-    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_since_break tok_git
+    local tok_session tok_session_wall tok_today tok_today_wall tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_since_break tok_git
     _fmt_short_v "$session_active"; tok_session="$_V"
     _fmt_short_v "$session_wall"; tok_session_wall="$_V"
     _fmt_short_v "$today_active"; tok_today="$_V"
+    _fmt_short_v "$today_wall"; tok_today_wall="$_V"
     _fmt_short_v "$today_project_active"; tok_today_project="$_V"
     _fmt_short_v "$project_total_active"; tok_project_total="$_V"
     _short_project_v "$project"; tok_project="$_V"
@@ -817,8 +820,8 @@ mode_statusline() {
     fi
 
     # Token arrays (constant per statusline refresh, shared by all groups)
-    local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_project}' '{project_total}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
-    local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_project" "$tok_project_total" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
+    local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_project}' '{project_total}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
+    local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_project" "$tok_project_total" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
     local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
     local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
 
@@ -1299,8 +1302,7 @@ Statusline token reference:
     ⏱              status icon
     today 2h32m    today's active time for this project
     total 8h30m    all-time total for this project
-    ▮▯▯▮▮▮        day timeline (▮=work ▯=break)
-    5h02m          today's total across all projects
+    ▮▯▯▮▮▮ 11h    day timeline (▮=work ▯=break) + wall clock span
     ▶1h12m         continuous work since last break
     ⏸ 20m          last break duration
     45m            current session active time
