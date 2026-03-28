@@ -154,11 +154,14 @@ cmd_log() {
     branch=$(git -C "$path" branch --show-current 2>/dev/null || true)
     session_id="${HOOK_SESSION_ID:-unknown}"
 
-    # Write JSONL directly — avoid jq subprocess on the hot path
+    # Write JSONL directly — escape special chars for valid JSON
+    local jp="${path//\\/\\\\}"; jp="${jp//\"/\\\"}"
+    local jb="${branch//\\/\\\\}"; jb="${jb//\"/\\\"}"
+    local js="${session_id//\\/\\\\}"; js="${js//\"/\\\"}"
     if [ -n "$branch" ]; then
-        printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$path" "$branch" "$session_id" "$event" >> "$LOGFILE"
+        printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$jb" "$js" "$event" >> "$LOGFILE"
     else
-        printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$path" "$session_id" "$event" >> "$LOGFILE"
+        printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$js" "$event" >> "$LOGFILE"
     fi
 
     if [ "$event" = "start" ]; then
