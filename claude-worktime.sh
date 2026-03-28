@@ -673,7 +673,7 @@ mode_statusline() {
         [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
         [ -n "$r7d_reset" ] && tok_rate_7d_reset=$(_fmt_short $(( r7d_reset - now )))
         [ -n "$r7d_reset" ] && tok_rate_7d_day=$(date -d "@$r7d_reset" +%a 2>/dev/null || date -r "$r7d_reset" +%a 2>/dev/null)
-        [ -n "$ctx" ] && tok_context=$(printf "%.0f%%" "$ctx")
+        # tok_context already set above (with cache merge)
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         [ -n "$mdl" ] && tok_model="$mdl"
 
