@@ -380,7 +380,7 @@ Corrupt lines are tolerated — all readers skip invalid JSON entries gracefully
 | Tool | Min version | Required | Used for |
 |------|-------------|----------|----------|
 | **bash** | 4.0 | yes | `mapfile`, `read -t 0.1`, arrays |
-| **jq** | 1.6 | yes | JSONL parsing, `@tsv`, `def` functions |
+| **jq** | 1.6 | yes | JSONL parsing, aggregation, `def` functions |
 | **git** | 2.22 | no | `{git}` status token, branch logging |
 | **date** | GNU coreutils or BSD | yes | timestamp conversion |
 
