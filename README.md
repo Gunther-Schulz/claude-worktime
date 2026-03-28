@@ -148,19 +148,19 @@ The 7d tokens (`{rate_7d}`, `{rate_7d_day}`, `{rate_7d_proj}`) depend on Claude 
 
 ### Auto-rotation
 
-Old log entries are automatically archived on session start. Configure in `config.sh`:
+Old log entries are automatically archived on session start. Daily rotation is recommended — it keeps the active log small (faster jq queries) while preserving full history in archives.
 
 ```bash
 AUTO_ROTATE=true
-ROTATE_INTERVAL=monthly    # monthly, weekly, daily
+ROTATE_INTERVAL=daily    # daily, weekly, monthly
 ```
 
 Archive filenames adapt to the interval:
-- `monthly` → `activity-2026-03.jsonl`
-- `weekly` → `activity-2026-W13.jsonl`
 - `daily` → `activity-2026-03-28.jsonl`
+- `weekly` → `activity-2026-W13.jsonl`
+- `monthly` → `activity-2026-03.jsonl`
 
-Per-project summary entries are preserved in the active log so `{project_total}` survives rotation. CLI queries (`--since`, `--summary`, `--csv`, etc.) automatically search archived logs for historical data.
+When entries are rotated out, per-project summary records are written to the active log so `{project_total}` remains accurate across rotations. CLI queries (`--since`, `--summary`, `--csv`, etc.) automatically search archived logs for historical data.
 
 Manual rotation: `claude-worktime --rotate`
 
