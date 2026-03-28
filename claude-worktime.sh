@@ -16,6 +16,7 @@
 #   claude-worktime --since 2026-03-25      # since a date
 #   claude-worktime --filter PATH           # filter by project path
 #   claude-worktime --branch BRANCH         # filter by git branch
+#   claude-worktime --session ID             # stats for a specific session
 #   claude-worktime --breakdown [--today]   # phase breakdown (Claude/You)
 #   claude-worktime --gaps [--today]        # gap distribution (tune threshold)
 #   claude-worktime --cost [--today]        # cost analysis (needs LOG_COST=true)
@@ -385,13 +386,17 @@ _log_files() {
 }
 
 _entries() {
-    local since=${1:-0} filter=${2:-} branch_filter=${3:-}
+    local since=${1:-0} filter=${2:-} branch_filter=${3:-} session_filter=${4:-}
     local jq_filter=". | select((.type // null) == null) | select(.t >= $since)"
     [ -n "$filter" ] && jq_filter="$jq_filter | select(.p | test(\"$filter\"))"
     [ -n "$branch_filter" ] && jq_filter="$jq_filter | select(.b // \"\" | test(\"$branch_filter\"))"
+    [ -n "$session_filter" ] && jq_filter="$jq_filter | select(.s | test(\"$session_filter\"))"
 
     local files
-    mapfile -t files < <(_log_files "$since")
+    # If filtering by session, always include archives (session may span rotation)
+    local search_since="$since"
+    [ -n "$session_filter" ] && search_since=1
+    mapfile -t files < <(_log_files "$search_since")
     cat "${files[@]}" 2>/dev/null | jq -Rc 'fromjson? // empty' 2>/dev/null | jq -c "$jq_filter" 2>/dev/null || true
 }
 
@@ -712,8 +717,8 @@ mode_session() {
 }
 
 mode_range() {
-    local raw=$1 since=$2 filter=$3 branch_filter=$4
-    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
+    local raw=$1 since=$2 filter=$3 branch_filter=$4 session_filter=${5:-}
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter" "$session_filter")
 
     if [ -z "$entries" ]; then
         if $raw; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
@@ -758,8 +763,8 @@ _output_info() {
 }
 
 mode_breakdown() {
-    local raw=$1 since=$2 filter=$3 branch_filter=$4
-    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
+    local raw=$1 since=$2 filter=$3 branch_filter=$4 session_filter=${5:-}
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter" "$session_filter")
 
     if [ -z "$entries" ]; then
         if $raw; then echo '{"claude":0,"user":0,"idle":0,"active":0}';
@@ -803,8 +808,8 @@ mode_breakdown() {
 }
 
 mode_summary() {
-    local raw=$1 since=$2 filter=$3 branch_filter=$4
-    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
+    local raw=$1 since=$2 filter=$3 branch_filter=$4 session_filter=${5:-}
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter" "$session_filter")
 
     if [ -z "$entries" ]; then
         if $raw; then echo '{}'; else echo "No activity recorded"; fi; return; fi
@@ -828,7 +833,7 @@ mode_summary() {
 }
 
 mode_cost() {
-    local raw=$1 since=$2 filter=$3 branch_filter=$4
+    local raw=$1 since=$2 filter=$3 branch_filter=$4 session_filter=${5:-}
 
     # Get cost entries from all relevant log files
     local files
@@ -890,8 +895,8 @@ mode_cost() {
 }
 
 mode_csv() {
-    local since=$1 filter=$2 branch_filter=$3
-    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
+    local since=$1 filter=$2 branch_filter=$3 session_filter=${4:-}
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter" "$session_filter")
 
     echo "date,start,end,active_min,wall_min,project,session_id"
     [ -z "$entries" ] && return
@@ -921,8 +926,8 @@ mode_csv() {
 }
 
 mode_gaps() {
-    local raw=$1 since=$2 filter=$3 branch_filter=$4
-    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
+    local raw=$1 since=$2 filter=$3 branch_filter=$4 session_filter=${5:-}
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter" "$session_filter")
 
     if [ -z "$entries" ]; then
         if $raw; then echo '{}'; else echo "No activity recorded"; fi; return; fi
@@ -1097,6 +1102,7 @@ MODE="session"
 RAW=false
 FILTER_PATH=""
 FILTER_BRANCH=""
+FILTER_SESSION=""
 SINCE_TS=0
 
 while [ $# -gt 0 ]; do
@@ -1111,6 +1117,7 @@ while [ $# -gt 0 ]; do
         --rotate) MODE="rotate" ;;
         --filter) shift; FILTER_PATH="${1:-}"; [ "$MODE" = "session" ] && MODE="range" ;;
         --branch) shift; FILTER_BRANCH="${1:-}"; [ "$MODE" = "session" ] && MODE="range" ;;
+        --session) shift; FILTER_SESSION="${1:-}"; [ "$MODE" = "session" ] && MODE="range" ;;
         --today) SINCE_TS=$(_today_start); [ "$MODE" = "session" ] && MODE="range" ;;
         --week) SINCE_TS=$(_week_start); [ "$MODE" = "session" ] && MODE="range" ;;
         --since) shift; SINCE_TS=$(_date_parse "$1"); [ "$MODE" = "session" ] && MODE="range" ;;
@@ -1128,12 +1135,12 @@ fi
 
 case "$MODE" in
     session)    mode_session "$RAW" ;;
-    range)      mode_range "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
-    breakdown)  mode_breakdown "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
-    gaps)       mode_gaps "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
-    cost)       mode_cost "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
-    summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
-    csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
+    range)      mode_range "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
+    breakdown)  mode_breakdown "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
+    gaps)       mode_gaps "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
+    cost)       mode_cost "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
+    summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
+    csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     statusline) mode_statusline ;;
     rotate)     mode_rotate ;;
 esac
