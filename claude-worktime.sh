@@ -519,21 +519,21 @@ mode_statusline() {
             timeline: (if \$width > 0 and (\$today | length) > 0 then
                 (\$today[0].t) as \$tstart
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
-                # Find break ranges (response→prompt gaps > threshold)
+                # Build set of break block indices using rounded block count
                 | [range(1; \$today|length)
                     | select(\$today[.].e == \"prompt\" and (\$today[.-1].e == \"response\" or \$today[.-1].e == \"start\")
                         and (\$today[.].t - \$today[.-1].t) > \$pause)
-                    | {from: \$today[.-1].t, to: \$today[.].t}] as \$breaks
+                    | {from: \$today[.-1].t, to: \$today[.].t}
+                    | . as \$brk
+                    | ((.to - .from) / \$tblock | round | if . < 1 then 1 else . end) as \$nblocks
+                    | ((.from - \$tstart) / \$tblock | floor) as \$first_block
+                    | range(\$first_block; \$first_block + \$nblocks)
+                    | select(. >= 0 and . < \$width)
+                ] | unique as \$break_blocks
                 | [range(0; \$width) | . as \$i
-                    | (\$tstart + \$i * \$tblock) as \$bs | (\$bs + \$tblock) as \$be
-                    # Break block if: break covers >50% of block, OR
-                    # break midpoint falls in block (guarantees every break shows)
-                    | if ([\$breaks[] | select(
-                        ((.from < \$be and .to > \$bs) and (([.to, \$be] | min) - ([.from, \$bs] | max)) > (\$tblock / 2))
-                        or (((.from + .to) / 2) >= \$bs and ((.from + .to) / 2) < \$be)
-                      )] | length) > 0
+                    | if ([\$break_blocks[] | select(. == \$i)] | length) > 0
                       then \"▯\"
-                      elif ([\$today[] | select(.t >= \$bs and .t < \$be)] | length) > 0
+                      elif ([\$today[] | select(.t >= (\$tstart + \$i * \$tblock) and .t < (\$tstart + (\$i + 1) * \$tblock))] | length) > 0
                       then \"▮\" else \"▯\" end
                 ] | join(\"\")
               else \"\" end)
