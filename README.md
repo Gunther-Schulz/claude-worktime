@@ -3,11 +3,11 @@
 Track active working time in [Claude Code](https://claude.com/claude-code) sessions.
 
 ```
-⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
-◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
+⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓)
+▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
 ```
 
-Time tracking, break detection, rate limit projections, git status, cost analysis — all in a configurable statusline. Event-aware idle detection ensures long-running tools are never misclassified as breaks.
+Time tracking, break detection, rate limit projections, git status, cost analysis — all in a configurable multi-line statusline. Event-aware idle detection ensures long-running tools are never misclassified as breaks.
 
 ## Install
 
@@ -41,16 +41,17 @@ Removes hooks, statusline config, and the script. Logs are preserved in the data
 
 Up to 3 configurable lines in Claude Code's status bar. Every element is a configurable token — mix and match to show what matters to you.
 
-**Default (two lines):**
+**Default (two lines — project-scoped + cross-session personal):**
 ```
-⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
-◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
-│     │       │      │        │
-│     │       │      │        └── {rate_7d_proj} — projected weekly usage
-│     │       │      └── {rate_7d} 7d ↻{rate_7d_day} — weekly limit + reset day
-│     │       └── {rate_5h_proj} — projected: will reach 51% at window reset
-│     └── {rate_5h_reset} — 5h window resets in 3h21m
-└── {rate_5h} — 30% of 5h limit used (○<10% ◔<25% ◑<50% ◕<75% ●75%+)
+⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓)
+▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
+```
+Line 1: project time, git status (scoped to this project)
+Line 2: day timeline, break rhythm, rate limits (cross-session, all projects)
+
+```
+▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮  ← {timeline} — your day at a glance (▮=work ▯=break)
+                        ← adapts width to day length, configurable via TIMELINE_WIDTH
 ```
 
 **Compact single line:**
@@ -80,8 +81,11 @@ A default config with examples is created on install.
 | `{project_total}` | All-time total for current project |
 | `{since_break}` | ▶2h40m — continuous work time since most recent break |
 | `{last_break}` | ⏸ 41m — duration of most recent break |
+| `{timeline}` | ▮▯▮▮▮▮▮▮▮▮▯▮▮▮ — day sparkline (▮=work ▯=break) |
 
-Both `{since_break}` and `{last_break}` auto-hide when no break has occurred this session.
+`{since_break}`, `{last_break}`, and `{timeline}` are **cross-session** — they reflect your whole day across all projects and sessions, not just the current one. This gives an accurate picture of your personal work/break rhythm even when switching between multiple sessions.
+
+All three auto-hide when no data is available.
 
 **Project tokens:**
 

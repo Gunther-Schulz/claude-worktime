@@ -53,6 +53,7 @@ STATUSLINE_FORMAT_3=""
 COLOR_NORMAL="\033[32m"
 COLOR_RATE_WARNING="\033[33m"
 COLOR_RATE_CRITICAL="\033[31m"
+TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
 COLOR_RESET="\033[0m"
 RATE_7D_PROJ_MIN_DAYS=0.5
 AUTO_ROTATE=true
@@ -452,10 +453,10 @@ mode_statusline() {
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
             last_t: (\$session | if length > 0 then .[-1].t else 0 end),
             last_e: (\$session | if length > 0 then .[-1].e else \"\" end),
-            last_break: ([range(length-1; 0; -1) as \$i
-                | select(\$session[\$i].e == \"prompt\" and (\$session[\$i-1].e == \"response\" or \$session[\$i-1].e == \"start\"))
-                | (\$session[\$i].t - \$session[\$i-1].t) | select(. > \$pause)] | first // 0),
-            since_break: (\$session | . as \$s |
+            last_break: ([range(\$today|length-1; 0; -1) as \$i
+                | select(\$today[\$i].e == \"prompt\" and (\$today[\$i-1].e == \"response\" or \$today[\$i-1].e == \"start\"))
+                | (\$today[\$i].t - \$today[\$i-1].t) | select(. > \$pause)] | first // 0),
+            since_break: (\$today | . as \$s |
                 ([range(length-1; 0; -1) as \$i
                     | select(\$s[\$i].e == \"prompt\" and (\$s[\$i-1].e == \"response\" or \$s[\$i-1].e == \"start\")
                         and (\$s[\$i].t - \$s[\$i-1].t) > \$pause)
@@ -463,6 +464,7 @@ mode_statusline() {
                 | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
             project: \$proj,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
+            today_first_t: (\$today | if length > 0 then .[0].t else 0 end),
             today_active: (\$today | calc_active(\$pause)),
             today_project_active: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause)),
             project_total_active: (
@@ -470,7 +472,7 @@ mode_statusline() {
                 + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
             )
         }
-        | [.session_active, .first_t, .last_t, .last_e, .last_break, .since_break, .project, .branch, .today_active, .today_project_active, .project_total_active]
+        | [.session_active, .first_t, .last_t, .last_e, .last_break, .since_break, .today_first_t, .project, .branch, .today_active, .today_project_active, .project_total_active]
         | @tsv
     "
     local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid")
@@ -479,8 +481,8 @@ mode_statusline() {
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
-    local session_active session_first session_last last_e last_break since_break project branch today_active today_project_active project_total_active
-    IFS=$'\t' read -r session_active session_first session_last last_e last_break since_break project branch today_active today_project_active project_total_active <<< "$all_info"
+    local session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active
+    IFS=$'\t' read -r session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
@@ -507,9 +509,28 @@ mode_statusline() {
     fi
 
 
+    # Timeline sparkline — only compute if {timeline} is in any format string
+    local tok_timeline=""
+    local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}"
+    if [[ "$all_formats" == *"{timeline}"* ]] && [ "${today_first:-0}" -gt 0 ]; then
+        local tl_span=$(( now - today_first ))
+        if [ "$tl_span" -gt 0 ]; then
+            local tl_width=${TIMELINE_WIDTH:-20}
+            local tl_block=$(( tl_span / tl_width + 1 ))
+            # Build timeline: check each block for activity using today's events
+            tok_timeline=$(jq -sr --argjson start "$today_first" --argjson block "$tl_block" --argjson width "$tl_width" --argjson pause "$PAUSE_THRESHOLD" '
+                [.[] | select((.type // null) == null and .t >= $start)] | sort_by(.t) | . as $events
+                | [range(0; $width) | . as $i
+                    | ($start + $i * $block) as $bstart | ($bstart + $block) as $bend
+                    | if ([$events[] | select(.t >= $bstart and .t < $bend)] | length) > 0
+                      then "▮" else "▯" end
+                ] | join("")
+            ' "$LOGFILE" 2>/dev/null || true)
+        fi
+    fi
+
     # Git status — only compute if {git} is in any format string
     tok_git=""
-    local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}"
     if [[ "$all_formats" == *"{git}"* ]] && [ -n "$project" ]; then
         local git_status git_str=""
         git_status=$(git -C "$project" status --porcelain -b 2>/dev/null || true)
@@ -663,6 +684,7 @@ mode_statusline() {
         output="${output//\{branch\}/$tok_branch}"
         output="${output//\{status\}/$tok_status}"
         output="${output//\{git\}/$tok_git}"
+        output="${output//\{timeline\}/$tok_timeline}"
         # Optional tokens: replace if set, remove entire · segment if empty
         local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
         local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
