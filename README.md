@@ -35,8 +35,6 @@ Each log entry includes the `session_id` from Claude Code. This ID persists acro
 
 ## Install
 
-**Requirements:** [jq](https://jqlang.github.io/jq/)
-
 ```bash
 git clone https://github.com/Gunther-Schulz/claude-worktime.git
 cd claude-worktime
@@ -53,7 +51,7 @@ Options:
 - `--statusline` — enable the status bar display
 - `--force` — overwrite existing hooks
 
-Then **restart Claude Code** to activate.
+The installer verifies dependencies automatically. Then **restart Claude Code** to activate.
 
 ## Uninstall
 
@@ -111,7 +109,7 @@ claude-worktime --csv --today
 claude-worktime --raw
 claude-worktime --breakdown --raw
 
-# Log rotation (archive entries older than current month)
+# Log rotation
 claude-worktime --rotate
 ```
 
@@ -197,6 +195,24 @@ The `{rate_5h_proj}` token projects your usage at window reset based on current 
 
 The 7d projection uses daily averages and requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
 
+### Auto-rotation
+
+Old log entries are automatically archived on session start. Configure in `config.sh`:
+
+```bash
+AUTO_ROTATE=true
+ROTATE_INTERVAL=monthly    # monthly, weekly, daily
+```
+
+Archive filenames adapt to the interval:
+- `monthly` → `activity-2026-03.log`
+- `weekly` → `activity-2026-W13.log`
+- `daily` → `activity-2026-03-28.log`
+
+Per-project summary entries are preserved in the active log so `{project_total}` survives rotation. CLI queries (`--since`, `--summary`, `--csv`, etc.) automatically search archived logs for historical data.
+
+Manual rotation: `claude-worktime --rotate`
+
 ### Colors
 
 ```bash
@@ -214,6 +230,28 @@ Set any color to `""` to disable it.
 |----------|---------|-------------|
 | `CLAUDE_WORKTIME_DIR` | `~/.claude/worktime` | Directory for logs and config |
 | `CLAUDE_WORKTIME_PAUSE` | `900` | Idle threshold in seconds (overrides config) |
+
+## Diagnostics
+
+```bash
+# Verify dependencies
+claude-worktime --check
+
+# Full diagnostic dump (log stats, hooks, config, performance)
+claude-worktime --debug
+
+# Remove corrupt lines from the log
+claude-worktime --repair
+```
+
+`--debug` output includes:
+- Log file stats (size, entry count, corrupt lines, event breakdown)
+- Current session ID and project list
+- Archive inventory
+- Config values
+- Hook status (which hooks are installed)
+- Statusline performance timing
+- Dependency versions
 
 ## Log format
 
@@ -235,22 +273,16 @@ JSONL at `~/.claude/worktime/activity.log`:
 | `s` | Session ID (persists across `--resume`) |
 | `e` | Event type |
 
+Corrupt lines are tolerated — all readers skip invalid JSON entries gracefully.
+
 ### Files
 
 | Path | Purpose |
 |------|---------|
 | `~/.claude/worktime/activity.log` | Active log (JSONL) |
 | `~/.claude/worktime/config.sh` | Configuration |
-| `~/.claude/worktime/activity-YYYY-MM.log` | Monthly archives (from `--rotate`) |
+| `~/.claude/worktime/activity-*.log` | Rotated archives |
 | `~/.local/bin/claude-worktime` | The script |
-
-### Log rotation
-
-```bash
-claude-worktime --rotate
-```
-
-Archives entries older than the current month to `activity-YYYY-MM.log`.
 
 ## Dependencies
 
@@ -261,7 +293,7 @@ Archives entries older than the current month to `activity-YYYY-MM.log`.
 | **git** | 2.22 | no | `{git}` status token, branch logging |
 | **date** | GNU coreutils or BSD | yes | timestamp conversion |
 
-Run `claude-worktime --check` to verify your system meets these requirements.
+Run `claude-worktime --check` to verify.
 
 No python, no node, no extra runtimes.
 
