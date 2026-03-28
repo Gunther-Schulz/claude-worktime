@@ -476,7 +476,7 @@ mode_statusline() {
     tok_last_break=""
     local lb=${last_break:-0}
     if [ "$lb" -gt 0 ]; then
-        tok_last_break="⏸$(_fmt_short "$lb")"
+        tok_last_break="⏸ $(_fmt_short "$lb")"
     fi
 
 
