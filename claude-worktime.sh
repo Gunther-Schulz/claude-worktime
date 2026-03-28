@@ -652,7 +652,7 @@ mode_statusline() {
             local total=$(( ${cc:-0} + ${cr:-0} ))
             if [ "$total" -gt 0 ]; then
                 local cache_pct=$(( ${cr:-0} * 100 / total ))
-                tok_context="$(printf "%.0f" "$ctx")%·${cache_pct}%"
+                tok_context="$(printf "%.0f" "$ctx")% ⟳${cache_pct}%"
             else
                 tok_context=$(printf "%.0f%%" "$ctx")
             fi
