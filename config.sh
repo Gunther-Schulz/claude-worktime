@@ -51,7 +51,13 @@ COLOR_NORMAL="\033[32m"           # green — working
 COLOR_IDLE="\033[90m"             # gray — idle
 COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate limit ≥90%
 COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate limit ≥100%
+COLOR_TIMELINE_WORK=""            # color for ▮ blocks (empty = same as line)
+COLOR_TIMELINE_BREAK=""           # color for ▯ blocks (empty = same as line)
 COLOR_RESET="\033[0m"
+
+# Example: green work blocks, dim gray break blocks
+# COLOR_TIMELINE_WORK="\033[32m"
+# COLOR_TIMELINE_BREAK="\033[90m"
 
 # ---------------------------------------------------------------------------
 # Auto-rotation — archive old log entries on session start

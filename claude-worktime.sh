@@ -53,6 +53,8 @@ STATUSLINE_FORMAT_3=""
 COLOR_NORMAL="\033[32m"
 COLOR_RATE_WARNING="\033[33m"
 COLOR_RATE_CRITICAL="\033[31m"
+COLOR_TIMELINE_WORK=""   # color for ▮ blocks (empty = same as line color)
+COLOR_TIMELINE_BREAK=""  # color for ▯ blocks (empty = same as line color)
 TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
 COLOR_RESET="\033[0m"
 RATE_7D_PROJ_MIN_DAYS=0.5
@@ -671,6 +673,13 @@ mode_statusline() {
 
     local tok_status="⏱"
     local color="$COLOR_NORMAL"
+
+    # Colorize timeline blocks if colors are configured
+    # Uses \033 escapes that printf '%b' will interpret in the final output
+    if [ -n "${tok_timeline:-}" ]; then
+        [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//▮/${COLOR_TIMELINE_WORK}▮${COLOR_RESET}${color}}"
+        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_RESET}${color}}"
+    fi
 
     # Render a format string: replace all tokens, clean up empty segments
     _render_line() {
