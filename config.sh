@@ -41,7 +41,7 @@ PAUSE_THRESHOLD=900  # 15 minutes
 # ---------------------------------------------------------------------------
 # Up to 3 lines supported. Leave _2 and _3 empty for single-line display.
 STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
+STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
 STATUSLINE_FORMAT_3=""
 
 # ---------------------------------------------------------------------------
@@ -97,9 +97,9 @@ LOG_COST=false
 # --- Two-line: project on top, personal rhythm + rates below (default) ---
 # Line 1 = project-scoped, Line 2 = cross-session personal
 # STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
+# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
 # Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
-#         ▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · 5% 7d ↻Sat · ctx 77% ⟳93%
+#         ▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 #
 # --- Single-line compact ---
 # STATUSLINE_FORMAT="{project} · {status}  {session} ({today}) · {rate_5h}"
@@ -107,7 +107,7 @@ LOG_COST=false
 #
 # --- Three-line: everything separated ---
 # STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
+# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
 # STATUSLINE_FORMAT_3="{model} · {cost}"
 # Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
 #         ▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ctx 77% ⟳93%

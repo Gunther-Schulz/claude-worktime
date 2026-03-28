@@ -48,7 +48,7 @@ DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-wor
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
 STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
+STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
 STATUSLINE_FORMAT_3=""
 COLOR_NORMAL="\033[32m"
 COLOR_RATE_WARNING="\033[33m"
@@ -1230,7 +1230,7 @@ Statusline token reference:
     ◑30%           5h rate limit usage (○◔◑◕● = 0/10/25/50/75%+)
     ↻3h21m         time until 5h window resets
     →51%           projected 5h usage at reset (yellow ≥90%, red ≥100%)
-    5% 7d          7-day rate limit usage
+    ⑦5%            7-day rate limit usage
     ↻Sat           7-day reset weekday
 
   Context (from Claude Code)
