@@ -22,6 +22,8 @@
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
 #   claude-worktime --rotate                # archive old entries
 #   claude-worktime --check                 # verify dependencies
+#   claude-worktime --debug                 # full diagnostic info
+#   claude-worktime --repair                # remove corrupt log lines
 #   claude-worktime --raw                   # JSON output (any mode)
 
 set -euo pipefail
@@ -148,6 +150,135 @@ cmd_check() {
     echo ""
     $ok && echo "All dependencies met." || echo "Some dependencies missing or outdated."
     $ok
+}
+
+cmd_debug() {
+    echo "claude-worktime debug"
+    echo "====================="
+    echo ""
+
+    # Paths
+    echo "Paths:"
+    echo "  LOGDIR:     $LOGDIR"
+    echo "  LOGFILE:    $LOGFILE"
+    echo "  CONFIGFILE: $CONFIGFILE"
+    echo "  Log exists: $([ -f "$LOGFILE" ] && echo "yes" || echo "NO")"
+    echo "  Config exists: $([ -f "$CONFIGFILE" ] && echo "yes" || echo "NO")"
+    echo ""
+
+    # Log stats
+    if [ -f "$LOGFILE" ]; then
+        local total_lines valid_lines corrupt_lines
+        total_lines=$(wc -l < "$LOGFILE")
+        valid_lines=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null | wc -l)
+        corrupt_lines=$((total_lines - valid_lines))
+        local file_size; file_size=$(du -h "$LOGFILE" | cut -f1)
+        echo "Log file:"
+        echo "  Size:           $file_size"
+        echo "  Total lines:    $total_lines"
+        echo "  Valid entries:   $valid_lines"
+        echo "  Corrupt lines:  $corrupt_lines"
+        if [ "$corrupt_lines" -gt 0 ]; then
+            echo "  ⚠ Corrupt lines found! Run with --repair to fix."
+        fi
+
+        # Session info
+        local sid; sid=$(_current_session_id)
+        echo "  Current session: ${sid:-none}"
+
+        # Event counts
+        echo "  Events:"
+        jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
+            | jq -r 'select((.type // null) == null) | .e' 2>/dev/null \
+            | sort | uniq -c | sort -rn | while read -r count event; do
+                printf "    %-15s %s\n" "$event" "$count"
+            done
+
+        # Summaries
+        local summary_count
+        summary_count=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null | jq 'select(.type == "summary")' 2>/dev/null | wc -l)
+        echo "  Summaries:      $summary_count"
+
+        # Time range
+        local first_ts last_ts
+        first_ts=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null | jq -r 'select((.type // null) == null) | .t' 2>/dev/null | head -1 || true)
+        last_ts=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null | jq -r 'select((.type // null) == null) | .t' 2>/dev/null | tail -1 || true)
+        [ -n "$first_ts" ] && echo "  First entry:    $(_date_at "$first_ts" "%Y-%m-%d %H:%M")"
+        [ -n "$last_ts" ] && echo "  Last entry:     $(_date_at "$last_ts" "%Y-%m-%d %H:%M")"
+
+        # Projects
+        echo "  Projects:"
+        jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
+            | jq -r 'select((.type // null) == null) | .p' 2>/dev/null \
+            | sort -u | while read -r p; do
+                printf "    %s\n" "$(_short_project "$p")"
+            done
+    fi
+    echo ""
+
+    # Archives
+    local archives=("$LOGDIR"/activity-*.log)
+    if [ -f "${archives[0]:-}" ]; then
+        echo "Archives:"
+        for f in "${archives[@]}"; do
+            [ -f "$f" ] || continue
+            local name; name=$(basename "$f")
+            local lines; lines=$(wc -l < "$f")
+            local size; size=$(du -h "$f" | cut -f1)
+            printf "  %-30s %s lines  %s\n" "$name" "$lines" "$size"
+        done
+    else
+        echo "Archives: none"
+    fi
+    echo ""
+
+    # Config
+    echo "Config:"
+    echo "  PAUSE_THRESHOLD:    ${PAUSE_THRESHOLD}s ($((PAUSE_THRESHOLD / 60))min)"
+    echo "  AUTO_ROTATE:        $AUTO_ROTATE"
+    echo "  ROTATE_INTERVAL:    $ROTATE_INTERVAL"
+    echo "  RATE_7D_PROJ_MIN:   ${RATE_7D_PROJ_MIN_DAYS} days"
+    echo "  STATUSLINE_FORMAT:  $STATUSLINE_FORMAT"
+    [ -n "${STATUSLINE_FORMAT_2:-}" ] && echo "  STATUSLINE_FORMAT_2: $STATUSLINE_FORMAT_2"
+    [ -n "${STATUSLINE_FORMAT_3:-}" ] && echo "  STATUSLINE_FORMAT_3: $STATUSLINE_FORMAT_3"
+    echo ""
+
+    # Hooks
+    local settings="${HOME}/.claude/settings.json"
+    if [ -f "$settings" ]; then
+        echo "Hooks in settings.json:"
+        local hook
+        for hook in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop StopFailure; do
+            if jq -e ".hooks.$hook" "$settings" &>/dev/null; then
+                local cmd; cmd=$(jq -r ".hooks.${hook}[0].hooks[0].command // \"?\"" "$settings")
+                printf "  %-20s ✓  %s\n" "$hook" "$cmd"
+            else
+                printf "  %-20s ✗  missing\n" "$hook"
+            fi
+        done
+        if jq -e '.statusLine' "$settings" &>/dev/null; then
+            local sl_cmd; sl_cmd=$(jq -r '.statusLine.command // "?"' "$settings")
+            printf "  %-20s ✓  %s\n" "statusLine" "$sl_cmd"
+        else
+            printf "  %-20s ✗  not configured\n" "statusLine"
+        fi
+    else
+        echo "Hooks: settings.json not found at $settings"
+    fi
+    echo ""
+
+    # Performance
+    echo "Performance:"
+    local t0 t1
+    t0=$(date +%s%N)
+    ~/.local/bin/claude-worktime --statusline >/dev/null 2>&1
+    t1=$(date +%s%N)
+    echo "  Statusline: $(( (t1 - t0) / 1000000 ))ms"
+
+    # Dependencies
+    echo ""
+    echo "Dependencies:"
+    cmd_check
 }
 
 # --- Read hook stdin JSON ---
@@ -786,6 +917,15 @@ case "${1:-}" in
         exit 0
         ;;
     --check) cmd_check; exit $? ;;
+    --debug) cmd_debug; exit $? ;;
+    --repair)
+        [ ! -f "$LOGFILE" ] && { echo "No log file"; exit 0; }
+        _before=$(wc -l < "$LOGFILE")
+        _safe_log "$LOGFILE" > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
+        _after=$(wc -l < "$LOGFILE")
+        echo "Removed $((_before - _after)) corrupt lines ($_before → $_after)"
+        exit 0
+        ;;
 esac
 
 _require_jq
