@@ -34,7 +34,11 @@ CONFIGFILE="${LOGDIR}/config.sh"
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
 STATUSLINE_FORMAT="{status} session {session} · today {today} · {project}"
+STATUSLINE_FORMAT_2=""
+STATUSLINE_FORMAT_3=""
 STATUSLINE_IDLE_FORMAT="{status} idle {idle} · session {session} · today {today} · {project}"
+STATUSLINE_IDLE_FORMAT_2=""
+STATUSLINE_IDLE_FORMAT_3=""
 COLOR_NORMAL="\033[32m"
 COLOR_IDLE="\033[90m"
 COLOR_RATE_WARNING="\033[33m"
@@ -388,48 +392,62 @@ mode_statusline() {
         color="$COLOR_NORMAL"
     fi
 
-    local format
-    if $is_idle; then format="$STATUSLINE_IDLE_FORMAT"
-    else format="$STATUSLINE_FORMAT"; fi
-
-    local output="$format"
-    output="${output//\{session\}/$tok_session}"
-    output="${output//\{session_wall\}/$tok_session_wall}"
-    output="${output//\{today\}/$tok_today}"
-    output="${output//\{today_project\}/$tok_today_project}"
-    output="${output//\{project_total\}/$tok_project_total}"
-    output="${output//\{project\}/$tok_project}"
-    output="${output//\{branch\}/$tok_branch}"
-    output="${output//\{idle\}/$tok_idle}"
-    output="${output//\{status\}/$tok_status}"
-    # For tokens that may be empty (from stdin JSON or git), remove the whole
-    # segment between · separators if the value is empty
-    _replace_or_remove() {
-        local token=$1 value=$2
-        if [ -n "$value" ]; then
-            output="${output//$token/$value}"
-        else
-            # Remove the · segment containing this token
-            # Match: "· words {token} words ·" or at start/end
-            output=$(echo "$output" | sed "s/ *· *[^·]*${token}[^·]*//g; s/[^·]*${token}[^·]* *· *//g; s/[^·]*${token}[^·]*//g")
-        fi
+    # Render a format string: replace all tokens, clean up empty segments
+    _render_line() {
+        local output="$1"
+        output="${output//\{session\}/$tok_session}"
+        output="${output//\{session_wall\}/$tok_session_wall}"
+        output="${output//\{today\}/$tok_today}"
+        output="${output//\{today_project\}/$tok_today_project}"
+        output="${output//\{project_total\}/$tok_project_total}"
+        output="${output//\{project\}/$tok_project}"
+        output="${output//\{branch\}/$tok_branch}"
+        output="${output//\{idle\}/$tok_idle}"
+        output="${output//\{status\}/$tok_status}"
+        output="${output//\{git\}/$tok_git}"
+        # Remove segments with empty optional tokens
+        _try_remove() {
+            local token=$1 value=$2
+            if [ -n "$value" ]; then
+                output="${output//$token/$value}"
+            else
+                output=$(echo "$output" | sed "s/ *· *[^·]*${token}[^·]*//g; s/[^·]*${token}[^·]* *· *//g; s/[^·]*${token}[^·]*//g")
+            fi
+        }
+        _try_remove '{rate_5h}' "$tok_rate_5h"
+        _try_remove '{rate_5h_reset}' "$tok_rate_5h_reset"
+        _try_remove '{rate_5h_proj}' "$tok_rate_5h_proj"
+        _try_remove '{rate_7d}' "$tok_rate_7d"
+        _try_remove '{rate_7d_reset}' "$tok_rate_7d_reset"
+        _try_remove '{rate_7d_day}' "$tok_rate_7d_day"
+        _try_remove '{rate_7d_proj}' "$tok_rate_7d_proj"
+        _try_remove '{context}' "$tok_context"
+        _try_remove '{cost}' "$tok_cost"
+        _try_remove '{model}' "$tok_model"
+        # Clean up
+        output=$(echo "$output" | sed 's/ *() *//g; s/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
+        echo "$output"
     }
-    output="${output//\{git\}/$tok_git}"
-    _replace_or_remove '{rate_5h}' "$tok_rate_5h"
-    _replace_or_remove '{rate_5h_reset}' "$tok_rate_5h_reset"
-    _replace_or_remove '{rate_5h_proj}' "$tok_rate_5h_proj"
-    _replace_or_remove '{rate_7d}' "$tok_rate_7d"
-    _replace_or_remove '{rate_7d_reset}' "$tok_rate_7d_reset"
-    _replace_or_remove '{rate_7d_day}' "$tok_rate_7d_day"
-    _replace_or_remove '{rate_7d_proj}' "$tok_rate_7d_proj"
-    _replace_or_remove '{context}' "$tok_context"
-    _replace_or_remove '{cost}' "$tok_cost"
-    _replace_or_remove '{model}' "$tok_model"
 
-    # Clean up: remove empty parens, normalize separators, collapse, trim
-    output=$(echo "$output" | sed 's/ *() *//g; s/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
+    local fmt1 fmt2 fmt3
+    if $is_idle; then
+        fmt1="$STATUSLINE_IDLE_FORMAT"
+        fmt2="${STATUSLINE_IDLE_FORMAT_2:-${STATUSLINE_FORMAT_2:-}}"
+        fmt3="${STATUSLINE_IDLE_FORMAT_3:-${STATUSLINE_FORMAT_3:-}}"
+    else
+        fmt1="$STATUSLINE_FORMAT"
+        fmt2="${STATUSLINE_FORMAT_2:-}"
+        fmt3="${STATUSLINE_FORMAT_3:-}"
+    fi
 
-    printf '%b' "${color}${output}${COLOR_RESET}"
+    printf '%b' "${color}$(_render_line "$fmt1")${COLOR_RESET}"
+
+    local extra line
+    for extra in "$fmt2" "$fmt3"; do
+        [ -z "$extra" ] && continue
+        line=$(_render_line "$extra")
+        [ -n "$line" ] && printf '\n%b' "${color}${line}${COLOR_RESET}"
+    done
 }
 
 # ============================================================

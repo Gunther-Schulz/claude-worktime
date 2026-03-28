@@ -37,8 +37,14 @@ PAUSE_THRESHOLD=900  # 15 minutes
 # ---------------------------------------------------------------------------
 # Statusline format
 # ---------------------------------------------------------------------------
+# Up to 3 lines supported. Leave _2 and _3 empty for single-line display.
+# If IDLE_FORMAT_2/3 are empty, the normal FORMAT_2/3 are used when idle.
 STATUSLINE_FORMAT="{status} session {session} · today {today} · {project}"
+STATUSLINE_FORMAT_2=""
+STATUSLINE_FORMAT_3=""
 STATUSLINE_IDLE_FORMAT="{status} idle {idle} · session {session} · today {today} · {project}"
+STATUSLINE_IDLE_FORMAT_2=""
+STATUSLINE_IDLE_FORMAT_3=""
 
 # ---------------------------------------------------------------------------
 # Colors (ANSI escape codes, set to "" to disable)
@@ -58,24 +64,29 @@ RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
 
 # ============================= EXAMPLES ====================================
 #
-# --- Project-focused with rate limits, git status ---
-# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · {project} ({git})"
-# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · today {today_project} · total {project_total} · {project} ({git})"
-# Result: ⏱  today 45m · total 12h30m · 20% ↻3h21m →51% · 5% 7d ↻Sat →35% · my-org/my-project (main ✓)
+# --- Two-line: time + git on top, rate limits below ---
+# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
+# STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
+# Result: ⏱  today 45m · total 12h30m · my-org/my-project (main ✓)
+#         20% ↻3h21m →51% · 5% 7d ↻Sat →35%
 #
-# --- Session-based with git ---
-# STATUSLINE_FORMAT="{status}  session {session} · today {today} · {rate_5h} {rate_5h_proj} · {project} ({git})"
-# STATUSLINE_IDLE_FORMAT="{status}  idle {idle} · session {session} · today {today} · {project} ({git})"
-# Result: ⏱  session 45m · today 2h10m · 20% →51% · my-org/my-project (main ✗↑2)
+# --- Two-line: session + project, then cost + rates ---
+# STATUSLINE_FORMAT="{status}  session {session} · today {today} · {project} ({git})"
+# STATUSLINE_FORMAT_2="{cost} · {rate_5h} {rate_5h_proj} · {rate_7d} 7d"
+# Result: ⏱  session 45m · today 2h10m · my-org/my-project (main ✗↑2)
+#         $1.23 · 20% →51% · 5% 7d
 #
-# --- Compact ---
+# --- Single-line compact ---
 # STATUSLINE_FORMAT="{status} {session} ({today}) · {rate_5h} · {project}"
 # STATUSLINE_IDLE_FORMAT="{status} idle {idle} · {session} ({today}) · {project}"
 # Result: ⏱ 45m (2h10m) · 20% · my-org/my-project
 #
-# --- Kitchen sink: cost, context, git, all rate limits ---
-# STATUSLINE_FORMAT="{status}  {session} · {cost} · ctx {context} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj} · {project} ({git})"
-# STATUSLINE_IDLE_FORMAT="{status}  idle · {cost} · {rate_5h} · {project} ({git})"
-# Result: ⏱  45m · $1.23 · ctx 12% · 20% ↻3h21m →51% · 5% 7d ↻Sat →35% · my-org/my-project (main +✗↑2)
+# --- Three-line: everything separated ---
+# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
+# STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
+# STATUSLINE_FORMAT_3="{model} · ctx {context} · {cost}"
+# Result: ⏱  today 45m · total 12h30m · my-org/my-project (main ✓)
+#         20% ↻3h21m →51% · 5% 7d ↻Sat →35%
+#         Opus 4.6 · ctx 12% · $1.23
 #
 # ===========================================================================
