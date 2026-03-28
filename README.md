@@ -117,11 +117,34 @@ All three auto-hide when no data is available.
 
 Empty tokens are automatically removed along with their surrounding separators.
 
-### Multi-line statusline
+### Group-based layout (default)
 
-Up to 3 lines. Set `STATUSLINE_FORMAT_2` and `_3` for additional rows:
+Define named groups, then compose lines by listing group names. The divider (`GROUP_DIVIDER`, default ` · `) is inserted automatically between non-empty groups. Empty groups are hidden entirely.
 
 ```bash
+# Groups
+GROUP_PROJECT="{project} ({git})"
+GROUP_TIME="{status} today {today_project} · total {project_total}"
+GROUP_TIMELINE="{timeline} {today}"
+GROUP_BREAKS="{since_break} {last_break}"
+GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
+GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+GROUP_CONTEXT="ctx {context}"
+
+# Lines (space-separated group names)
+STATUSLINE_1="PROJECT TIME"
+STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
+GROUP_DIVIDER=" · "
+```
+
+Reorder groups by moving names. Add a third line with `STATUSLINE_3="MODEL"` and `GROUP_MODEL="{model} · {cost}"`. Create custom groups with any mix of tokens.
+
+### Legacy format strings
+
+The old flat format strings still work. If `STATUSLINE_1` is empty, the legacy `STATUSLINE_FORMAT` / `_2` / `_3` variables are used instead:
+
+```bash
+STATUSLINE_1=""  # disable groups, use legacy
 STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
 STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 ```

@@ -37,12 +37,24 @@
 PAUSE_THRESHOLD=900  # 15 minutes
 
 # ---------------------------------------------------------------------------
-# Statusline format
+# Statusline format — group-based
 # ---------------------------------------------------------------------------
-# Up to 3 lines supported. Leave _2 and _3 empty for single-line display.
-STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
-STATUSLINE_FORMAT_3=""
+# Define named groups, then compose lines by listing group names.
+# Divider (GROUP_DIVIDER) is inserted automatically between non-empty groups.
+# Empty groups (all tokens unavailable) are hidden automatically.
+
+GROUP_PROJECT="{project} ({git})"
+GROUP_TIME="{status} today {today_project} · total {project_total}"
+GROUP_TIMELINE="{timeline} {today}"
+GROUP_BREAKS="{since_break} {last_break}"
+GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
+GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+GROUP_CONTEXT="ctx {context}"
+
+STATUSLINE_1="PROJECT TIME"
+STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
+STATUSLINE_3=""
+GROUP_DIVIDER=" · "
 
 # ---------------------------------------------------------------------------
 # Colors — use preset names or raw ANSI codes
@@ -94,23 +106,25 @@ LOG_COST=false
 
 # ============================= EXAMPLES ====================================
 #
-# --- Two-line: project on top, personal rhythm + rates below (default) ---
-# Line 1 = project-scoped, Line 2 = cross-session personal
-# STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
-# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
-# Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
-#         ▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+# --- Reorder groups (just move names around) ---
+# STATUSLINE_2="TIMELINE BREAKS CONTEXT RATE_5H RATE_7D"
+#
+# --- Add model and cost as a third line ---
+# GROUP_MODEL="{model} · {cost}"
+# STATUSLINE_3="MODEL"
 #
 # --- Single-line compact ---
-# STATUSLINE_FORMAT="{project} · {status}  {session} ({today}) · {rate_5h}"
-# Result: my-org/my-project · ⏱  45m (2h10m) · ◑20%
+# GROUP_COMPACT="{project} · {status} {session} ({today}) · {rate_5h}"
+# STATUSLINE_1="COMPACT"
+# STATUSLINE_2=""
 #
-# --- Three-line: everything separated ---
+# --- Custom group with session wall time ---
+# GROUP_WALL="{session}/{session_wall}"
+# STATUSLINE_1="PROJECT TIME WALL"
+#
+# --- Legacy format strings (still supported, used when STATUSLINE_1 is empty) ---
+# STATUSLINE_1=""
 # STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
 # STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
-# STATUSLINE_FORMAT_3="{model} · {cost}"
-# Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
-#         ▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ctx 77% ⟳93%
-#         Opus 4.6 · $1.23
 #
 # ===========================================================================
