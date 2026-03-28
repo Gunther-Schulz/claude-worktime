@@ -56,7 +56,7 @@ if [ -d "$LEGACY_DIR" ]; then
         echo "    Config → $CONFIGDIR/config.sh"
     fi
     # Move data files
-    for f in "$LEGACY_DIR"/activity*.log; do
+    for f in "$LEGACY_DIR"/activity*.jsonl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f")
         if [ ! -f "$DATADIR/$local_name" ]; then

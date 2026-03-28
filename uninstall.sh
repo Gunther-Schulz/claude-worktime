@@ -14,9 +14,6 @@ if [ -f "$BIN_DIR/claude-worktime" ]; then
     echo "  Removed $BIN_DIR/claude-worktime"
 fi
 
-# Also clean up old location if present
-rm -f "$CLAUDE_DIR/scripts/claude-worktime.sh" "$CLAUDE_DIR/scripts/session-elapsed.sh"
-
 # Remove hooks and statusline from settings.json
 if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
     changed=false

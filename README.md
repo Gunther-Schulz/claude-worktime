@@ -134,9 +134,9 @@ ROTATE_INTERVAL=monthly    # monthly, weekly, daily
 ```
 
 Archive filenames adapt to the interval:
-- `monthly` → `activity-2026-03.log`
-- `weekly` → `activity-2026-W13.log`
-- `daily` → `activity-2026-03-28.log`
+- `monthly` → `activity-2026-03.jsonl`
+- `weekly` → `activity-2026-W13.jsonl`
+- `daily` → `activity-2026-03-28.jsonl`
 
 Per-project summary entries are preserved in the active log so `{project_total}` survives rotation. CLI queries (`--since`, `--summary`, `--csv`, etc.) automatically search archived logs for historical data.
 
@@ -318,7 +318,7 @@ The statusline tokens and CLI filters can be combined freely. For example, `{tod
 
 ## Log format
 
-JSONL at `~/.local/share/claude-worktime/activity.log`:
+JSONL at `~/.local/share/claude-worktime/activity.jsonl`:
 
 ```jsonl
 {"t":1774632641,"p":"/path/to/project","b":"main","s":"session-uuid","e":"start"}
@@ -345,8 +345,8 @@ Corrupt lines are tolerated — all readers skip invalid JSON entries gracefully
 | Path | Purpose |
 |------|---------|
 | `~/.config/claude-worktime/config.sh` | Configuration |
-| `~/.local/share/claude-worktime/activity.log` | Active log (JSONL) |
-| `~/.local/share/claude-worktime/activity-*.log` | Rotated archives |
+| `~/.local/share/claude-worktime/activity.jsonl` | Active log (JSONL) |
+| `~/.local/share/claude-worktime/activity-*.jsonl` | Rotated archives |
 | `~/.local/bin/claude-worktime` | The script |
 
 ## Dependencies

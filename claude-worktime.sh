@@ -65,7 +65,7 @@ LOG_COST=false  # log session cost snapshots (for API/extra usage billing)
 
 # DATADIR can be overridden in config.sh, so set LOGDIR/LOGFILE after sourcing
 LOGDIR="${DATADIR}"
-LOGFILE="${LOGDIR}/activity.log"
+LOGFILE="${LOGDIR}/activity.jsonl"
 
 # Reusable jq: compute active seconds using event-aware idle detection
 # A gap is idle ONLY when: previous event is "response" (or "start") AND gap > pause threshold
@@ -232,7 +232,7 @@ cmd_debug() {
     echo ""
 
     # Archives
-    local archives=("$LOGDIR"/activity-*.log)
+    local archives=("$LOGDIR"/activity-*.jsonl)
     if [ -f "${archives[0]:-}" ]; then
         echo "Archives:"
         for f in "${archives[@]}"; do
@@ -392,7 +392,7 @@ _log_files() {
     # If querying historical data, include matching archives
     if [ "$since" -gt 0 ]; then
         local f
-        for f in "$LOGDIR"/activity-*.log; do
+        for f in "$LOGDIR"/activity-*.jsonl; do
             [ -f "$f" ] || continue
             files+=("$f")
         done
@@ -1073,7 +1073,7 @@ _do_rotate() {
     old_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t < $since)' "$LOGFILE" 2>/dev/null || true)
     [ -z "$old_entries" ] && return
 
-    local archive="${LOGDIR}/activity-${ROTATE_SUFFIX}.log"
+    local archive="${LOGDIR}/activity-${ROTATE_SUFFIX}.jsonl"
     echo "$old_entries" >> "$archive"
 
     # Keep: existing summaries + new summaries + current event entries
