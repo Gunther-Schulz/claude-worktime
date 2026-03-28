@@ -87,21 +87,21 @@ LOG_COST=false
 #
 # --- Two-line: project on top, personal rhythm + rates below (default) ---
 # Line 1 = project-scoped, Line 2 = cross-session personal
-# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
-# STATUSLINE_FORMAT_2="{timeline} {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
-# Result: ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓)
-#         ▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
+# STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
+# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
+# Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
+#         ▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · 5% 7d ↻Sat
 #
 # --- Single-line compact ---
-# STATUSLINE_FORMAT="{status}  {session} ({today}) · {rate_5h} · {project}"
-# Result: ⏱  45m (2h10m) · ◑20% · my-org/my-project
+# STATUSLINE_FORMAT="{project} · {status}  {session} ({today}) · {rate_5h}"
+# Result: my-org/my-project · ⏱  45m (2h10m) · ◑20%
 #
 # --- Three-line: everything separated ---
-# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
-# STATUSLINE_FORMAT_2="{timeline} {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
+# STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
+# STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
 # STATUSLINE_FORMAT_3="{model} · ctx {context} · {cost}"
-# Result: ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓)
-#         ▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51%
+# Result: my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
+#         ▮▯▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51%
 #         Opus 4.6 · ctx 12% · $1.23
 #
 # ===========================================================================

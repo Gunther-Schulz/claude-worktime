@@ -47,8 +47,8 @@ DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-wor
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
-STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git}) · {since_break} {last_break}"
-STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
+STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
+STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
 STATUSLINE_FORMAT_3=""
 COLOR_NORMAL="\033[32m"
 COLOR_RATE_WARNING="\033[33m"
