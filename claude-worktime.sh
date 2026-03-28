@@ -88,6 +88,16 @@ _date_parse() { date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2
 # --- Dependency check ---
 _require_jq() { command -v jq &>/dev/null || { echo "Error: jq is required." >&2; exit 1; }; }
 
+# Read log file safely. Fast path: direct read. Fallback: skip corrupt lines.
+_safe_log() {
+    local file="${1:-$LOGFILE}"
+    if jq -ce '.' "$file" >/dev/null 2>&1; then
+        cat "$file"
+    else
+        jq -Rc 'fromjson? // empty' "$file" 2>/dev/null
+    fi
+}
+
 # Minimum versions: bash 4.0, jq 1.6, git 2.22
 cmd_check() {
     local ok=true
@@ -201,14 +211,13 @@ cmd_log() {
     branch=$(git -C "$path" branch --show-current 2>/dev/null || true)
     session_id="${HOOK_SESSION_ID:-unknown}"
 
-    # Write JSONL directly — escape special chars for valid JSON
-    local jp="${path//\\/\\\\}"; jp="${jp//\"/\\\"}"
-    local jb="${branch//\\/\\\\}"; jb="${jb//\"/\\\"}"
-    local js="${session_id//\\/\\\\}"; js="${js//\"/\\\"}"
+    # Write JSONL — use jq for proper JSON string escaping
     if [ -n "$branch" ]; then
-        printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$jb" "$js" "$event" >> "$LOGFILE"
+        jq -nc --argjson t "$ts" --arg p "$path" --arg b "$branch" --arg s "$session_id" --arg e "$event" \
+            '{t:$t,p:$p,b:$b,s:$s,e:$e}' >> "$LOGFILE"
     else
-        printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$js" "$event" >> "$LOGFILE"
+        jq -nc --argjson t "$ts" --arg p "$path" --arg s "$session_id" --arg e "$event" \
+            '{t:$t,p:$p,s:$s,e:$e}' >> "$LOGFILE"
     fi
 
     if [ "$event" = "start" ]; then
@@ -247,19 +256,23 @@ _entries() {
 
     local files
     mapfile -t files < <(_log_files "$since")
-    cat "${files[@]}" 2>/dev/null | jq -c "$jq_filter" 2>/dev/null || true
+    cat "${files[@]}" 2>/dev/null | jq -Rc 'fromjson? // empty' 2>/dev/null | jq -c "$jq_filter" 2>/dev/null || true
 }
 
 _session_entries() {
     local sid=$1
-    # Search current log and archives (session could span rotation)
     local files
     mapfile -t files < <(_log_files 1)
-    cat "${files[@]}" 2>/dev/null | jq -c --arg s "$sid" 'select(.s == $s)' 2>/dev/null || true
+    cat "${files[@]}" 2>/dev/null | jq -Rc 'fromjson? // empty' 2>/dev/null | jq -c --arg s "$sid" 'select(.s == $s)' 2>/dev/null || true
 }
 
 _current_session_id() {
-    tail -1 "$LOGFILE" 2>/dev/null | jq -r '.s // empty' 2>/dev/null || true
+    # Read last valid JSON line (skip any corrupt trailing lines)
+    local line sid
+    while IFS= read -r line; do
+        sid=$(echo "$line" | jq -r '.s // empty' 2>/dev/null || true)
+        [ -n "$sid" ] && { echo "$sid"; return; }
+    done < <(tac "$LOGFILE" 2>/dev/null || true)
 }
 
 # ============================================================
@@ -278,7 +291,7 @@ mode_statusline() {
 
     # Single jq call: compute session info + today + today_project + project_total
     local all_info
-    all_info=$(jq -sr --argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" "
+    local _jq_query="
         ${JQ_CALC}
         . as \$raw
         | [.[] | select((.type // null) == null)] as \$all
@@ -301,7 +314,12 @@ mode_statusline() {
         }
         | [.session_active, .first_t, .last_t, .last_e, .project, .branch, .today_active, .today_project_active, .project_total_active]
         | @tsv
-    " "$LOGFILE")
+    "
+    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid")
+
+    # Fast path: direct read. Fallback: skip corrupt lines.
+    all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
+        || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
     local session_active session_first session_last last_e project branch today_active today_project_active project_total_active
     IFS=$'\t' read -r session_active session_first session_last last_e project branch today_active today_project_active project_total_active <<< "$all_info"
