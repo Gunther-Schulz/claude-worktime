@@ -25,6 +25,7 @@
 #   claude-worktime --raw                   # JSON output (any mode)
 
 set -euo pipefail
+export LC_ALL=C
 
 LOGDIR="${CLAUDE_WORKTIME_DIR:-${HOME}/.claude/worktime}"
 LOGFILE="${LOGDIR}/activity.log"
@@ -277,10 +278,10 @@ mode_statusline() {
         ctx=$(echo "$_STDIN_JSON" | jq -r '.context_window.used_percentage // empty' 2>/dev/null || true)
         cst=$(echo "$_STDIN_JSON" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true)
         mdl=$(echo "$_STDIN_JSON" | jq -r '.model.display_name // empty' 2>/dev/null || true)
-        [ -n "$r5h" ] && tok_rate_5h=$(LC_ALL=C printf "%.0f%%" "$r5h")
-        [ -n "$r7d" ] && tok_rate_7d=$(LC_ALL=C printf "%.0f%%" "$r7d")
-        [ -n "$ctx" ] && tok_context=$(LC_ALL=C printf "%.0f%%" "$ctx")
-        [ -n "$cst" ] && tok_cost=$(LC_ALL=C printf "$%.2f" "$cst")
+        [ -n "$r5h" ] && tok_rate_5h=$(printf "%.0f%%" "$r5h")
+        [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
+        [ -n "$ctx" ] && tok_context=$(printf "%.0f%%" "$ctx")
+        [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         [ -n "$mdl" ] && tok_model="$mdl"
     fi
 
