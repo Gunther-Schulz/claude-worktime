@@ -526,8 +526,10 @@ mode_statusline() {
                     | {from: \$today[.-1].t, to: \$today[.].t}] as \$breaks
                 | [range(0; \$width) | . as \$i
                     | (\$tstart + \$i * \$tblock) as \$bs | (\$bs + \$tblock) as \$be
-                    # Force break block if any break overlaps this block
-                    | if ([\$breaks[] | select(.from < \$be and .to > \$bs)] | length) > 0
+                    # Force break block if a break covers more than half this block
+                    | if ([\$breaks[] | select(.from < \$be and .to > \$bs)
+                        | ([.to, \$be] | min) - ([.from, \$bs] | max)
+                        | select(. > (\$tblock / 2))] | length) > 0
                       then \"▯\"
                       elif ([\$today[] | select(.t >= \$bs and .t < \$be)] | length) > 0
                       then \"▮\" else \"▯\" end
