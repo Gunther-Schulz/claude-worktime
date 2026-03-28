@@ -130,7 +130,7 @@ STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d
 
 The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Projection color is configurable via `COLOR_RATE_WARNING` (default: yellow at ≥90%) and `COLOR_RATE_CRITICAL` (default: red at ≥100%). Set to `""` to disable.
 
-The 7d tokens (`{rate_7d}`, `{rate_7d_day}`, `{rate_7d_proj}`) depend on Claude Code providing 7-day rate limit data. This data may not appear until the current 7-day window has started and some usage is recorded — the entire group will be hidden until then. The 7d projection additionally requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
+The 7d tokens (`{rate_7d}`, `{rate_7d_day}`, `{rate_7d_proj}`) depend on Claude Code providing 7-day rate limit data. In practice, the entire 7d group may not appear until some time after the weekly window resets — all tokens auto-hide when data is unavailable. The 7d projection additionally requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
 
 ### Auto-rotation
 
