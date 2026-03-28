@@ -78,6 +78,8 @@ With rate limits, git, and break info (via config):
 ◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
 ```
 
+**Note:** The statusline is not real-time — Claude Code updates it after each assistant response, not on a timer. During long multi-tool responses, the display stays frozen until Claude finishes. The underlying time tracking is accurate regardless; only the display is event-driven.
+
 ### CLI queries
 
 ```bash
@@ -89,9 +91,10 @@ claude-worktime --today
 claude-worktime --week
 claude-worktime --since 2026-03-25
 
-# Filter by project path or git branch
+# Filter by project path, git branch, or session ID
 claude-worktime --today --filter Todenbuettel
 claude-worktime --today --branch feature/auth
+claude-worktime --session 3954c82f            # partial ID match
 
 # Phase breakdown (Claude vs You, breaks, downtime)
 claude-worktime --breakdown
@@ -122,7 +125,7 @@ claude-worktime --cost --filter Todenbuettel
 claude-worktime --rotate
 ```
 
-All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`) can be combined with any mode.
+All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`) can be combined with any mode.
 
 ### Phase breakdown
 
