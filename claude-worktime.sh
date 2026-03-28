@@ -57,7 +57,7 @@ TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
 COLOR_RESET="\033[0m"
 RATE_7D_PROJ_MIN_DAYS=0.5
 AUTO_ROTATE=true
-ROTATE_INTERVAL=monthly  # monthly, weekly, daily
+ROTATE_INTERVAL=daily  # daily, weekly, monthly
 GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
 LOG_COST=false  # log session cost snapshots (for API/extra usage billing)
 
@@ -342,6 +342,7 @@ _short_project() {
 # Subcommand: log — append a JSONL entry (called by hooks)
 # ============================================================
 cmd_log() {
+    set +e  # hooks must not fail — a missed entry is better than blocking Claude Code
     mkdir -p "$LOGDIR"
 
     _read_hook_stdin

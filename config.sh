@@ -57,7 +57,7 @@ COLOR_RESET="\033[0m"
 # Auto-rotation — archive old log entries on session start
 # ---------------------------------------------------------------------------
 AUTO_ROTATE=true
-ROTATE_INTERVAL=monthly    # monthly, weekly, daily
+ROTATE_INTERVAL=daily    # daily, weekly, monthly
 
 # ---------------------------------------------------------------------------
 # Projections
