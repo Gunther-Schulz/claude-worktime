@@ -378,6 +378,16 @@ _fmt_short() {
     if [ "$h" -gt 0 ]; then printf "%dh%02dm" "$h" "$m"
     else printf "%dm" "$m"; fi
 }
+# Variable-setting variant: sets _V instead of printing (avoids subshell)
+_fmt_short_v() {
+    local s=${1:-0}
+    local h=$((s / 3600)) m=$(( (s % 3600) / 60 ))
+    if [ "$h" -gt 0 ]; then
+        [ "$m" -lt 10 ] && _V="${h}h0${m}m" || _V="${h}h${m}m"
+    else
+        _V="${m}m"
+    fi
+}
 _short_project() {
     local p="${1%/}"
     local last="${p##*/}"
@@ -387,6 +397,18 @@ _short_project() {
         echo "$second/$last"
     else
         echo "$last"
+    fi
+}
+# Variable-setting variant
+_short_project_v() {
+    local p="${1%/}"
+    local last="${p##*/}"
+    local rest="${p%/*}"
+    local second="${rest##*/}"
+    if [ -n "$second" ] && [ "$second" != "$last" ]; then
+        _V="$second/$last"
+    else
+        _V="$last"
     fi
 }
 
@@ -475,10 +497,12 @@ _session_entries() {
 }
 
 _current_session_id() {
-    # Read last valid JSON line (skip any corrupt trailing lines)
-    local line sid
+    # Read last valid JSON line — extract "s" field with bash (no jq)
+    local line tmp sid
     while IFS= read -r line; do
-        sid=$(echo "$line" | jq -r '.s // empty' 2>/dev/null || true)
+        tmp="${line#*\"s\":\"}"
+        [ "$tmp" = "$line" ] && continue  # no "s" field
+        sid="${tmp%%\"*}"
         [ -n "$sid" ] && { echo "$sid"; return; }
     done < <(tac "$LOGFILE" 2>/dev/null || true)
 }
@@ -574,15 +598,14 @@ mode_statusline() {
     local session_wall=$(( now - session_first ))
 
 
-    # Build tokens
-    local proj_short; proj_short=$(_short_project "$project")
+    # Build tokens (using _v variants to avoid subshells)
     local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_since_break tok_git
-    tok_session=$(_fmt_short "$session_active")
-    tok_session_wall=$(_fmt_short "$session_wall")
-    tok_today=$(_fmt_short "$today_active")
-    tok_today_project=$(_fmt_short "$today_project_active")
-    tok_project_total=$(_fmt_short "$project_total_active")
-    tok_project="$proj_short"
+    _fmt_short_v "$session_active"; tok_session="$_V"
+    _fmt_short_v "$session_wall"; tok_session_wall="$_V"
+    _fmt_short_v "$today_active"; tok_today="$_V"
+    _fmt_short_v "$today_project_active"; tok_today_project="$_V"
+    _fmt_short_v "$project_total_active"; tok_project_total="$_V"
+    _short_project_v "$project"; tok_project="$_V"
     tok_branch="$branch"
     # Only show if there was an actual break (over threshold) this session
     tok_last_break=""
@@ -590,8 +613,8 @@ mode_statusline() {
     local lb=${last_break:-0}
     local sb=${since_break:-0}
     if [ "$lb" -gt 0 ]; then
-        tok_last_break="⏸ $(_fmt_short "$lb")"
-        tok_since_break="▶$(_fmt_short "$sb")"
+        _fmt_short_v "$lb"; tok_last_break="⏸ $_V"
+        _fmt_short_v "$sb"; tok_since_break="▶$_V"
     fi
 
 
@@ -709,23 +732,22 @@ mode_statusline() {
             [ "$r5h_int" -ge 75 ] && r5h_icon="●"
             tok_rate_5h="${r5h_icon}${r5h_int}%"
         fi
-        [ -n "$r5h_reset" ] && tok_rate_5h_reset=$(_fmt_short $(( r5h_reset - now )))
+        if [ -n "$r5h_reset" ]; then _fmt_short_v $(( r5h_reset - now )); tok_rate_5h_reset="$_V"; fi
         [ -n "$r7d" ] && tok_rate_7d="${r7d%%.*}%"
-        [ -n "$r7d_reset" ] && tok_rate_7d_reset=$(_fmt_short $(( r7d_reset - now )))
+        if [ -n "$r7d_reset" ]; then _fmt_short_v $(( r7d_reset - now )); tok_rate_7d_reset="$_V"; fi
         [ -n "$r7d_reset" ] && tok_rate_7d_day=$(date -d "@$r7d_reset" +%a 2>/dev/null || date -r "$r7d_reset" +%a 2>/dev/null)
         # tok_context already set above (with cache merge)
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         [ -n "$mdl" ] && tok_model="$mdl"
 
-        # Projected rate limit usage at window reset
-        # burn_rate = used% / elapsed_time, projected = used% + burn_rate * remaining_time
-        _project_rate() {
-            local used=$1 reset_at=$2 window=$3
+        # Projected rate limit usage at window reset (pure bash integer math)
+        # proj = used% * window / elapsed  (equivalent to used + burn_rate * remaining)
+        _project_rate_v() {
+            local used=${1%%.*} reset_at=$2 window=$3
             local remaining=$(( reset_at - now ))
             local elapsed=$(( window - remaining ))
-            [ "$elapsed" -le 60 ] && return  # need at least 1min of data
-            local proj
-            proj=$(awk "BEGIN { rate = $used / $elapsed; proj = $used + rate * $remaining; printf \"%.0f\", proj }")
+            [ "$elapsed" -le 60 ] && { _V=""; return; }
+            local proj=$(( used * window / elapsed ))
             local proj_color=""
             if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
                 proj_color="$COLOR_RATE_CRITICAL"
@@ -733,12 +755,14 @@ mode_statusline() {
                 proj_color="$COLOR_RATE_WARNING"
             fi
             if [ -n "$proj_color" ]; then
-                printf '%s' "${proj_color}→${proj}%${COLOR_RESET}"
+                _V="${proj_color}→${proj}%${COLOR_RESET}"
             else
-                printf '%s' "→${proj}%"
+                _V="→${proj}%"
             fi
         }
-        [ -n "$r5h" ] && [ -n "$r5h_reset" ] && tok_rate_5h_proj=$(_project_rate "$r5h" "$r5h_reset" 18000)
+        if [ -n "$r5h" ] && [ -n "$r5h_reset" ]; then
+            _project_rate_v "$r5h" "$r5h_reset" 18000; tok_rate_5h_proj="$_V"
+        fi
         # 7d projection: single awk call for days_elapsed check + projection
         if [ -n "$r7d" ] && [ -n "$r7d_reset" ]; then
             local proj
