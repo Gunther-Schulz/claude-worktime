@@ -361,6 +361,12 @@ Run `claude-worktime --check` to verify.
 
 No python, no node, no extra runtimes.
 
+## Known limitations
+
+**Hook reliability (~93%).** Claude Code hooks occasionally don't fire — in our testing, about 7% of events are missed (typically `response` or `prompt` events). This does **not** affect total active time, breaks, or downtime — those are calculated from the gaps between events that *do* fire, and the totals remain accurate. The only impact is on the Claude/You split in `--breakdown`, which may shift by a few percent in either direction. Missed `response` events attribute your reading time to Claude; missed `prompt` events do the opposite. These errors partially cancel out.
+
+**Statusline is not real-time.** Claude Code only refreshes the statusline after each assistant response. The display freezes during tool execution and while you're typing. Time tracking continues accurately in the background; only the display is delayed.
+
 ## License
 
 MIT
