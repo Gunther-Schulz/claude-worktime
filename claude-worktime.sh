@@ -435,10 +435,13 @@ _current_session_id() {
 # ============================================================
 
 mode_statusline() {
+    # Disable errexit in statusline — a crash should never blank the display
+    set +e
+
     _read_hook_stdin
 
     local sid="${HOOK_SESSION_ID:-$(_current_session_id)}"
-    [ -z "$sid" ] && { printf '%b' "${COLOR_IDLE}⏱ --${COLOR_RESET}"; return; }
+    [ -z "$sid" ] && { printf '%b' "⏱ --"; return; }
 
     local now=$(date +%s)
 
