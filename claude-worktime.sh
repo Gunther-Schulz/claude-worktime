@@ -140,6 +140,10 @@ COLOR_TIMELINE_WORK=$(_resolve_color "$COLOR_TIMELINE_WORK")
 COLOR_TIMELINE_BREAK=$(_resolve_color "$COLOR_TIMELINE_BREAK")
 COLOR_RESET=$(_resolve_color "${COLOR_RESET:-"\033[0m"}")
 
+# Precompute derived config values (once, not per statusline call)
+# Convert RATE_7D_PROJ_MIN_DAYS (float) to seconds (integer) for bash comparison
+RATE_7D_PROJ_MIN_SECONDS=$(awk "BEGIN { printf \"%d\", ${RATE_7D_PROJ_MIN_DAYS:-0.5} * 86400 }")
+
 # --- Date helpers (GNU coreutils, BSD fallback) ---
 _date_at() { date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null; }
 _today_start() { date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null; }
@@ -662,7 +666,7 @@ mode_statusline() {
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
-        stdin_parsed=$(echo "$_STDIN_JSON" | jq -r '[
+        stdin_parsed=$(jq -r '[
             (.rate_limits.five_hour.used_percentage // "_"),
             (.rate_limits.five_hour.resets_at // "_"),
             (.rate_limits.seven_day.used_percentage // "_"),
@@ -672,7 +676,7 @@ mode_statusline() {
             (.context_window.current_usage.cache_read_input_tokens // "_"),
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_")
-        ] | join("\t")' 2>/dev/null || true)
+        ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
         local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read cst mdl
         IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read cst mdl <<< "$stdin_parsed"
@@ -735,7 +739,10 @@ mode_statusline() {
         if [ -n "$r5h_reset" ]; then _fmt_short_v $(( r5h_reset - now )); tok_rate_5h_reset="$_V"; fi
         [ -n "$r7d" ] && tok_rate_7d="${r7d%%.*}%"
         if [ -n "$r7d_reset" ]; then _fmt_short_v $(( r7d_reset - now )); tok_rate_7d_reset="$_V"; fi
-        [ -n "$r7d_reset" ] && tok_rate_7d_day=$(date -d "@$r7d_reset" +%a 2>/dev/null || date -r "$r7d_reset" +%a 2>/dev/null)
+        if [ -n "$r7d_reset" ]; then
+            local -a _days=(Thu Fri Sat Sun Mon Tue Wed)
+            tok_rate_7d_day="${_days[$(( (r7d_reset / 86400) % 7 ))]}"
+        fi
         # tok_context already set above (with cache merge)
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         [ -n "$mdl" ] && tok_model="$mdl"
@@ -763,14 +770,14 @@ mode_statusline() {
         if [ -n "$r5h" ] && [ -n "$r5h_reset" ]; then
             _project_rate_v "$r5h" "$r5h_reset" 18000; tok_rate_5h_proj="$_V"
         fi
-        # 7d projection: single awk call for days_elapsed check + projection
+        # 7d projection: pure bash integer math
         if [ -n "$r7d" ] && [ -n "$r7d_reset" ]; then
-            local proj
-            proj=$(awk "BEGIN {
-                d = (7 * 86400 - ($r7d_reset - $now)) / 86400
-                if (d < 0.01) d = 0.01
-                if (d >= ${RATE_7D_PROJ_MIN_DAYS}) { printf \"%.0f\", ($r7d / d) * 7 }
-            }")
+            local elapsed_s=$(( 7 * 86400 - (r7d_reset - now) ))
+            [ "$elapsed_s" -lt 60 ] && elapsed_s=60
+            local proj=""
+            if [ "$elapsed_s" -ge "$RATE_7D_PROJ_MIN_SECONDS" ]; then
+                proj=$(( ${r7d%%.*} * 7 * 86400 / elapsed_s ))
+            fi
             if [ -n "$proj" ]; then
                 local proj_color=""
                 if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
