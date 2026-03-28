@@ -2,7 +2,12 @@
 
 Track active working time in [Claude Code](https://claude.com/claude-code) sessions.
 
-Hooks into Claude Code's event lifecycle to log timestamps with session IDs, then computes active time using event-aware idle detection. Includes a fully configurable multi-line statusline with rate limit projections and git status.
+```
+⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
+◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
+```
+
+Time tracking, break detection, rate limit projections, git status, cost analysis — all in a configurable statusline. Event-aware idle detection ensures long-running tools are never misclassified as breaks.
 
 ## How it works
 
