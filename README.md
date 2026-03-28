@@ -153,12 +153,13 @@ Manual rotation: `claude-worktime --rotate`
 ### Colors
 
 ```bash
-COLOR_NORMAL="\033[32m"           # green — working
-COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate ≥90%
-COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate ≥100%
+COLOR_NORMAL="green"              # working normally
+COLOR_RATE_WARNING="yellow"       # projected rate ≥90%
+COLOR_RATE_CRITICAL="red"         # projected rate ≥100%
+COLOR_RESET="reset"               # reset to terminal default
 ```
 
-Set any color to `""` to disable it.
+Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `orange`, `pink`, `purple`, `bright-green`, `bright-red`, `bright-yellow`, `bright-blue`, `bright-white`, `dim`, `reset`, `none`. Raw ANSI codes (e.g. `"\033[38;5;208m"`) also work. Set to `""` or `"none"` to disable.
 
 ### Environment variables
 

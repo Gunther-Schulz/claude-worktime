@@ -56,7 +56,7 @@ COLOR_RATE_WARNING="yellow"
 COLOR_RATE_CRITICAL="red"
 COLOR_TIMELINE_WORK=""             # empty = same as line color
 COLOR_TIMELINE_BREAK=""            # empty = same as line color
-COLOR_RESET="\033[0m"
+COLOR_RESET="reset"
 
 # Example: green work blocks, orange break blocks
 # COLOR_TIMELINE_WORK="green"

@@ -50,13 +50,13 @@ PAUSE_THRESHOLD=900
 STATUSLINE_FORMAT="{project} ({git}) · {status}  today {today_project} · total {project_total}"
 STATUSLINE_FORMAT_2="{timeline} {today} · {since_break} {last_break} · {rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · ⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj} · ctx {context}"
 STATUSLINE_FORMAT_3=""
-COLOR_NORMAL="\033[32m"
-COLOR_RATE_WARNING="\033[33m"
-COLOR_RATE_CRITICAL="\033[31m"
+COLOR_NORMAL="green"
+COLOR_RATE_WARNING="yellow"
+COLOR_RATE_CRITICAL="red"
 COLOR_TIMELINE_WORK=""   # color for ▮ blocks (empty = same as line color)
 COLOR_TIMELINE_BREAK=""  # color for ▯ blocks (empty = same as line color)
 TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
-COLOR_RESET="\033[0m"
+COLOR_RESET="reset"
 RATE_7D_PROJ_MIN_DAYS=0.5
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily  # daily, weekly, monthly
@@ -117,6 +117,7 @@ _resolve_color() {
         bright-blue)  echo "\033[1;34m" ;;
         bright-white) echo "\033[1;37m" ;;
         dim)          echo "\033[2m" ;;
+        reset)        echo "\033[0m" ;;
         ""|none)      echo "" ;;
         *)            echo "$1" ;;  # passthrough raw ANSI codes
     esac
