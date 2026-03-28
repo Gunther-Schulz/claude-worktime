@@ -40,6 +40,7 @@ COLOR_IDLE="\033[90m"
 COLOR_RATE_WARNING="\033[33m"
 COLOR_RATE_CRITICAL="\033[31m"
 COLOR_RESET="\033[0m"
+RATE_7D_PROJ_MIN_DAYS=0.5
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -317,23 +318,21 @@ mode_statusline() {
         if [ -n "$r7d" ] && [ -n "$r7d_reset" ]; then
             local days_elapsed days_total=7
             days_elapsed=$(awk "BEGIN { d = ($days_total * 86400 - ($r7d_reset - $now)) / 86400; printf \"%.2f\", (d > 0.01 ? d : 0.01) }")
-            if [ "$days_elapsed" != "0.00" ]; then
+            local enough_data
+            enough_data=$(awk "BEGIN { print ($days_elapsed >= ${RATE_7D_PROJ_MIN_DAYS}) ? 1 : 0 }")
+            if [ "$enough_data" = "1" ]; then
                 local proj
                 proj=$(awk "BEGIN { daily = $r7d / $days_elapsed; printf \"%.0f\", daily * $days_total }")
-                if [ "$proj" -gt 200 ]; then
-                    tok_rate_7d_proj="→?"
+                local proj_color=""
+                if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+                    proj_color="$COLOR_RATE_CRITICAL"
+                elif [ "$proj" -ge 90 ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+                    proj_color="$COLOR_RATE_WARNING"
+                fi
+                if [ -n "$proj_color" ]; then
+                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
                 else
-                    local proj_color=""
-                    if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
-                        proj_color="$COLOR_RATE_CRITICAL"
-                    elif [ "$proj" -ge 90 ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
-                        proj_color="$COLOR_RATE_WARNING"
-                    fi
-                    if [ -n "$proj_color" ]; then
-                        tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
-                    else
-                        tok_rate_7d_proj="→${proj}%"
-                    fi
+                    tok_rate_7d_proj="→${proj}%"
                 fi
             fi
         fi

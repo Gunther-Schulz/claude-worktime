@@ -46,6 +46,13 @@ COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate limit ≥90%
 COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate limit ≥100%
 COLOR_RESET="\033[0m"
 
+# ---------------------------------------------------------------------------
+# Projections
+# ---------------------------------------------------------------------------
+# Minimum days elapsed before showing 7d rate limit projection.
+# Below this threshold, the projection is hidden (not enough data).
+RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
+
 # ============================= EXAMPLES ====================================
 #
 # --- Project-focused with rate limits and projection ---
