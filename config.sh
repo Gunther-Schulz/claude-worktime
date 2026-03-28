@@ -10,6 +10,7 @@
 #   {today}          — today's total active time (all sessions, all projects)
 #   {today_project}  — today's total for current project only
 #   {project_total}  — all-time total for current project (across all days)
+#   {last_break}     — duration of last break this session (empty if none)
 #
 #   Project tokens:
 #   {project}        — project name (last 2 path segments)

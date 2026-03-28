@@ -93,9 +93,13 @@ claude-worktime --since 2026-03-25
 claude-worktime --today --filter Todenbuettel
 claude-worktime --today --branch feature/auth
 
-# Phase breakdown
+# Phase breakdown (Claude vs You, breaks, downtime)
 claude-worktime --breakdown
 claude-worktime --breakdown --today
+
+# Gap analysis (tune your idle threshold)
+claude-worktime --gaps
+claude-worktime --gaps --today
 
 # Per-project summary
 claude-worktime --summary
@@ -117,18 +121,40 @@ All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`) can be comb
 
 ### Phase breakdown
 
-`--breakdown` shows how time splits between Claude and you:
+`--breakdown` shows how time splits between Claude, you, breaks, and downtime:
 
 ```
-  Claude:   9min         60%
-  You:      6min         39%
-  ───────────────────────
-  Active:   15min
+  Claude:     1h 39min     51%
+  You:        1h 32min     48%
+  ─────────────────────────
+  Active:     3h 13min
+  Breaks:     20min        (1)
+  Downtime:   12h 15min
 ```
 
 - **Claude** — time from `prompt` until `response` (thinking, tools, output)
 - **You** — time from `response` until next `prompt` (reading, thinking, typing)
-- **Idle** — `response` → `prompt` gaps over threshold (excluded from active)
+- **Breaks** — `response` → `prompt` gaps over threshold within a session (you paused but didn't quit)
+- **Downtime** — `response` → `start` gaps (you quit the CLI and came back)
+
+### Gap analysis
+
+`--gaps` shows the distribution of your response→prompt pauses, separated by type:
+
+```
+Within sessions (threshold: 15min):
+
+  ✓ < 1min        99   47min
+  ✓ 1-5min        24   39min
+  ⏸ 15-30min      1    20min
+
+Between sessions (downtime):
+  2 gaps  12h15min
+
+  0 gaps within 2/3 of threshold
+```
+
+Use this to tune `PAUSE_THRESHOLD` — if many gaps cluster just under the threshold, they might be breaks that are being counted as active time. The bucket boundaries are configurable via `GAP_BUCKETS`.
 
 ## Configuration
 
@@ -142,13 +168,13 @@ A default config with examples is created on install.
 
 | Token | Description |
 |-------|-------------|
-| `{status}` | ⏱ when working, ⏸ when idle |
+| `{status}` | ⏱ icon |
 | `{session}` | Active time in current session (by session ID) |
 | `{session_wall}` | Wall clock time since session started |
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_project}` | Today's total for current project only |
 | `{project_total}` | All-time total for current project |
-| `{idle}` | Idle duration |
+| `{last_break}` | Duration of last break this session (empty if none) |
 
 **Project tokens:**
 
@@ -274,6 +300,8 @@ JSONL at `~/.claude/worktime/activity.log`:
 | `e` | Event type |
 
 Corrupt lines are tolerated — all readers skip invalid JSON entries gracefully.
+
+**Important:** The log stores raw events only. Concepts like "break" and "downtime" are **derived at query time** based on your current `PAUSE_THRESHOLD`. If you change the threshold, all historical data is reinterpreted retroactively — gaps that were "active" may become "breaks" and vice versa. This is intentional: the raw events are the source of truth, and the interpretation is configurable.
 
 ### Files
 
