@@ -71,11 +71,11 @@ Up to 3 configurable lines in Claude Code's status bar. Default:
 ⏱ session 45m · today 2h10m · my-org/my-project
 ```
 
-With rate limits, git, and last break (via config):
+With rate limits, git, and break info (via config):
 
 ```
-⏱  today 45m · total 12h30m · my-org/my-project (main ✓) · ⏸20m
-20% ↻3h21m →51% · 5% 7d ↻Sat →35%
+⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
+◑30% ↻3h21m →51% · 5% 7d ↻Sat →35%
 ```
 
 ### CLI queries
@@ -174,8 +174,8 @@ A default config with examples is created on install.
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_project}` | Today's total for current project only |
 | `{project_total}` | All-time total for current project |
-| `{last_break}` | Last break with ⏸ icon (empty if no break this session) |
-| `{since_break}` | Work time since last break with ▶ icon (empty if no break) |
+| `{since_break}` | ▶2h40m — continuous work time since your most recent break (not total) |
+| `{last_break}` | ⏸ 41m — duration of your most recent break (not total). Both hide when no break this session |
 
 **Project tokens:**
 

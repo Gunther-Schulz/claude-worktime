@@ -75,15 +75,15 @@ GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
 # ============================= EXAMPLES ====================================
 #
 # --- Two-line: time + break info + git, rate limits below ---
-# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git}) · {last_break} {since_break}"
+# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git}) · {since_break} {last_break}"
 # STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
-# Result: ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ⏸  20m ▶ 1h12m
+# Result: ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
 #         20% ↻3h21m →51% · 5% 7d ↻Sat →35%
 #
 # --- Session-based with break ---
-# STATUSLINE_FORMAT="{status}  session {session} · today {today} · {last_break} {since_break} · {project}"
+# STATUSLINE_FORMAT="{status}  session {session} · today {today} · {since_break} {last_break} · {project}"
 # STATUSLINE_FORMAT_2="{cost} · {rate_5h} {rate_5h_proj} · {rate_7d} 7d"
-# Result: ⏱  session 45m · today 2h10m · ⏸  20m ▶ 25m · my-org/my-project
+# Result: ⏱  session 45m · today 2h10m · ▶25m ⏸ 20m · my-org/my-project
 #         $1.23 · 20% →51% · 5% 7d
 #
 # --- Single-line compact ---
@@ -91,10 +91,10 @@ GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
 # Result: ⏱  45m (2h10m) · 20% · my-org/my-project
 #
 # --- Three-line: everything separated ---
-# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git}) · {last_break} {since_break}"
+# STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git}) · {since_break} {last_break}"
 # STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
 # STATUSLINE_FORMAT_3="{model} · ctx {context} · {cost}"
-# Result: ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ⏸  20m ▶ 1h12m
+# Result: ⏱  today 2h32m · total 12h30m · my-org/my-project (main ✓) · ▶1h12m ⏸ 20m
 #         20% ↻3h21m →51% · 5% 7d ↻Sat →35%
 #         Opus 4.6 · ctx 12% · $1.23
 #
