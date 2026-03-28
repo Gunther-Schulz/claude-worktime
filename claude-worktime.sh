@@ -548,7 +548,8 @@ mode_statusline() {
 
         if [ -n "$r5h" ]; then
             local r5h_int; r5h_int=$(printf "%.0f" "$r5h")
-            local r5h_icon="◔"
+            local r5h_icon="○"
+            [ "$r5h_int" -ge 10 ] && r5h_icon="◔"
             [ "$r5h_int" -ge 25 ] && r5h_icon="◑"
             [ "$r5h_int" -ge 50 ] && r5h_icon="◕"
             [ "$r5h_int" -ge 75 ] && r5h_icon="●"
