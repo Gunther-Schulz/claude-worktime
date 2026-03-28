@@ -8,6 +8,14 @@
 # That's the only moment the ball is in the user's court.
 # All other gaps (tool running, Claude thinking/outputting) are active work time.
 #
+# Known limitation: Claude Code hooks fire ~93% of the time. Missed events don't
+# affect total active time but can skew the Claude/You breakdown by a few percent.
+# Mitigation option: supplement hooks with transcript file mtime polling. Claude Code
+# writes to ~/.claude/projects/{path-hash}/{session}.jsonl — checking its mtime
+# detects activity even when hooks don't fire. See cyanglee/Kilok for this approach.
+# This would add a heartbeat entry in the statusline command when mtime is recent
+# but no hook event has fired recently.
+#
 # Usage:
 #   claude-worktime log [--EVENT]           # append entry (called by hooks, reads stdin)
 #   claude-worktime                         # current session stats
