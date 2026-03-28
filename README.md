@@ -148,7 +148,7 @@ The 7d tokens (`{rate_7d}`, `{rate_7d_day}`, `{rate_7d_proj}`) depend on Claude 
 
 ### Auto-rotation
 
-Old log entries are automatically archived on session start. Daily rotation is recommended — it keeps the active log small (faster jq queries) while preserving full history in archives.
+Old log entries are automatically archived on session start. Daily rotation is recommended — it keeps the active log small (faster jq queries) without affecting long-term stats. Shorter intervals are purely a performance choice, not a data retention trade-off.
 
 ```bash
 AUTO_ROTATE=true
