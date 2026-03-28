@@ -4,7 +4,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
-▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 ```
 
 Time tracking, break detection, rate limit projections, git status, cost analysis — all in a configurable multi-line statusline. Event-aware idle detection ensures long-running tools are never misclassified as breaks.
@@ -52,10 +52,10 @@ Up to 3 configurable lines in Claude Code's status bar. Every element is a confi
 **Default (two lines — project-scoped + cross-session personal):**
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m · total 12h30m
-▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 5h02m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 ```
 Line 1: project name, git status, project time (scoped to this project)
-Line 2: day timeline, global today, break rhythm, rate limits (cross-session)
+Line 2: day timeline with wall clock span, break rhythm, rate limits (cross-session)
 
 The timeline adapts its width to your day length, configurable via `TIMELINE_WIDTH` (default: 20 blocks).
 
