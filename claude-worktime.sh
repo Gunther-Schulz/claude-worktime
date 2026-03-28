@@ -17,6 +17,7 @@
 #   claude-worktime --filter PATH           # filter by project path
 #   claude-worktime --branch BRANCH         # filter by git branch
 #   claude-worktime --breakdown [--today]   # phase breakdown (Claude/You)
+#   claude-worktime --gaps [--today]        # gap distribution (tune threshold)
 #   claude-worktime --summary [--today]     # per-project breakdown
 #   claude-worktime --csv [--today]         # export as CSV
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
@@ -45,6 +46,7 @@ COLOR_RESET="\033[0m"
 RATE_7D_PROJ_MIN_DAYS=0.5
 AUTO_ROTATE=true
 ROTATE_INTERVAL=monthly  # monthly, weekly, daily
+GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -800,6 +802,79 @@ mode_csv() {
     done
 }
 
+mode_gaps() {
+    local raw=$1 since=$2 filter=$3 branch_filter=$4
+    local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
+
+    if [ -z "$entries" ]; then
+        if $raw; then echo '[]'; else echo "No activity recorded"; fi; return; fi
+
+    # Build jq bucket boundaries from config
+    local buckets_jq="[${GAP_BUCKETS}]"
+
+    local result
+    result=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" --argjson buckets "$buckets_jq" '
+        sort_by(.t)
+        | [range(1; length) | select(.[input-1].e == "response" or .[input-1].e == "start")]
+        | . as $indices
+        # Collect response→prompt gaps
+        | [range(0; length) as $j | $indices[$j] as $i |
+            {gap: (.[($i)].t - .[($i-1)].t), from: .[($i-1)].e, to: .[($i)].e}
+          ] | . as $gaps_raw
+        # Hmm, this approach is tricky with jq indices. Simpler:
+        | empty
+    ' 2>/dev/null || true)
+
+    # Use a simpler approach: extract gaps with awk-style jq
+    result=$(echo "$entries" | jq -sr --argjson pause "$PAUSE_THRESHOLD" --argjson buckets "$buckets_jq" '
+        sort_by(.t)
+        | . as $a
+        | [range(1; length)
+            | select($a[.-1].e == "response" or $a[.-1].e == "start")
+            | ($a[.].t - $a[.-1].t)]
+        | . as $gaps
+        | ($buckets + [99999999]) as $bounds
+        | [range(0; $bounds | length) as $i |
+            {
+                label: (if $i == 0 then "< \($bounds[0] / 60 | floor)min"
+                        elif $i == ($bounds | length) - 1 then "> \($bounds[$i-1] / 60 | floor)min"
+                        else "\($bounds[$i-1] / 60 | floor)-\($bounds[$i] / 60 | floor)min"
+                        end),
+                min: (if $i == 0 then 0 else $bounds[$i-1] end),
+                max: $bounds[$i],
+                count: ([$gaps[] | select(. >= (if $i == 0 then 0 else $bounds[$i-1] end) and . < $bounds[$i])] | length),
+                total: ([$gaps[] | select(. >= (if $i == 0 then 0 else $bounds[$i-1] end) and . < $bounds[$i])] | add // 0),
+                is_active: ((if $i == 0 then 0 else $bounds[$i-1] end) < $pause)
+            }
+          ]
+        | {
+            buckets: .,
+            threshold: $pause,
+            total_gaps: ($gaps | length),
+            near_threshold: ([$gaps[] | select(. >= ($pause * 0.67) and . < $pause)] | length)
+          }
+    ')
+
+    if $raw; then
+        echo "$result"
+    else
+        echo "Response→Prompt gap distribution:"
+        echo ""
+        echo "$result" | jq -r '
+            .threshold as $thr
+            | .buckets[] | select(.count > 0)
+            | "  \(if .is_active then "✓" else "✗" end) \(.label | . + " " * (12 - length))  \(.count) gaps  \(.total / 60 | floor)min total"
+        '
+        echo ""
+        local near; near=$(echo "$result" | jq -r '.near_threshold')
+        local thresh_min=$(( PAUSE_THRESHOLD / 60 ))
+        echo "  Threshold: ${thresh_min}min — $near gaps within 2/3 of threshold"
+        if [ "$near" -gt 3 ]; then
+            echo "  ⚠ Many gaps near threshold — consider lowering PAUSE_THRESHOLD"
+        fi
+    fi
+}
+
 # Compute the cutoff timestamp and archive suffix for the current rotation interval
 _rotate_boundaries() {
     case "$ROTATE_INTERVAL" in
@@ -918,6 +993,7 @@ while [ $# -gt 0 ]; do
         --raw) RAW=true ;;
         --summary) MODE="summary" ;;
         --breakdown) MODE="breakdown" ;;
+        --gaps) MODE="gaps" ;;
         --csv) MODE="csv" ;;
         --statusline) MODE="statusline" ;;
         --rotate) MODE="rotate" ;;
@@ -942,6 +1018,7 @@ case "$MODE" in
     session)    mode_session "$RAW" ;;
     range)      mode_range "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     breakdown)  mode_breakdown "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
+    gaps)       mode_gaps "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" ;;
     statusline) mode_statusline ;;

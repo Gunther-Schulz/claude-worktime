@@ -63,6 +63,13 @@ ROTATE_INTERVAL=monthly    # monthly, weekly, daily
 # Below this threshold, the projection is hidden (not enough data).
 RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
 
+# ---------------------------------------------------------------------------
+# Gap analysis (--gaps)
+# ---------------------------------------------------------------------------
+# Bucket boundaries in seconds for response→prompt gap distribution.
+# Helps you tune PAUSE_THRESHOLD by seeing where your gaps cluster.
+GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
+
 # ============================= EXAMPLES ====================================
 #
 # --- Two-line: time + git on top, rate limits below ---
