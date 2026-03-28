@@ -38,11 +38,7 @@ PAUSE_THRESHOLD=900
 STATUSLINE_FORMAT="{status} session {session} · today {today} · {project}"
 STATUSLINE_FORMAT_2=""
 STATUSLINE_FORMAT_3=""
-STATUSLINE_IDLE_FORMAT="{status} idle {idle} · session {session} · today {today} · {project}"
-STATUSLINE_IDLE_FORMAT_2=""
-STATUSLINE_IDLE_FORMAT_3=""
 COLOR_NORMAL="\033[32m"
-COLOR_IDLE="\033[90m"
 COLOR_RATE_WARNING="\033[33m"
 COLOR_RATE_CRITICAL="\033[31m"
 COLOR_RESET="\033[0m"
@@ -458,14 +454,10 @@ mode_statusline() {
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
 
-    local is_idle=false
-    if [ "$gap" -gt "$PAUSE_THRESHOLD" ] && { [ "$last_e" = "response" ] || [ "$last_e" = "start" ]; }; then
-        is_idle=true
-    fi
 
     # Build tokens
     local proj_short; proj_short=$(_short_project "$project")
-    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_idle tok_git
+    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_git
     tok_session=$(_fmt_short "$session_active")
     tok_session_wall=$(_fmt_short "$session_wall")
     tok_today=$(_fmt_short "$today_active")
@@ -473,11 +465,11 @@ mode_statusline() {
     tok_project_total=$(_fmt_short "$project_total_active")
     tok_project="$proj_short"
     tok_branch="$branch"
-    tok_idle=$(_fmt_short "$gap")
+
 
     # Git status — only compute if {git} is in any format string
     tok_git=""
-    local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}${STATUSLINE_IDLE_FORMAT}${STATUSLINE_IDLE_FORMAT_2:-}${STATUSLINE_IDLE_FORMAT_3:-}"
+    local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}"
     if [[ "$all_formats" == *"{git}"* ]] && [ -n "$project" ]; then
         local git_status git_str=""
         git_status=$(git -C "$project" status --porcelain -b 2>/dev/null || true)
@@ -587,15 +579,8 @@ mode_statusline() {
         fi
     fi
 
-    # Status icon and color
-    local tok_status color
-    if $is_idle; then
-        tok_status="⏸"
-        color="$COLOR_IDLE"
-    else
-        tok_status="⏱"
-        color="$COLOR_NORMAL"
-    fi
+    local tok_status="⏱"
+    local color="$COLOR_NORMAL"
 
     # Render a format string: replace all tokens, clean up empty segments
     _render_line() {
@@ -608,7 +593,6 @@ mode_statusline() {
         output="${output//\{project_total\}/$tok_project_total}"
         output="${output//\{project\}/$tok_project}"
         output="${output//\{branch\}/$tok_branch}"
-        output="${output//\{idle\}/$tok_idle}"
         output="${output//\{status\}/$tok_status}"
         output="${output//\{git\}/$tok_git}"
         # Optional tokens: replace if set, remove entire · segment if empty
@@ -628,16 +612,9 @@ mode_statusline() {
         echo "$output"
     }
 
-    local fmt1 fmt2 fmt3
-    if $is_idle; then
-        fmt1="$STATUSLINE_IDLE_FORMAT"
-        fmt2="${STATUSLINE_IDLE_FORMAT_2:-${STATUSLINE_FORMAT_2:-}}"
-        fmt3="${STATUSLINE_IDLE_FORMAT_3:-${STATUSLINE_FORMAT_3:-}}"
-    else
-        fmt1="$STATUSLINE_FORMAT"
-        fmt2="${STATUSLINE_FORMAT_2:-}"
-        fmt3="${STATUSLINE_FORMAT_3:-}"
-    fi
+    local fmt1="$STATUSLINE_FORMAT"
+    local fmt2="${STATUSLINE_FORMAT_2:-}"
+    local fmt3="${STATUSLINE_FORMAT_3:-}"
 
     printf '%b' "${color}$(_render_line "$fmt1")${COLOR_RESET}"
 

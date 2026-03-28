@@ -4,13 +4,12 @@
 # Format tokens for statusline:
 #
 #   Time tokens (computed from activity log):
-#   {status}         — ⏱ when working, ⏸ when idle
+#   {status}         — ⏱ icon
 #   {session}        — active time in current session (by session ID)
 #   {session_wall}   — wall clock time since session started
 #   {today}          — today's total active time (all sessions, all projects)
 #   {today_project}  — today's total for current project only
 #   {project_total}  — all-time total for current project (across all days)
-#   {idle}           — idle duration (only meaningful when idle)
 #
 #   Project tokens:
 #   {project}        — project name (last 2 path segments)
@@ -38,13 +37,9 @@ PAUSE_THRESHOLD=900  # 15 minutes
 # Statusline format
 # ---------------------------------------------------------------------------
 # Up to 3 lines supported. Leave _2 and _3 empty for single-line display.
-# If IDLE_FORMAT_2/3 are empty, the normal FORMAT_2/3 are used when idle.
 STATUSLINE_FORMAT="{status} session {session} · today {today} · {project}"
 STATUSLINE_FORMAT_2=""
 STATUSLINE_FORMAT_3=""
-STATUSLINE_IDLE_FORMAT="{status} idle {idle} · session {session} · today {today} · {project}"
-STATUSLINE_IDLE_FORMAT_2=""
-STATUSLINE_IDLE_FORMAT_3=""
 
 # ---------------------------------------------------------------------------
 # Colors (ANSI escape codes, set to "" to disable)
@@ -84,7 +79,6 @@ RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
 #
 # --- Single-line compact ---
 # STATUSLINE_FORMAT="{status} {session} ({today}) · {rate_5h} · {project}"
-# STATUSLINE_IDLE_FORMAT="{status} idle {idle} · {session} ({today}) · {project}"
 # Result: ⏱ 45m (2h10m) · 20% · my-org/my-project
 #
 # --- Three-line: everything separated ---
