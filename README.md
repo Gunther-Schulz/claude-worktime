@@ -195,8 +195,10 @@ A default config with examples is created on install.
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_project}` | Today's total for current project only |
 | `{project_total}` | All-time total for current project |
-| `{since_break}` | ▶2h40m — continuous work time since your most recent break (not total) |
-| `{last_break}` | ⏸ 41m — duration of your most recent break (not total). Both hide when no break this session |
+| `{since_break}` | ▶2h40m — continuous work time since most recent break |
+| `{last_break}` | ⏸ 41m — duration of most recent break |
+
+Both `{since_break}` and `{last_break}` auto-hide when no break has occurred this session.
 
 **Project tokens:**
 
@@ -210,7 +212,7 @@ A default config with examples is created on install.
 
 | Token | Description |
 |-------|-------------|
-| `{rate_5h}` | 5-hour rate limit usage (e.g. `23%`) |
+| `{rate_5h}` | 5-hour rate limit with pie icon: `○5%` `◔15%` `◑35%` `◕60%` `●80%` |
 | `{rate_5h_reset}` | Time until 5h window resets (e.g. `3h21m`) |
 | `{rate_5h_proj}` | Projected 5h usage at reset (e.g. `→51%`) |
 | `{rate_7d}` | 7-day rate limit usage (e.g. `5%`) |
@@ -232,7 +234,6 @@ STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {
 STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
 ```
 
-Idle variants (`STATUSLINE_IDLE_FORMAT_2`, `_3`) fall back to the normal format if unset.
 
 ### Rate limit projections
 
@@ -262,7 +263,6 @@ Manual rotation: `claude-worktime --rotate`
 
 ```bash
 COLOR_NORMAL="\033[32m"           # green — working
-COLOR_IDLE="\033[90m"             # gray — idle
 COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate ≥90%
 COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate ≥100%
 ```
