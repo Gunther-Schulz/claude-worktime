@@ -36,7 +36,7 @@ CONFIGFILE="${LOGDIR}/config.sh"
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
-STATUSLINE_FORMAT="{status}session {session} · today {today} · {project}"
+STATUSLINE_FORMAT="{status}  session {session} · today {today} · {project}"
 STATUSLINE_FORMAT_2=""
 STATUSLINE_FORMAT_3=""
 COLOR_NORMAL="\033[32m"
@@ -592,7 +592,7 @@ mode_statusline() {
         fi
     fi
 
-    local tok_status="⏱ "
+    local tok_status="⏱"
     local color="$COLOR_NORMAL"
 
     # Render a format string: replace all tokens, clean up empty segments
