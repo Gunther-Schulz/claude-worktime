@@ -173,17 +173,39 @@ cmd_log() {
 # Query helpers
 # ============================================================
 
+# Collect log files that may contain entries for the given time range
+_log_files() {
+    local since=${1:-0}
+    # Always include the active log
+    local files=("$LOGFILE")
+    # If querying historical data, include matching archives
+    if [ "$since" -gt 0 ]; then
+        local f
+        for f in "$LOGDIR"/activity-*.log; do
+            [ -f "$f" ] || continue
+            files+=("$f")
+        done
+    fi
+    printf '%s\n' "${files[@]}"
+}
+
 _entries() {
     local since=${1:-0} filter=${2:-} branch_filter=${3:-}
-    local jq_filter=". | select(.t >= $since)"
+    local jq_filter=". | select((.type // null) == null) | select(.t >= $since)"
     [ -n "$filter" ] && jq_filter="$jq_filter | select(.p | test(\"$filter\"))"
     [ -n "$branch_filter" ] && jq_filter="$jq_filter | select(.b // \"\" | test(\"$branch_filter\"))"
-    jq -c "$jq_filter" "$LOGFILE" 2>/dev/null || true
+
+    local files
+    mapfile -t files < <(_log_files "$since")
+    cat "${files[@]}" 2>/dev/null | jq -c "$jq_filter" 2>/dev/null || true
 }
 
 _session_entries() {
     local sid=$1
-    jq -c --arg s "$sid" 'select(.s == $s)' "$LOGFILE" 2>/dev/null || true
+    # Search current log and archives (session could span rotation)
+    local files
+    mapfile -t files < <(_log_files 1)
+    cat "${files[@]}" 2>/dev/null | jq -c --arg s "$sid" 'select(.s == $s)' 2>/dev/null || true
 }
 
 _current_session_id() {
