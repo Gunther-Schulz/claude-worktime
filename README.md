@@ -2,6 +2,7 @@
 
 Track active working time in [Claude Code](https://claude.com/claude-code) sessions.
 
+Hooks into Claude Code's event lifecycle to log timestamps with session IDs, then computes active time using event-aware idle detection. Includes a fully configurable multi-line statusline with rate limit projections and git status.
 
 ## How it works
 
@@ -66,19 +67,17 @@ Removes hooks, statusline config, and the script. Logs are preserved at `~/.clau
 
 ### Statusline
 
-Shows in Claude Code's status bar:
+Up to 3 configurable lines in Claude Code's status bar. Default:
 
 ```
-5m (2h 10m) · Hendrik/26-05 Todenbuettel
-│    │         │
-│    │         └── project (last 2 path segments)
-│    └── today total (all sessions, all projects)
-└── current session active time (by session ID)
+⏱ session 45m · today 2h10m · my-org/my-project
 ```
 
-When idle (response→prompt gap > 15min):
+With rate limits and git (via config):
+
 ```
-idle 18m · 5m (2h 10m) · Hendrik/26-05 Todenbuettel
+⏱  today 45m · total 12h30m · my-org/my-project (main ✓)
+20% ↻3h21m →51% · 5% 7d ↻Sat →35%
 ```
 
 ### CLI queries
@@ -96,10 +95,9 @@ claude-worktime --since 2026-03-25
 claude-worktime --today --filter Todenbuettel
 claude-worktime --today --branch feature/auth
 
-# Phase breakdown — where your time actually goes
+# Phase breakdown
 claude-worktime --breakdown
 claude-worktime --breakdown --today
-claude-worktime --breakdown --branch main
 
 # Per-project summary
 claude-worktime --summary
@@ -121,41 +119,18 @@ All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`) can be comb
 
 ### Phase breakdown
 
-`--breakdown` shows how time splits across phases:
+`--breakdown` shows how time splits between Claude and you:
 
 ```
-Phase breakdown:
-  Tool execution:    12min        35%
-  Claude thinking:    8min        24%
-  User reading:      14min        41%
-  ─────────────────────────────
-  Active total:      34min
+  Claude:   9min         60%
+  You:      6min         39%
+  ───────────────────────
+  Active:   15min
 ```
 
-| Phase | What it measures |
-|-------|-----------------|
-| Tool execution | Time between `tool_start` → `tool_end` |
-| Claude thinking | Claude processing: `prompt` → first tool or response |
-| User reading | You reading output and typing: `response` → `prompt` (within threshold) |
-| Idle | `response` → `prompt` gaps over threshold (excluded from active total) |
-
-### Example output
-
-```
-# Current session
-Active: 47min  |  Wall: 1h 23min  |  Paused: 36min  |  Started: 09:15  |  Project: Projekte/my-app
-
-# Summary
-  Projekte/my-app      47min
-  dev/other-project    12min
-
-# JSON
-{"active":2820,"wall":4980,"paused":2160,"started":"09:15","project":"Projekte/my-app","session_id":"abc-123"}
-
-# CSV
-date,start,end,active_min,wall_min,project,session_id
-2026-03-27,09:15,12:30,47,195,Projekte/my-app,abc-123
-```
+- **Claude** — time from `prompt` until `response` (thinking, tools, output)
+- **You** — time from `response` until next `prompt` (reading, thinking, typing)
+- **Idle** — `response` → `prompt` gaps over threshold (excluded from active)
 
 ## Configuration
 
@@ -163,53 +138,75 @@ Config file: `~/.claude/worktime/config.sh` — plain bash key-value pairs with 
 
 A default config with examples is created on install.
 
-### Defaults
-
-```bash
-PAUSE_THRESHOLD=900  # 15 min idle threshold
-
-STATUSLINE_FORMAT="{session} ({today}) · {project}"
-STATUSLINE_IDLE_FORMAT="idle {idle} · {session} ({today}) · {project}"
-```
-
 ### Format tokens
+
+**Time tokens** (computed from activity log):
 
 | Token | Description |
 |-------|-------------|
+| `{status}` | ⏱ when working, ⏸ when idle |
 | `{session}` | Active time in current session (by session ID) |
 | `{session_wall}` | Wall clock time since session started |
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_project}` | Today's total for current project only |
+| `{project_total}` | All-time total for current project |
+| `{idle}` | Idle duration |
+
+**Project tokens:**
+
+| Token | Description |
+|-------|-------------|
 | `{project}` | Project name (last 2 path segments) |
 | `{branch}` | Git branch name |
-| `{idle}` | Idle duration (meaningful in idle format) |
+| `{git}` | Branch + state: `main ✓` `main ✗` `main +` `main ?` `main ↑2` `main ↓1` |
+
+**Claude Code tokens** (from statusline stdin JSON):
+
+| Token | Description |
+|-------|-------------|
+| `{rate_5h}` | 5-hour rate limit usage (e.g. `23%`) |
+| `{rate_5h_reset}` | Time until 5h window resets (e.g. `3h21m`) |
+| `{rate_5h_proj}` | Projected 5h usage at reset (e.g. `→51%`) |
+| `{rate_7d}` | 7-day rate limit usage (e.g. `5%`) |
+| `{rate_7d_reset}` | Time until 7d window resets |
+| `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
+| `{rate_7d_proj}` | Projected 7d usage (daily average) |
+| `{context}` | Context window usage (e.g. `45%`) |
+| `{cost}` | Session cost (e.g. `$1.23`) |
+| `{model}` | Model name (e.g. `Opus 4.6`) |
+
+Empty tokens are automatically removed along with their surrounding separators.
+
+### Multi-line statusline
+
+Up to 3 lines. Set `STATUSLINE_FORMAT_2` and `_3` for additional rows:
+
+```bash
+STATUSLINE_FORMAT="{status}  today {today_project} · total {project_total} · {project} ({git})"
+STATUSLINE_FORMAT_2="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj} · {rate_7d} 7d ↻{rate_7d_day} {rate_7d_proj}"
+```
+
+Idle variants (`STATUSLINE_IDLE_FORMAT_2`, `_3`) fall back to the normal format if unset.
+
+### Rate limit projections
+
+The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Colors change at thresholds:
+- Green — on pace, won't hit limit
+- Yellow (`COLOR_RATE_WARNING`) — projected ≥90%
+- Red (`COLOR_RATE_CRITICAL`) — projected ≥100%, will hit limit
+
+The 7d projection uses daily averages and requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
 
 ### Colors
 
-ANSI escape codes rendered in the terminal:
-
 ```bash
-COLOR_NORMAL="\033[32m"       # green — working
-COLOR_BREAK_DUE="\033[31m"    # red — break overdue
-COLOR_ON_BREAK="\033[33m"     # yellow — on break
-COLOR_IDLE="\033[90m"         # gray — idle
+COLOR_NORMAL="\033[32m"           # green — working
+COLOR_IDLE="\033[90m"             # gray — idle
+COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate ≥90%
+COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate ≥100%
 ```
 
 Set any color to `""` to disable it.
-
-### Example configurations
-
-```bash
-# Minimal
-STATUSLINE_FORMAT="{session}"
-STATUSLINE_IDLE_FORMAT="idle {idle}"
-
-# Branch-aware
-STATUSLINE_FORMAT="{session} · {project}/{branch} ({today})"
-
-# Project-focused
-STATUSLINE_FORMAT="{today_project} · {project} ({branch})"
-```
 
 ### Environment variables
 
@@ -236,7 +233,7 @@ JSONL at `~/.claude/worktime/activity.log`:
 | `p` | Project path (from cwd) |
 | `b` | Git branch (omitted if not in a git repo) |
 | `s` | Session ID (persists across `--resume`) |
-| `e` | Event type: `start`, `prompt`, `tool_start`, `tool_end`, `response` |
+| `e` | Event type |
 
 ### Files
 

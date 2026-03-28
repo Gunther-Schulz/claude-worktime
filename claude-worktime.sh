@@ -10,14 +10,13 @@
 #
 # Usage:
 #   claude-worktime log [--EVENT]           # append entry (called by hooks, reads stdin)
-#   claude-worktime stop                    # session end summary (Stop hook, reads stdin)
 #   claude-worktime                         # current session stats
 #   claude-worktime --today                 # today's total
 #   claude-worktime --week                  # this week
 #   claude-worktime --since 2026-03-25      # since a date
 #   claude-worktime --filter PATH           # filter by project path
 #   claude-worktime --branch BRANCH         # filter by git branch
-#   claude-worktime --breakdown [--today]   # phase breakdown (tool/thinking/user)
+#   claude-worktime --breakdown [--today]   # phase breakdown (Claude/You)
 #   claude-worktime --summary [--today]     # per-project breakdown
 #   claude-worktime --csv [--today]         # export as CSV
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
@@ -96,7 +95,7 @@ _require_jq() {
 _read_hook_stdin() {
     HOOK_SESSION_ID=""
     HOOK_CWD=""
-    if read -t 0.1 -r _STDIN_JSON 2>/dev/null; then
+    if read -t 1 -r _STDIN_JSON 2>/dev/null; then
         HOOK_SESSION_ID=$(echo "$_STDIN_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
         HOOK_CWD=$(echo "$_STDIN_JSON" | jq -r '.cwd // empty' 2>/dev/null || true)
     fi
@@ -153,29 +152,6 @@ cmd_log() {
     fi
 }
 
-# ============================================================
-# Subcommand: stop — session end summary
-# ============================================================
-cmd_stop() {
-    _require_jq
-    _read_hook_stdin
-    [ ! -f "$LOGFILE" ] && { printf '{"systemMessage":"Today active: 0min"}'; exit 0; }
-
-    local today_start; today_start=$(_today_start)
-
-    local active
-    active=$(jq -s --argjson since "$today_start" --argjson pause "$PAUSE_THRESHOLD" "
-        ${JQ_CALC}
-        [.[] | select(.t >= \$since)] | sort_by(.t) | calc_active(\$pause)
-    " "$LOGFILE")
-
-    local h=$((active / 3600)) m=$(( (active % 3600) / 60 ))
-    local today_str
-    if [ "$h" -gt 0 ]; then today_str="${h}h ${m}min"
-    else today_str="${m}min"; fi
-
-    printf '{"systemMessage":"Today active: %s"}' "$today_str"
-}
 
 # ============================================================
 # Query helpers
@@ -208,31 +184,41 @@ mode_statusline() {
     local sid="${HOOK_SESSION_ID:-$(_current_session_id)}"
     [ -z "$sid" ] && { printf '%b' "${COLOR_IDLE}⏱ --${COLOR_RESET}"; return; }
 
-    local entries; entries=$(_session_entries "$sid")
-    [ -z "$entries" ] && { printf '%b' "${COLOR_IDLE}⏱ --${COLOR_RESET}"; return; }
-
     local now=$(date +%s)
 
-    local info
-    info=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
-        ${JQ_CALC}
-        sort_by(.t) | {
-            active: calc_active(\$pause),
-            first_t: (.[0].t),
-            last_t: (.[-1].t),
-            last_e: (.[-1].e),
-            project: ([.[] | .p] | last),
-            branch: ([.[] | .b // empty] | if length > 0 then last else \"\" end)
-        }
-    ")
+    local today_start; today_start=$(_today_start)
 
-    local session_active session_first session_last last_e project branch
-    session_active=$(echo "$info" | jq -r '.active')
-    session_first=$(echo "$info" | jq -r '.first_t')
-    session_last=$(echo "$info" | jq -r '.last_t')
-    last_e=$(echo "$info" | jq -r '.last_e')
-    project=$(echo "$info" | jq -r '.project')
-    branch=$(echo "$info" | jq -r '.branch')
+    # Single jq call: compute session info + today + today_project + project_total
+    local all_info
+    all_info=$(jq -s --argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" "
+        ${JQ_CALC}
+        . as \$all
+        | (\$all | map(select(.s == \$sid)) | sort_by(.t)) as \$session
+        | (\$all | map(select(.t >= \$since)) | sort_by(.t)) as \$today
+        | (\$session | if length > 0 then ([.[] | .p] | last) else \"\" end) as \$proj
+        | {
+            session_active: (\$session | calc_active(\$pause)),
+            first_t: (\$session | if length > 0 then .[0].t else 0 end),
+            last_t: (\$session | if length > 0 then .[-1].t else 0 end),
+            last_e: (\$session | if length > 0 then .[-1].e else \"\" end),
+            project: \$proj,
+            branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
+            today_active: (\$today | calc_active(\$pause)),
+            today_project_active: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause)),
+            project_total_active: (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause))
+        }
+    " "$LOGFILE")
+
+    local session_active session_first session_last last_e project branch today_active today_project_active project_total_active
+    session_active=$(echo "$all_info" | jq -r '.session_active')
+    session_first=$(echo "$all_info" | jq -r '.first_t')
+    session_last=$(echo "$all_info" | jq -r '.last_t')
+    last_e=$(echo "$all_info" | jq -r '.last_e')
+    project=$(echo "$all_info" | jq -r '.project')
+    branch=$(echo "$all_info" | jq -r '.branch')
+    today_active=$(echo "$all_info" | jq -r '.today_active')
+    today_project_active=$(echo "$all_info" | jq -r '.today_project_active')
+    project_total_active=$(echo "$all_info" | jq -r '.project_total_active')
 
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
@@ -241,28 +227,6 @@ mode_statusline() {
     if [ "$gap" -gt "$PAUSE_THRESHOLD" ] && { [ "$last_e" = "response" ] || [ "$last_e" = "start" ]; }; then
         is_idle=true
     fi
-
-    # Today total (all sessions, all projects)
-    local today_start; today_start=$(_today_start)
-    local today_active
-    today_active=$(jq -s --argjson since "$today_start" --argjson pause "$PAUSE_THRESHOLD" "
-        ${JQ_CALC}
-        [.[] | select(.t >= \$since)] | sort_by(.t) | calc_active(\$pause)
-    " "$LOGFILE")
-
-    # Today total for current project
-    local today_project_active
-    today_project_active=$(jq -s --argjson since "$today_start" --argjson pause "$PAUSE_THRESHOLD" --arg proj "$project" "
-        ${JQ_CALC}
-        [.[] | select(.t >= \$since) | select(.p == \$proj)] | sort_by(.t) | calc_active(\$pause)
-    " "$LOGFILE")
-
-    # All-time total for current project
-    local project_total_active
-    project_total_active=$(jq -s --argjson pause "$PAUSE_THRESHOLD" --arg proj "$project" "
-        ${JQ_CALC}
-        [.[] | select(.p == \$proj)] | sort_by(.t) | calc_active(\$pause)
-    " "$LOGFILE")
 
     # Build tokens
     local proj_short; proj_short=$(_short_project "$project")
@@ -276,11 +240,10 @@ mode_statusline() {
     tok_branch="$branch"
     tok_idle=$(_fmt_short "$gap")
 
-    # Git status — only compute if {git} is in the format string
+    # Git status — only compute if {git} is in any format string
     tok_git=""
-    local format_check
-    if $is_idle; then format_check="$STATUSLINE_IDLE_FORMAT"; else format_check="$STATUSLINE_FORMAT"; fi
-    if [[ "$format_check" == *"{git}"* ]] && [ -n "$project" ]; then
+    local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}${STATUSLINE_IDLE_FORMAT}${STATUSLINE_IDLE_FORMAT_2:-}${STATUSLINE_IDLE_FORMAT_3:-}"
+    if [[ "$all_formats" == *"{git}"* ]] && [ -n "$project" ]; then
         local git_status git_str=""
         git_status=$(git -C "$project" status --porcelain -b 2>/dev/null || true)
         if [ -n "$git_status" ]; then
@@ -650,7 +613,10 @@ mode_rotate() {
 
 case "${1:-}" in
     log)  shift; cmd_log "$@"; exit 0 ;;
-    stop) cmd_stop; exit 0 ;;
+    -h|--help|help)
+        sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
+        exit 0
+        ;;
 esac
 
 _require_jq

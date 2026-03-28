@@ -56,9 +56,6 @@ if [ ! -f "$WORKTIME_DIR/config.sh" ]; then
     else
         curl -fsSL "$CONFIG_URL" -o "$WORKTIME_DIR/config.sh"
     fi
-
-    fi
-
     echo "  Installed default config at $WORKTIME_DIR/config.sh"
 else
     echo "  Config already exists at $WORKTIME_DIR/config.sh (kept)"
