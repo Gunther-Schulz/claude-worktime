@@ -539,7 +539,7 @@ mode_statusline() {
               else \"\" end)
         }
         | [.session_active, .first_t, .last_t, .last_e, .last_break, .since_break, .today_first_t, .project, .branch, .today_active, .today_project_active, .project_total_active, .timeline]
-        | @tsv
+        | map(. // \"\" | tostring) | join(\"\\u001e\")
     "
     local tl_width=${TIMELINE_WIDTH:-20}
     local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}"
@@ -551,7 +551,7 @@ mode_statusline() {
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
     local session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active tok_timeline
-    IFS=$'\t' read -r session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active tok_timeline <<< "$all_info"
+    IFS=$'\x1e' read -r session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active tok_timeline <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
