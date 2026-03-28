@@ -37,6 +37,8 @@ STATUSLINE_FORMAT="{status} session {session} · today {today} · {project}"
 STATUSLINE_IDLE_FORMAT="{status} idle {idle} · session {session} · today {today} · {project}"
 COLOR_NORMAL="\033[32m"
 COLOR_IDLE="\033[90m"
+COLOR_RATE_WARNING="\033[33m"
+COLOR_RATE_CRITICAL="\033[31m"
 COLOR_RESET="\033[0m"
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
@@ -270,7 +272,7 @@ mode_statusline() {
     tok_idle=$(_fmt_short "$gap")
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_7d="" tok_rate_7d_reset="" tok_context="" tok_cost="" tok_model=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         local r5h r5h_reset r7d r7d_reset ctx cst mdl
         r5h=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null || true)
@@ -287,6 +289,30 @@ mode_statusline() {
         [ -n "$ctx" ] && tok_context=$(printf "%.0f%%" "$ctx")
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         [ -n "$mdl" ] && tok_model="$mdl"
+
+        # Projected rate limit usage at window reset
+        # burn_rate = used% / elapsed_time, projected = used% + burn_rate * remaining_time
+        _project_rate() {
+            local used=$1 reset_at=$2 window=$3
+            local remaining=$(( reset_at - now ))
+            local elapsed=$(( window - remaining ))
+            [ "$elapsed" -le 60 ] && return  # need at least 1min of data
+            local proj
+            proj=$(awk "BEGIN { rate = $used / $elapsed; proj = $used + rate * $remaining; printf \"%.0f\", proj }")
+            local proj_color=""
+            if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+                proj_color="$COLOR_RATE_CRITICAL"
+            elif [ "$proj" -ge 90 ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+                proj_color="$COLOR_RATE_WARNING"
+            fi
+            if [ -n "$proj_color" ]; then
+                printf '%s' "${proj_color}→${proj}%${COLOR_RESET}"
+            else
+                printf '%s' "→${proj}%"
+            fi
+        }
+        [ -n "$r5h" ] && [ -n "$r5h_reset" ] && tok_rate_5h_proj=$(_project_rate "$r5h" "$r5h_reset" 18000)
+        [ -n "$r7d" ] && [ -n "$r7d_reset" ] && tok_rate_7d_proj=$(_project_rate "$r7d" "$r7d_reset" 604800)
     fi
 
     # Status icon and color
@@ -327,8 +353,10 @@ mode_statusline() {
     }
     _replace_or_remove '{rate_5h}' "$tok_rate_5h"
     _replace_or_remove '{rate_5h_reset}' "$tok_rate_5h_reset"
+    _replace_or_remove '{rate_5h_proj}' "$tok_rate_5h_proj"
     _replace_or_remove '{rate_7d}' "$tok_rate_7d"
     _replace_or_remove '{rate_7d_reset}' "$tok_rate_7d_reset"
+    _replace_or_remove '{rate_7d_proj}' "$tok_rate_7d_proj"
     _replace_or_remove '{context}' "$tok_context"
     _replace_or_remove '{cost}' "$tok_cost"
     _replace_or_remove '{model}' "$tok_model"

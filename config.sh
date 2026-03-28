@@ -40,8 +40,10 @@ STATUSLINE_IDLE_FORMAT="{status} idle {idle} · session {session} · today {toda
 # ---------------------------------------------------------------------------
 # Colors (ANSI escape codes, set to "" to disable)
 # ---------------------------------------------------------------------------
-COLOR_NORMAL="\033[32m"       # green — working
-COLOR_IDLE="\033[90m"         # gray — idle
+COLOR_NORMAL="\033[32m"           # green — working
+COLOR_IDLE="\033[90m"             # gray — idle
+COLOR_RATE_WARNING="\033[33m"     # yellow — projected rate limit ≥90%
+COLOR_RATE_CRITICAL="\033[31m"    # red — projected rate limit ≥100%
 COLOR_RESET="\033[0m"
 
 # ============================= EXAMPLES ====================================
