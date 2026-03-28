@@ -519,9 +519,17 @@ mode_statusline() {
             timeline: (if \$width > 0 and (\$today | length) > 0 then
                 (\$today[0].t) as \$tstart
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
+                # Find break midpoints (response→prompt gaps > threshold)
+                | [range(1; \$today|length)
+                    | select(\$today[.].e == \"prompt\" and (\$today[.-1].e == \"response\" or \$today[.-1].e == \"start\")
+                        and (\$today[.].t - \$today[.-1].t) > \$pause)
+                    | ((\$today[.-1].t + \$today[.].t) / 2)] as \$break_mids
                 | [range(0; \$width) | . as \$i
                     | (\$tstart + \$i * \$tblock) as \$bs | (\$bs + \$tblock) as \$be
-                    | if ([\$today[] | select(.t >= \$bs and .t < \$be)] | length) > 0
+                    # Force break block if a break midpoint falls in this block
+                    | if ([\$break_mids[] | select(. >= \$bs and . < \$be)] | length) > 0
+                      then \"▯\"
+                      elif ([\$today[] | select(.t >= \$bs and .t < \$be)] | length) > 0
                       then \"▮\" else \"▯\" end
                 ] | join(\"\")
               else \"\" end)
