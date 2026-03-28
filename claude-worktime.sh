@@ -525,7 +525,7 @@ mode_statusline() {
                         and (\$today[.].t - \$today[.-1].t) > \$pause)
                     | {from: \$today[.-1].t, to: \$today[.].t}
                     | . as \$brk
-                    | ((.to - .from) / \$tblock | round | if . < 1 then 1 else . end) as \$nblocks
+                    | ((.to - .from) / \$tblock | ceil | if . < 1 then 1 else . end) as \$nblocks
                     | ((.from - \$tstart) / \$tblock | floor) as \$first_block
                     | range(\$first_block; \$first_block + \$nblocks)
                     | select(. >= 0 and . < \$width)
