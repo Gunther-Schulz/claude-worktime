@@ -272,7 +272,7 @@ mode_statusline() {
     tok_idle=$(_fmt_short "$gap")
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         local r5h r5h_reset r7d r7d_reset ctx cst mdl
         r5h=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null || true)
@@ -286,6 +286,7 @@ mode_statusline() {
         [ -n "$r5h_reset" ] && tok_rate_5h_reset=$(_fmt_short $(( r5h_reset - now )))
         [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
         [ -n "$r7d_reset" ] && tok_rate_7d_reset=$(_fmt_short $(( r7d_reset - now )))
+        [ -n "$r7d_reset" ] && tok_rate_7d_day=$(date -d "@$r7d_reset" +%a 2>/dev/null || date -r "$r7d_reset" +%a 2>/dev/null)
         [ -n "$ctx" ] && tok_context=$(printf "%.0f%%" "$ctx")
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         [ -n "$mdl" ] && tok_model="$mdl"
@@ -315,20 +316,24 @@ mode_statusline() {
         # 7d projection: average by daily buckets (resets Fridays)
         if [ -n "$r7d" ] && [ -n "$r7d_reset" ]; then
             local days_elapsed days_total=7
-            days_elapsed=$(awk "BEGIN { d = ($days_total * 86400 - ($r7d_reset - $now)) / 86400; printf \"%.1f\", (d > 0.1 ? d : 0) }")
-            if [ "$days_elapsed" != "0.0" ]; then
+            days_elapsed=$(awk "BEGIN { d = ($days_total * 86400 - ($r7d_reset - $now)) / 86400; printf \"%.2f\", (d > 0.01 ? d : 0.01) }")
+            if [ "$days_elapsed" != "0.00" ]; then
                 local proj
                 proj=$(awk "BEGIN { daily = $r7d / $days_elapsed; printf \"%.0f\", daily * $days_total }")
-                local proj_color=""
-                if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
-                    proj_color="$COLOR_RATE_CRITICAL"
-                elif [ "$proj" -ge 90 ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
-                    proj_color="$COLOR_RATE_WARNING"
-                fi
-                if [ -n "$proj_color" ]; then
-                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
+                if [ "$proj" -gt 200 ]; then
+                    tok_rate_7d_proj="→?"
                 else
-                    tok_rate_7d_proj="→${proj}%"
+                    local proj_color=""
+                    if [ "$proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+                        proj_color="$COLOR_RATE_CRITICAL"
+                    elif [ "$proj" -ge 90 ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+                        proj_color="$COLOR_RATE_WARNING"
+                    fi
+                    if [ -n "$proj_color" ]; then
+                        tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
+                    else
+                        tok_rate_7d_proj="→${proj}%"
+                    fi
                 fi
             fi
         fi
@@ -375,6 +380,7 @@ mode_statusline() {
     _replace_or_remove '{rate_5h_proj}' "$tok_rate_5h_proj"
     _replace_or_remove '{rate_7d}' "$tok_rate_7d"
     _replace_or_remove '{rate_7d_reset}' "$tok_rate_7d_reset"
+    _replace_or_remove '{rate_7d_day}' "$tok_rate_7d_day"
     _replace_or_remove '{rate_7d_proj}' "$tok_rate_7d_proj"
     _replace_or_remove '{context}' "$tok_context"
     _replace_or_remove '{cost}' "$tok_cost"
