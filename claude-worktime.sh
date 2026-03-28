@@ -95,9 +95,12 @@ _require_jq() {
 _read_hook_stdin() {
     HOOK_SESSION_ID=""
     HOOK_CWD=""
-    if read -t 1 -r _STDIN_JSON 2>/dev/null; then
-        HOOK_SESSION_ID=$(echo "$_STDIN_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
-        HOOK_CWD=$(echo "$_STDIN_JSON" | jq -r '.cwd // empty' 2>/dev/null || true)
+    _STDIN_JSON=""
+    if read -t 1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
+        local parsed
+        parsed=$(echo "$_STDIN_JSON" | jq -r '[.session_id // "", .cwd // ""] | @tsv' 2>/dev/null || true)
+        HOOK_SESSION_ID="${parsed%%	*}"
+        HOOK_CWD="${parsed#*	}"
     fi
 }
 
@@ -115,7 +118,15 @@ _fmt_short() {
     else printf "%dm" "$m"; fi
 }
 _short_project() {
-    echo "$1" | awk -F/ '{if(NF>=2) print $(NF-1)"/"$NF; else print $NF}'
+    local p="${1%/}"
+    local last="${p##*/}"
+    local rest="${p%/*}"
+    local second="${rest##*/}"
+    if [ -n "$second" ] && [ "$second" != "$last" ]; then
+        echo "$second/$last"
+    else
+        echo "$last"
+    fi
 }
 
 # ============================================================
@@ -141,11 +152,12 @@ cmd_log() {
     branch=$(git -C "$path" branch --show-current 2>/dev/null || true)
     session_id="${HOOK_SESSION_ID:-unknown}"
 
-    jq -nc \
-        --argjson t "$ts" --arg p "$path" --arg s "$session_id" \
-        --arg e "$event" --arg b "$branch" \
-        'if $b == "" then {t:$t,p:$p,s:$s,e:$e} else {t:$t,p:$p,b:$b,s:$s,e:$e} end' \
-        >> "$LOGFILE"
+    # Write JSONL directly — avoid jq subprocess on the hot path
+    if [ -n "$branch" ]; then
+        printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$path" "$branch" "$session_id" "$event" >> "$LOGFILE"
+    else
+        printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$path" "$session_id" "$event" >> "$LOGFILE"
+    fi
 
     if [ "$event" = "start" ]; then
         printf '{"systemMessage":"Session timer started at %s"}' "$(date +%H:%M)"
@@ -282,14 +294,21 @@ mode_statusline() {
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
     local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
+        # Single jq call to extract all fields
+        local stdin_parsed
+        stdin_parsed=$(echo "$_STDIN_JSON" | jq -r '[
+            (.rate_limits.five_hour.used_percentage // ""),
+            (.rate_limits.five_hour.resets_at // ""),
+            (.rate_limits.seven_day.used_percentage // ""),
+            (.rate_limits.seven_day.resets_at // ""),
+            (.context_window.used_percentage // ""),
+            (.cost.total_cost_usd // ""),
+            (.model.display_name // "")
+        ] | @tsv' 2>/dev/null || true)
+
         local r5h r5h_reset r7d r7d_reset ctx cst mdl
-        r5h=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null || true)
-        r5h_reset=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.five_hour.resets_at // empty' 2>/dev/null || true)
-        r7d=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null || true)
-        r7d_reset=$(echo "$_STDIN_JSON" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null || true)
-        ctx=$(echo "$_STDIN_JSON" | jq -r '.context_window.used_percentage // empty' 2>/dev/null || true)
-        cst=$(echo "$_STDIN_JSON" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true)
-        mdl=$(echo "$_STDIN_JSON" | jq -r '.model.display_name // empty' 2>/dev/null || true)
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cst mdl <<< "$stdin_parsed"
+
         [ -n "$r5h" ] && tok_rate_5h=$(printf "%.0f%%" "$r5h")
         [ -n "$r5h_reset" ] && tok_rate_5h_reset=$(_fmt_short $(( r5h_reset - now )))
         [ -n "$r7d" ] && tok_rate_7d=$(printf "%.0f%%" "$r7d")
@@ -358,6 +377,7 @@ mode_statusline() {
     # Render a format string: replace all tokens, clean up empty segments
     _render_line() {
         local output="$1"
+        # Always-available tokens (simple substitution)
         output="${output//\{session\}/$tok_session}"
         output="${output//\{session_wall\}/$tok_session_wall}"
         output="${output//\{today\}/$tok_today}"
@@ -368,25 +388,18 @@ mode_statusline() {
         output="${output//\{idle\}/$tok_idle}"
         output="${output//\{status\}/$tok_status}"
         output="${output//\{git\}/$tok_git}"
-        # Remove segments with empty optional tokens
-        _try_remove() {
-            local token=$1 value=$2
-            if [ -n "$value" ]; then
-                output="${output//$token/$value}"
+        # Optional tokens: replace if set, remove entire · segment if empty
+        local -a opt_tokens=( '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
+        local -a opt_values=( "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
+        local i
+        for i in "${!opt_tokens[@]}"; do
+            [[ "$output" != *"${opt_tokens[$i]}"* ]] && continue
+            if [ -n "${opt_values[$i]}" ]; then
+                output="${output//${opt_tokens[$i]}/${opt_values[$i]}}"
             else
-                output=$(echo "$output" | sed "s/ *· *[^·]*${token}[^·]*//g; s/[^·]*${token}[^·]* *· *//g; s/[^·]*${token}[^·]*//g")
+                output=$(echo "$output" | sed "s/ *· *[^·]*${opt_tokens[$i]}[^·]*//g; s/[^·]*${opt_tokens[$i]}[^·]* *· *//g; s/[^·]*${opt_tokens[$i]}[^·]*//g")
             fi
-        }
-        _try_remove '{rate_5h}' "$tok_rate_5h"
-        _try_remove '{rate_5h_reset}' "$tok_rate_5h_reset"
-        _try_remove '{rate_5h_proj}' "$tok_rate_5h_proj"
-        _try_remove '{rate_7d}' "$tok_rate_7d"
-        _try_remove '{rate_7d_reset}' "$tok_rate_7d_reset"
-        _try_remove '{rate_7d_day}' "$tok_rate_7d_day"
-        _try_remove '{rate_7d_proj}' "$tok_rate_7d_proj"
-        _try_remove '{context}' "$tok_context"
-        _try_remove '{cost}' "$tok_cost"
-        _try_remove '{model}' "$tok_model"
+        done
         # Clean up
         output=$(echo "$output" | sed 's/ *() *//g; s/ *· */ · /g; s/ · · / · /g; s/^ *//; s/ *$//; s/^ · //; s/ · $//')
         echo "$output"
@@ -597,13 +610,17 @@ mode_rotate() {
     archive_month=$(date -d "last month" +%Y-%m 2>/dev/null || date -j -v-1m +%Y-%m 2>/dev/null)
     local archive="${LOGDIR}/activity-${archive_month}.log"
 
-    local old_count
-    old_count=$(jq --argjson since "$month_start" 'select(.t < $since)' "$LOGFILE" 2>/dev/null | wc -l)
-    if [ "$old_count" -eq 0 ]; then echo "Nothing to rotate (all entries are from this month)"; return; fi
+    # Single pass: split into old and current
+    local old_entries current_entries
+    old_entries=$(jq -c --argjson since "$month_start" 'select(.t < $since)' "$LOGFILE" 2>/dev/null || true)
+    [ -z "$old_entries" ] && { echo "Nothing to rotate (all entries are from this month)"; return; }
 
-    jq -c --argjson since "$month_start" 'select(.t < $since)' "$LOGFILE" >> "$archive"
+    echo "$old_entries" >> "$archive"
     jq -c --argjson since "$month_start" 'select(.t >= $since)' "$LOGFILE" > "${LOGFILE}.tmp" \
         && mv "${LOGFILE}.tmp" "$LOGFILE"
+
+    local old_count
+    old_count=$(echo "$old_entries" | wc -l)
     echo "Rotated $old_count entries to $archive"
 }
 
