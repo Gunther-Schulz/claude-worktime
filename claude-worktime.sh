@@ -475,19 +475,31 @@ mode_statusline() {
             project_total_active: (
                 (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause))
                 + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
-            )
+            ),
+            timeline: (if \$width > 0 and (\$today | length) > 0 then
+                (\$today[0].t) as \$tstart
+                | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
+                | [range(0; \$width) | . as \$i
+                    | (\$tstart + \$i * \$tblock) as \$bs | (\$bs + \$tblock) as \$be
+                    | if ([\$today[] | select(.t >= \$bs and .t < \$be)] | length) > 0
+                      then \"▮\" else \"▯\" end
+                ] | join(\"\")
+              else \"\" end)
         }
-        | [.session_active, .first_t, .last_t, .last_e, .last_break, .since_break, .today_first_t, .project, .branch, .today_active, .today_project_active, .project_total_active]
+        | [.session_active, .first_t, .last_t, .last_e, .last_break, .since_break, .today_first_t, .project, .branch, .today_active, .today_project_active, .project_total_active, .timeline]
         | @tsv
     "
-    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid")
+    local tl_width=${TIMELINE_WIDTH:-20}
+    local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}"
+    [[ "$all_formats" != *"{timeline}"* ]] && tl_width=0
+    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson width "$tl_width")
 
     # Fast path: direct read. Fallback: skip corrupt lines.
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
-    local session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active
-    IFS=$'\t' read -r session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active <<< "$all_info"
+    local session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active tok_timeline
+    IFS=$'\t' read -r session_active session_first session_last last_e last_break since_break today_first project branch today_active today_project_active project_total_active tok_timeline <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
@@ -513,26 +525,6 @@ mode_statusline() {
         tok_since_break="▶$(_fmt_short "$sb")"
     fi
 
-
-    # Timeline sparkline — only compute if {timeline} is in any format string
-    local tok_timeline=""
-    local all_formats="${STATUSLINE_FORMAT}${STATUSLINE_FORMAT_2:-}${STATUSLINE_FORMAT_3:-}"
-    if [[ "$all_formats" == *"{timeline}"* ]] && [ "${today_first:-0}" -gt 0 ]; then
-        local tl_span=$(( now - today_first ))
-        if [ "$tl_span" -gt 0 ]; then
-            local tl_width=${TIMELINE_WIDTH:-20}
-            local tl_block=$(( tl_span / tl_width + 1 ))
-            # Build timeline: check each block for activity using today's events
-            tok_timeline=$(jq -sr --argjson start "$today_first" --argjson block "$tl_block" --argjson width "$tl_width" --argjson pause "$PAUSE_THRESHOLD" '
-                [.[] | select((.type // null) == null and .t >= $start)] | sort_by(.t) | . as $events
-                | [range(0; $width) | . as $i
-                    | ($start + $i * $block) as $bstart | ($bstart + $block) as $bend
-                    | if ([$events[] | select(.t >= $bstart and .t < $bend)] | length) > 0
-                      then "▮" else "▯" end
-                ] | join("")
-            ' "$LOGFILE" 2>/dev/null || true)
-        fi
-    fi
 
     # Git status — only compute if {git} is in any format string
     tok_git=""
