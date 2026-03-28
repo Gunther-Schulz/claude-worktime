@@ -126,6 +126,25 @@ if $ENABLE_STATUSLINE; then
     echo "  Enabled statusline"
 fi
 
+# Add to global CLAUDE.md so Claude knows about the tool in every session
+CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
+if [ -f "$CLAUDE_MD" ] && grep -q "claude-worktime" "$CLAUDE_MD"; then
+    echo "  CLAUDE.md already mentions claude-worktime (kept)"
+else
+    [ ! -f "$CLAUDE_MD" ] && touch "$CLAUDE_MD"
+    cat >> "$CLAUDE_MD" << 'CLAUDEMD'
+
+## claude-worktime
+`claude-worktime` is installed. Statusline shows time tracking, rate limits, and cache ratio.
+- `claude-worktime` — current session stats
+- `claude-worktime --today` — today's total across all sessions
+- `claude-worktime --breakdown --today` — Claude vs You time split
+- `claude-worktime --summary` — per-project breakdown
+If the user asks about session time, worktime, or how long we've been working, run `claude-worktime`.
+CLAUDEMD
+    echo "  Added claude-worktime section to $CLAUDE_MD"
+fi
+
 # Verify dependencies
 echo ""
 "$BIN_DIR/$SCRIPT_NAME" --check
