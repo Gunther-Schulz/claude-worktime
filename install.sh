@@ -126,23 +126,34 @@ if $ENABLE_STATUSLINE; then
     echo "  Enabled statusline"
 fi
 
-# Add to global CLAUDE.md so Claude knows about the tool in every session
+# Add/update global CLAUDE.md so Claude knows about the tool in every session
 CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
-if [ -f "$CLAUDE_MD" ] && grep -q "claude-worktime" "$CLAUDE_MD"; then
-    echo "  CLAUDE.md already mentions claude-worktime (kept)"
-else
-    [ ! -f "$CLAUDE_MD" ] && touch "$CLAUDE_MD"
-    cat >> "$CLAUDE_MD" << 'CLAUDEMD'
-
+MARKER_START="<!-- claude-worktime:start -->"
+MARKER_END="<!-- claude-worktime:end -->"
+CLAUDE_BLOCK="$MARKER_START
 ## claude-worktime
-`claude-worktime` is installed. Statusline shows time tracking, rate limits, and cache ratio.
-- `claude-worktime` — current session stats
-- `claude-worktime --today` — today's total across all sessions
-- `claude-worktime --breakdown --today` — Claude vs You time split
-- `claude-worktime --summary` — per-project breakdown
-If the user asks about session time, worktime, or how long we've been working, run `claude-worktime`.
-For statusline token explanations, run `claude-worktime --tokens`.
-CLAUDEMD
+\`claude-worktime\` is installed. Statusline shows time tracking, rate limits, and cache ratio.
+- \`claude-worktime\` — current session stats
+- \`claude-worktime --today\` — today's total across all sessions
+- \`claude-worktime --breakdown --today\` — Claude vs You time split
+- \`claude-worktime --summary\` — per-project breakdown
+If the user asks about session time, worktime, or how long we've been working, run \`claude-worktime\`.
+For statusline token explanations, run \`claude-worktime --tokens\`.
+$MARKER_END"
+
+[ ! -f "$CLAUDE_MD" ] && touch "$CLAUDE_MD"
+if grep -q "$MARKER_START" "$CLAUDE_MD"; then
+    # Replace existing fenced block
+    awk -v start="$MARKER_START" -v block="$CLAUDE_BLOCK" '
+        $0 == start { print block; skip=1; next }
+        skip && /^<!-- claude-worktime:end -->/ { skip=0; next }
+        !skip { print }
+    ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
+    echo "  Updated claude-worktime section in $CLAUDE_MD"
+elif grep -q "claude-worktime" "$CLAUDE_MD"; then
+    echo "  CLAUDE.md mentions claude-worktime but has no markers — please update manually"
+else
+    printf '\n%s\n' "$CLAUDE_BLOCK" >> "$CLAUDE_MD"
     echo "  Added claude-worktime section to $CLAUDE_MD"
 fi
 
