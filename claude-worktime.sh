@@ -98,7 +98,7 @@ _read_hook_stdin() {
     HOOK_SESSION_ID=""
     HOOK_CWD=""
     _STDIN_JSON=""
-    if read -t 1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
+    if read -t 0.1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
         local parsed
         parsed=$(echo "$_STDIN_JSON" | jq -r '[.session_id // "", .cwd // ""] | @tsv' 2>/dev/null || true)
         HOOK_SESSION_ID="${parsed%%	*}"
@@ -249,18 +249,12 @@ mode_statusline() {
                 + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
             )
         }
+        | [.session_active, .first_t, .last_t, .last_e, .project, .branch, .today_active, .today_project_active, .project_total_active]
+        | @tsv
     " "$LOGFILE")
 
     local session_active session_first session_last last_e project branch today_active today_project_active project_total_active
-    session_active=$(echo "$all_info" | jq -r '.session_active')
-    session_first=$(echo "$all_info" | jq -r '.first_t')
-    session_last=$(echo "$all_info" | jq -r '.last_t')
-    last_e=$(echo "$all_info" | jq -r '.last_e')
-    project=$(echo "$all_info" | jq -r '.project')
-    branch=$(echo "$all_info" | jq -r '.branch')
-    today_active=$(echo "$all_info" | jq -r '.today_active')
-    today_project_active=$(echo "$all_info" | jq -r '.today_project_active')
-    project_total_active=$(echo "$all_info" | jq -r '.project_total_active')
+    IFS=$'\t' read -r session_active session_first session_last last_e project branch today_active today_project_active project_total_active <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
@@ -511,11 +505,9 @@ _output_info() {
     local info=$1 raw=$2
 
     local active first_ts project branch session_id
-    active=$(echo "$info" | jq -r '.active')
-    first_ts=$(echo "$info" | jq -r '.first')
-    project=$(echo "$info" | jq -r '.project')
-    branch=$(echo "$info" | jq -r '.branch')
-    session_id=$(echo "$info" | jq -r '.session_id // empty')
+    local parsed
+    parsed=$(echo "$info" | jq -r '[.active, .first, .project, .branch, (.session_id // "")] | @tsv')
+    IFS=$'\t' read -r active first_ts project branch session_id <<< "$parsed"
 
     local now=$(date +%s)
     local wall=$(( now - first_ts ))
@@ -553,10 +545,9 @@ mode_breakdown() {
     ")
 
     local claude_time user_time idle active
-    claude_time=$(echo "$result" | jq '.breakdown.claude')
-    user_time=$(echo "$result" | jq '.breakdown.user')
-    idle=$(echo "$result" | jq '.breakdown.idle')
-    active=$(echo "$result" | jq '.active')
+    local bd_parsed
+    bd_parsed=$(echo "$result" | jq -r '[.breakdown.claude, .breakdown.user, .breakdown.idle, .active] | @tsv')
+    IFS=$'\t' read -r claude_time user_time idle active <<< "$bd_parsed"
 
     if $raw; then
         echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, idle: .breakdown.idle, active: .active}'
