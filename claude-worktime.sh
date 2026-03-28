@@ -61,16 +61,18 @@ JQ_CALC='def calc_active($pause):
       else . + $gap
       end);'
 
-# Reusable jq: compute phase breakdown — two categories
+# Reusable jq: compute phase breakdown — four categories
 # claude = prompt→response (thinking, tools, output — Claude's turn)
 # user = response→prompt within threshold (reading, thinking, typing — your turn)
-# idle = response→prompt over threshold (excluded from active)
+# breaks = response→prompt over threshold, no "start" between (paused mid-session)
+# downtime = response→start (quit and came back)
 JQ_BREAKDOWN='def calc_breakdown($pause):
   . as $a | reduce range(1; $a|length) as $i (
-    {claude: 0, user: 0, idle: 0};
+    {claude: 0, user: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
-      elif ($a[$i-1].e == "response" or $a[$i-1].e == "start") and $gap > $pause then .idle += $gap
+      elif $a[$i].e == "start" then .downtime += $gap | .downtime_count += 1
+      elif ($a[$i-1].e == "response" or $a[$i-1].e == "start") and $gap > $pause then .breaks += $gap | .break_count += 1
       elif $a[$i-1].e == "response" or $a[$i-1].e == "start" then .user += $gap
       else .claude += $gap
       end);'
@@ -432,6 +434,9 @@ mode_statusline() {
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
             last_t: (\$session | if length > 0 then .[-1].t else 0 end),
             last_e: (\$session | if length > 0 then .[-1].e else \"\" end),
+            last_break: ([range(length-1; 0; -1) as \$i
+                | select(\$session[\$i].e == \"prompt\" and (\$session[\$i-1].e == \"response\" or \$session[\$i-1].e == \"start\"))
+                | (\$session[\$i].t - \$session[\$i-1].t) | select(. > \$pause)] | first // 0),
             project: \$proj,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
             today_active: (\$today | calc_active(\$pause)),
@@ -441,7 +446,7 @@ mode_statusline() {
                 + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
             )
         }
-        | [.session_active, .first_t, .last_t, .last_e, .project, .branch, .today_active, .today_project_active, .project_total_active]
+        | [.session_active, .first_t, .last_t, .last_e, .last_break, .project, .branch, .today_active, .today_project_active, .project_total_active]
         | @tsv
     "
     local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid")
@@ -450,8 +455,8 @@ mode_statusline() {
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
-    local session_active session_first session_last last_e project branch today_active today_project_active project_total_active
-    IFS=$'\t' read -r session_active session_first session_last last_e project branch today_active today_project_active project_total_active <<< "$all_info"
+    local session_active session_first session_last last_e last_break project branch today_active today_project_active project_total_active
+    IFS=$'\t' read -r session_active session_first session_last last_e last_break project branch today_active today_project_active project_total_active <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
     local gap=$(( now - session_last ))
@@ -459,7 +464,7 @@ mode_statusline() {
 
     # Build tokens
     local proj_short; proj_short=$(_short_project "$project")
-    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_git
+    local tok_session tok_session_wall tok_today tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_git
     tok_session=$(_fmt_short "$session_active")
     tok_session_wall=$(_fmt_short "$session_wall")
     tok_today=$(_fmt_short "$today_active")
@@ -467,6 +472,12 @@ mode_statusline() {
     tok_project_total=$(_fmt_short "$project_total_active")
     tok_project="$proj_short"
     tok_branch="$branch"
+    # Only show if there was an actual break (over threshold) this session
+    tok_last_break=""
+    local lb=${last_break:-0}
+    if [ "$lb" -gt 0 ]; then
+        tok_last_break=$(_fmt_short "$lb")
+    fi
 
 
     # Git status — only compute if {git} is in any format string
@@ -596,6 +607,7 @@ mode_statusline() {
         output="${output//\{project\}/$tok_project}"
         output="${output//\{branch\}/$tok_branch}"
         output="${output//\{status\}/$tok_status}"
+        output="${output//\{last_break\}/$tok_last_break}"
         output="${output//\{git\}/$tok_git}"
         # Optional tokens: replace if set, remove entire · segment if empty
         local -a opt_tokens=( '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
@@ -722,13 +734,13 @@ mode_breakdown() {
         }
     ")
 
-    local claude_time user_time idle active
+    local claude_time user_time breaks break_count downtime downtime_count active
     local bd_parsed
-    bd_parsed=$(echo "$result" | jq -r '[.breakdown.claude, .breakdown.user, .breakdown.idle, .active] | @tsv')
-    IFS=$'\t' read -r claude_time user_time idle active <<< "$bd_parsed"
+    bd_parsed=$(echo "$result" | jq -r '[.breakdown.claude, .breakdown.user, .breakdown.breaks, .breakdown.break_count, .breakdown.downtime, .breakdown.downtime_count, .active] | @tsv')
+    IFS=$'\t' read -r claude_time user_time breaks break_count downtime downtime_count active <<< "$bd_parsed"
 
     if $raw; then
-        echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, idle: .breakdown.idle, active: .active}'
+        echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, breaks: .breakdown.breaks, break_count: .breakdown.break_count, downtime: .breakdown.downtime, downtime_count: .breakdown.downtime_count, active: .active}'
     else
         local pct_claude=0 pct_user=0
         if [ "$active" -gt 0 ]; then
@@ -736,12 +748,15 @@ mode_breakdown() {
             pct_user=$(( user_time * 100 / active ))
         fi
 
-        printf "  Claude:   %-12s %d%%\n" "$(_fmt $claude_time)" "$pct_claude"
-        printf "  You:      %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
-        echo "  ───────────────────────"
-        printf "  Active:   %s\n" "$(_fmt $active)"
-        if [ "$idle" -gt 0 ]; then
-            printf "  Idle:     %s\n" "$(_fmt $idle)"
+        printf "  Claude:     %-12s %d%%\n" "$(_fmt $claude_time)" "$pct_claude"
+        printf "  You:        %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
+        echo "  ─────────────────────────"
+        printf "  Active:     %s\n" "$(_fmt $active)"
+        if [ "$breaks" -gt 0 ]; then
+            printf "  Breaks:     %-12s (%d)\n" "$(_fmt $breaks)" "$break_count"
+        fi
+        if [ "$downtime" -gt 0 ]; then
+            printf "  Downtime:   %-12s (%d)\n" "$(_fmt $downtime)" "$downtime_count"
         fi
     fi
 }
@@ -807,68 +822,61 @@ mode_gaps() {
     local entries; entries=$(_entries "$since" "$filter" "$branch_filter")
 
     if [ -z "$entries" ]; then
-        if $raw; then echo '[]'; else echo "No activity recorded"; fi; return; fi
+        if $raw; then echo '{}'; else echo "No activity recorded"; fi; return; fi
 
-    # Build jq bucket boundaries from config
     local buckets_jq="[${GAP_BUCKETS}]"
 
     local result
-    result=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" --argjson buckets "$buckets_jq" '
-        sort_by(.t)
-        | [range(1; length) | select(.[input-1].e == "response" or .[input-1].e == "start")]
-        | . as $indices
-        # Collect response→prompt gaps
-        | [range(0; length) as $j | $indices[$j] as $i |
-            {gap: (.[($i)].t - .[($i-1)].t), from: .[($i-1)].e, to: .[($i)].e}
-          ] | . as $gaps_raw
-        # Hmm, this approach is tricky with jq indices. Simpler:
-        | empty
-    ' 2>/dev/null || true)
-
-    # Use a simpler approach: extract gaps with awk-style jq
     result=$(echo "$entries" | jq -sr --argjson pause "$PAUSE_THRESHOLD" --argjson buckets "$buckets_jq" '
-        sort_by(.t)
-        | . as $a
+        def bucket_gaps($gaps; $bounds; $pause):
+            [range(0; $bounds | length) as $i |
+                (if $i == 0 then 0 else $bounds[$i-1] end) as $lo | $bounds[$i] as $hi
+                | {
+                    label: (if $i == 0 then "< \($bounds[0] / 60 | floor)min"
+                            elif $i == ($bounds | length) - 1 then "> \($bounds[$i-1] / 60 | floor)min"
+                            else "\($lo / 60 | floor)-\($hi / 60 | floor)min" end),
+                    count: ([$gaps[] | select(. >= $lo and . < $hi)] | length),
+                    total: ([$gaps[] | select(. >= $lo and . < $hi)] | add // 0),
+                    is_active: ($lo < $pause)
+                }];
+        sort_by(.t) | . as $a
+        | ($buckets + [99999999]) as $bounds
+        # Separate breaks (response→prompt, no start between) from downtime (→start)
         | [range(1; length)
             | select($a[.-1].e == "response" or $a[.-1].e == "start")
-            | ($a[.].t - $a[.-1].t)]
-        | . as $gaps
-        | ($buckets + [99999999]) as $bounds
-        | [range(0; $bounds | length) as $i |
-            {
-                label: (if $i == 0 then "< \($bounds[0] / 60 | floor)min"
-                        elif $i == ($bounds | length) - 1 then "> \($bounds[$i-1] / 60 | floor)min"
-                        else "\($bounds[$i-1] / 60 | floor)-\($bounds[$i] / 60 | floor)min"
-                        end),
-                min: (if $i == 0 then 0 else $bounds[$i-1] end),
-                max: $bounds[$i],
-                count: ([$gaps[] | select(. >= (if $i == 0 then 0 else $bounds[$i-1] end) and . < $bounds[$i])] | length),
-                total: ([$gaps[] | select(. >= (if $i == 0 then 0 else $bounds[$i-1] end) and . < $bounds[$i])] | add // 0),
-                is_active: ((if $i == 0 then 0 else $bounds[$i-1] end) < $pause)
-            }
-          ]
+            | {gap: ($a[.].t - $a[.-1].t), is_downtime: ($a[.].e == "start")}]
         | {
-            buckets: .,
-            threshold: $pause,
-            total_gaps: ($gaps | length),
-            near_threshold: ([$gaps[] | select(. >= ($pause * 0.67) and . < $pause)] | length)
+            breaks: bucket_gaps([.[] | select(.is_downtime | not) | .gap]; $bounds; $pause),
+            downtime: [.[] | select(.is_downtime) | .gap],
+            near_threshold: ([.[] | select(.is_downtime | not) | .gap | select(. >= ($pause * 0.67) and . < $pause)] | length),
+            threshold: $pause
           }
     ')
 
     if $raw; then
         echo "$result"
     else
-        echo "Response→Prompt gap distribution:"
+        local thresh_min=$(( PAUSE_THRESHOLD / 60 ))
+
+        echo "Within sessions (threshold: ${thresh_min}min):"
         echo ""
         echo "$result" | jq -r '
-            .threshold as $thr
-            | .buckets[] | select(.count > 0)
-            | "  \(if .is_active then "✓" else "✗" end) \(.label | . + " " * (12 - length))  \(.count) gaps  \(.total / 60 | floor)min total"
+            .breaks[] | select(.count > 0)
+            | "  \(if .is_active then "✓" else "⏸" end) \(.label | . + " " * (12 - length))  \(.count | tostring | . + " " * (4 - length)) \(.total / 60 | floor)min"
         '
+
+        local dt_count dt_total
+        dt_count=$(echo "$result" | jq '[.downtime[]] | length')
+        dt_total=$(echo "$result" | jq '[.downtime[]] | add // 0')
+        if [ "$dt_count" -gt 0 ]; then
+            echo ""
+            echo "Between sessions (downtime):"
+            echo "  $dt_count gaps  $(_fmt $dt_total)"
+        fi
+
         echo ""
         local near; near=$(echo "$result" | jq -r '.near_threshold')
-        local thresh_min=$(( PAUSE_THRESHOLD / 60 ))
-        echo "  Threshold: ${thresh_min}min — $near gaps within 2/3 of threshold"
+        echo "  $near gaps within 2/3 of threshold"
         if [ "$near" -gt 3 ]; then
             echo "  ⚠ Many gaps near threshold — consider lowering PAUSE_THRESHOLD"
         fi
