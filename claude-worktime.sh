@@ -1212,6 +1212,42 @@ case "${1:-}" in
         ;;
     --check) cmd_check; exit $? ;;
     --debug) cmd_debug; exit $? ;;
+    --tokens)
+        cat << 'TOKENS'
+Statusline token reference:
+
+  Time (from activity log)
+    ⏱              status icon
+    today 2h32m    today's active time for this project
+    total 8h30m    all-time total for this project
+    ▮▯▯▮▮▮        day timeline (▮=work ▯=break)
+    5h02m          today's total across all projects
+    ▶1h12m         continuous work since last break
+    ⏸ 20m          last break duration
+    45m            current session active time
+
+  Rate limits (from Claude Code)
+    ◑30%           5h rate limit usage (○◔◑◕● = 0/10/25/50/75%+)
+    ↻3h21m         time until 5h window resets
+    →51%           projected 5h usage at reset (yellow ≥90%, red ≥100%)
+    5% 7d          7-day rate limit usage
+    ↻Sat           7-day reset weekday
+
+  Context (from Claude Code)
+    ctx 77%        context window fullness (auto-compacts at ~95%)
+    ⟳93%           KV cache hit ratio — how much was served from cache
+                   vs reprocessed. Drops during tool-heavy work (new
+                   content) or after breaks (cache TTL ~5min). Accumulates
+                   across the 5h window.
+
+  Other
+    main ✓         git branch + status (✓=clean ✗=dirty +=staged ?=untracked)
+    $1.23          session cost (needs LOG_COST=true)
+
+All tokens auto-hide when data is unavailable.
+TOKENS
+        exit 0
+        ;;
     --repair)
         [ ! -f "$LOGFILE" ] && { echo "No log file"; exit 0; }
         _before=$(wc -l < "$LOGFILE")

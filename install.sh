@@ -141,6 +141,7 @@ else
 - `claude-worktime --breakdown --today` — Claude vs You time split
 - `claude-worktime --summary` — per-project breakdown
 If the user asks about session time, worktime, or how long we've been working, run `claude-worktime`.
+For statusline token explanations, run `claude-worktime --tokens`.
 CLAUDEMD
     echo "  Added claude-worktime section to $CLAUDE_MD"
 fi
