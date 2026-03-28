@@ -71,10 +71,10 @@ Up to 3 configurable lines in Claude Code's status bar. Default:
 ⏱ session 45m · today 2h10m · my-org/my-project
 ```
 
-With rate limits and git (via config):
+With rate limits, git, and last break (via config):
 
 ```
-⏱  today 45m · total 12h30m · my-org/my-project (main ✓)
+⏱  today 45m · total 12h30m · my-org/my-project (main ✓) · ⏸20m
 20% ↻3h21m →51% · 5% 7d ↻Sat →35%
 ```
 
