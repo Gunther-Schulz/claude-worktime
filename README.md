@@ -59,7 +59,7 @@ The installer verifies dependencies automatically. Then **restart Claude Code** 
 ./uninstall.sh
 ```
 
-Removes hooks, statusline config, and the script. Logs are preserved at `~/.claude/worktime/`.
+Removes hooks, statusline config, and the script. Logs are preserved in the data directory.
 
 ## Usage
 
@@ -179,7 +179,7 @@ This shows what your session would cost at API rates ($15/$75 per MTok for Opus 
 
 ## Configuration
 
-Config file: `~/.claude/worktime/config.sh` — plain bash key-value pairs with comments.
+Config file: `~/.config/claude-worktime/config.sh` — plain bash key-value pairs with comments.
 
 A default config with examples is created on install.
 
@@ -236,10 +236,7 @@ Idle variants (`STATUSLINE_IDLE_FORMAT_2`, `_3`) fall back to the normal format 
 
 ### Rate limit projections
 
-The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Colors change at thresholds:
-- Green — on pace, won't hit limit
-- Yellow (`COLOR_RATE_WARNING`) — projected ≥90%
-- Red (`COLOR_RATE_CRITICAL`) — projected ≥100%, will hit limit
+The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Projection color is configurable via `COLOR_RATE_WARNING` (default: yellow at ≥90%) and `COLOR_RATE_CRITICAL` (default: red at ≥100%). Set to `""` to disable.
 
 The 7d projection uses daily averages and requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
 
@@ -306,7 +303,7 @@ claude-worktime --repair
 
 ## Log format
 
-JSONL at `~/.claude/worktime/activity.log`:
+JSONL at `~/.local/share/claude-worktime/activity.log`:
 
 ```jsonl
 {"t":1774632641,"p":"/path/to/project","b":"main","s":"session-uuid","e":"start"}

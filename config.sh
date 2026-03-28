@@ -1,5 +1,5 @@
 # claude-worktime configuration
-# Copy to ~/.claude/worktime/config.sh and customize
+# Copy to ~/.config/claude-worktime/config.sh and customize
 #
 # Format tokens for statusline:
 #
