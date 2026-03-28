@@ -27,7 +27,15 @@ Options:
 - `--statusline` — enable the status bar display
 - `--force` — overwrite existing hooks
 
-The installer verifies dependencies automatically. Then **restart Claude Code** to activate.
+The installer:
+- Copies the script to `~/.local/bin/claude-worktime`
+- Creates default config at `~/.config/claude-worktime/config.sh` (preserved on reinstall)
+- Adds event hooks to `~/.claude/settings.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure)
+- Adds a fenced section to `~/.claude/CLAUDE.md` so Claude knows about the tool (auto-updated on reinstall)
+- Migrates data from legacy locations if found
+- Verifies dependencies
+
+Then **restart Claude Code** to activate.
 
 ## Uninstall
 
@@ -35,7 +43,7 @@ The installer verifies dependencies automatically. Then **restart Claude Code** 
 ./uninstall.sh
 ```
 
-Removes hooks, statusline config, and the script. Logs are preserved in the data directory.
+Removes hooks, statusline config, the script, and the CLAUDE.md section. Logs and config are preserved in the data directory.
 
 ## Statusline
 
@@ -205,6 +213,9 @@ claude-worktime --cost --filter Todenbuettel
 
 # Log rotation
 claude-worktime --rotate
+
+# Statusline token legend
+claude-worktime --tokens
 ```
 
 All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`) can be combined with any mode.

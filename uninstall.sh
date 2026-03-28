@@ -35,6 +35,20 @@ if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
     $changed && echo "  Removed hooks from settings.json"
 fi
 
+# Remove fenced section from CLAUDE.md
+CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
+MARKER_START="<!-- claude-worktime:start -->"
+if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
+    awk -v start="$MARKER_START" '
+        $0 == start { skip=1; next }
+        skip && /^<!-- claude-worktime:end -->/ { skip=0; next }
+        !skip { print }
+    ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
+    # Remove trailing blank lines left behind
+    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD"
+    echo "  Removed claude-worktime section from CLAUDE.md"
+fi
+
 echo ""
 echo "Done. Restart Claude Code to deactivate."
 echo "Note: Data preserved at:"
