@@ -85,13 +85,13 @@ A default config with examples is created on install.
 | `{today_wall}` | Wall clock span of today's timeline (first event to now) |
 | `{today_project}` | Today's total for current project only |
 | `{project_total}` | All-time total for current project |
-| `{since_break}` | ▶2h40m — continuous work time since most recent break |
-| `{last_break}` | ⏸ 41m — duration of most recent break |
+| `{since_break}` | ▶2h40m — continuous work time since most recent break (always visible) |
+| `{last_break}` | ⏸ 41m — duration of most recent break (hidden until first break) |
 | `{timeline}` | ▮▯▯▮▮▮▮▮▮▯▯▮▮▮ — day sparkline (▮=work ▯=break) |
 
 `{since_break}`, `{last_break}`, and `{timeline}` are **cross-session** — they reflect your whole day across all projects and sessions, not just the current one. This gives an accurate picture of your personal work/break rhythm even when switching between multiple sessions.
 
-All three auto-hide when no data is available.
+`{since_break}` is always visible — it shows your current work streak even before the first break. `{last_break}` appears only after the first break exceeding `PAUSE_THRESHOLD`. `{timeline}` auto-hides when no data is available.
 
 **Project tokens:**
 

@@ -1300,8 +1300,8 @@ Statusline token reference:
     today 2h32m    today's active time for this project
     total 8h30m    all-time total for this project
     ▮▯▯▮▮▮ 11h    day timeline (▮=work ▯=break) + wall clock span
-    ▶1h12m         continuous work since last break
-    ⏸ 20m          last break duration
+    ▶1h12m         work streak since last break (always visible)
+    ⏸ 20m          last break duration (after first break)
     45m            current session active time
 
   Rate limits (from Claude Code)
