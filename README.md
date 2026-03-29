@@ -154,6 +154,20 @@ The `{rate_5h_proj}` token projects your usage at window reset based on current 
 
 The 7d tokens (`{rate_7d}`, `{rate_7d_day}`, `{rate_7d_proj}`) depend on Claude Code providing 7-day rate limit data. In practice, the entire 7d group may not appear until some time after the weekly window resets — all tokens auto-hide when data is unavailable. The 7d projection additionally requires `RATE_7D_PROJ_MIN_DAYS` (default: 0.5 days) of data before showing.
 
+### Break reminder
+
+The `{since_break}` work streak indicator (`▶2h15m`) changes color when you've been working too long without a break:
+
+- **Yellow** at `STREAK_WARNING` (default: 1.5 hours) — time to think about a break
+- **Red** at `STREAK_CRITICAL` (default: 2.5 hours) — you really should stop
+
+A "break" is a `response → prompt` gap exceeding `PAUSE_THRESHOLD` (default: 15 minutes). The warning clears automatically when you take a break. Set either threshold to `0` to disable.
+
+```bash
+STREAK_WARNING=5400    # 1.5h — yellow
+STREAK_CRITICAL=9000   # 2.5h — red
+```
+
 ### Auto-rotation
 
 Old log entries are automatically archived on session start. Daily rotation is recommended — it keeps the active log small (faster jq queries) without affecting long-term stats. Shorter intervals are purely a performance choice, not a data retention trade-off.

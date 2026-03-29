@@ -62,6 +62,8 @@ STATUSLINE_3=""
 COLOR_NORMAL="green"
 COLOR_RATE_WARNING="yellow"
 COLOR_RATE_CRITICAL="red"
+STREAK_WARNING=5400    # 1.5h — work streak turns yellow
+STREAK_CRITICAL=9000   # 2.5h — work streak turns red
 COLOR_TIMELINE_WORK=""   # color for ▮ blocks (empty = same as line color)
 COLOR_TIMELINE_BREAK=""  # color for ▯ blocks (empty = same as line color)
 TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
@@ -615,10 +617,22 @@ mode_statusline() {
     _short_project_v "$project"; tok_project="$_V"
     tok_branch="$branch"
     # since_break always shows (continuous work streak); last_break only after first break
+    # Streak color warning: yellow at STREAK_WARNING, red at STREAK_CRITICAL
     tok_last_break=""
     local lb=${last_break:-0}
     local sb=${since_break:-0}
-    _fmt_short_v "$sb"; tok_since_break="▶$_V"
+    _fmt_short_v "$sb"
+    local streak_color=""
+    if [ "$sb" -ge "${STREAK_CRITICAL:-9000}" ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+        streak_color="$COLOR_RATE_CRITICAL"
+    elif [ "$sb" -ge "${STREAK_WARNING:-5400}" ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+        streak_color="$COLOR_RATE_WARNING"
+    fi
+    if [ -n "$streak_color" ]; then
+        tok_since_break="${streak_color}▶$_V${COLOR_RESET}"
+    else
+        tok_since_break="▶$_V"
+    fi
     if [ "$lb" -gt 0 ]; then
         _fmt_short_v "$lb"; tok_last_break="⏸ $_V"
     fi
@@ -1310,7 +1324,7 @@ Statusline token reference:
     today 2h32m    today's active time for this project
     total 8h30m    all-time total for this project
     ▮▯▯▮▮▮ 11h    day timeline (▮=work ▯=break) + wall clock span
-    ▶1h12m         work streak since last break (always visible)
+    ▶1h12m         work streak since last break (yellow >1.5h, red >2.5h)
     ⏸ 20m          last break duration (after first break)
     45m            current session active time
 

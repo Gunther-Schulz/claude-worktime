@@ -76,6 +76,14 @@ COLOR_TIMELINE_WORK=""             # empty = same as line color
 COLOR_TIMELINE_BREAK=""            # empty = same as line color
 COLOR_RESET="reset"
 
+# ---------------------------------------------------------------------------
+# Break reminder — work streak color warning
+# ---------------------------------------------------------------------------
+# The ▶ work streak indicator changes color when you've been working
+# too long without a break (response→prompt gap > PAUSE_THRESHOLD).
+STREAK_WARNING=5400    # 1.5h — turns yellow
+STREAK_CRITICAL=9000   # 2.5h — turns red
+
 # Example: green work blocks, orange break blocks
 # COLOR_TIMELINE_WORK="green"
 # COLOR_TIMELINE_BREAK="orange"
