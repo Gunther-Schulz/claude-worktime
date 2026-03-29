@@ -47,7 +47,7 @@
 # Empty groups (all tokens unavailable) are hidden automatically.
 
 #GROUP_PROJECT="{project} ({git})"
-#GROUP_TODAY="{status} today {today_project}"
+#GROUP_TODAY="{status} today {today_project}"  # or with split: "{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 #GROUP_TOTAL="total {project_total}"
 #GROUP_TIMELINE="{timeline} {today_wall}"
 #GROUP_BREAKS="{since_break} {last_break}"
@@ -134,6 +134,9 @@
 # GROUP_COMPACT="{project} · {status} {session} ({today}) · {rate_5h}"
 # STATUSLINE_1="COMPACT"
 # STATUSLINE_2=""
+#
+# --- Claude/You time split ---
+# GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 #
 # --- Custom group with session wall time ---
 # GROUP_WALL="{session}/{session_wall}"
