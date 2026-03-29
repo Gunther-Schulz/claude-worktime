@@ -57,6 +57,11 @@ STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
 STATUSLINE_3=""
 GROUP_DIVIDER=" · "
 
+# Per-group colors (optional, falls back to COLOR_NORMAL)
+# Mute secondary info for visual hierarchy
+GROUP_RATE_7D_COLOR="white"
+GROUP_CONTEXT_COLOR="white"
+
 # ---------------------------------------------------------------------------
 # Colors — use preset names or raw ANSI codes
 # ---------------------------------------------------------------------------

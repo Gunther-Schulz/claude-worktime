@@ -141,6 +141,13 @@ GROUP_DIVIDER=" · "
 
 Reorder groups by moving names. Add a third line with `STATUSLINE_3="MODEL"` and `GROUP_MODEL="{model} · {cost}"`. Create custom groups with any mix of tokens.
 
+**Per-group colors:** Set `GROUP_<NAME>_COLOR` to give a group its own color. Falls back to `COLOR_NORMAL`. Item-level colors (rate projections, timeline blocks) still apply and correctly restore to the group's color.
+
+```bash
+GROUP_RATE_7D_COLOR="white"    # muted 7d info
+GROUP_CONTEXT_COLOR="white"    # muted context info
+```
+
 ### Rate limit projections
 
 The `{rate_5h_proj}` token projects your usage at window reset based on current burn rate. Projection color is configurable via `COLOR_RATE_WARNING` (default: yellow at ≥90%) and `COLOR_RATE_CRITICAL` (default: red at ≥100%). Set to `""` to disable.
