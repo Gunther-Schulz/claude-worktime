@@ -77,9 +77,9 @@
 #COLOR_NORMAL="green"
 #COLOR_RATE_WARNING="yellow"
 #COLOR_RATE_CRITICAL="red"
-#COLOR_TIMELINE_WORK=""             # empty = same as line color
-#COLOR_TIMELINE_BREAK=""            # empty = same as line color
-#COLOR_RESET="reset"
+#COLOR_TIMELINE_WORK="green"
+#COLOR_TIMELINE_BREAK="orange"
+#COLOR_RESET="dark-gray"
 
 # ---------------------------------------------------------------------------
 # Break reminder — work streak color warning
