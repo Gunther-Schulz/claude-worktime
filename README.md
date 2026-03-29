@@ -163,7 +163,7 @@ The `{since_break}` work streak indicator (`▶2h15m`) changes color when you've
 - **Yellow** at `STREAK_WARNING` (default: 1.5 hours) — time to think about a break
 - **Red** at `STREAK_CRITICAL` (default: 2.5 hours) — you really should stop
 
-A "break" is a `response → prompt` gap exceeding `PAUSE_THRESHOLD` (default: 15 minutes). The warning clears automatically when you take a break. Set either threshold to `0` to disable.
+A "break" is any gap exceeding `PAUSE_THRESHOLD` (default: 15 minutes) — whether you stayed in the CLI idle (`response → prompt`) or quit and came back (`response → start`). The warning clears automatically when you take a break. Set either threshold to `0` to disable.
 
 ```bash
 STREAK_WARNING=5400    # 1.5h — yellow

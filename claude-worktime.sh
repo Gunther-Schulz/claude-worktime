@@ -547,11 +547,16 @@ mode_statusline() {
             session_active: (\$session | calc_active(\$pause)),
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
             last_break: ([range(\$today|length-1; 0; -1) as \$i
-                | select(\$today[\$i].e == \"prompt\" and (\$today[\$i-1].e == \"response\" or \$today[\$i-1].e == \"start\"))
+                | select(
+                    ((\$today[\$i].e == \"prompt\" or \$today[\$i].e == \"start\")
+                     and (\$today[\$i-1].e == \"response\" or \$today[\$i-1].e == \"start\"))
+                  )
                 | (\$today[\$i].t - \$today[\$i-1].t) | select(. > \$pause)] | first // 0),
             since_break: (\$today | . as \$s |
                 ([range(length-1; 0; -1) as \$i
-                    | select(\$s[\$i].e == \"prompt\" and (\$s[\$i-1].e == \"response\" or \$s[\$i-1].e == \"start\")
+                    | select(
+                        ((\$s[\$i].e == \"prompt\" or \$s[\$i].e == \"start\")
+                         and (\$s[\$i-1].e == \"response\" or \$s[\$i-1].e == \"start\"))
                         and (\$s[\$i].t - \$s[\$i-1].t) > \$pause)
                     | \$i] | first) as \$brk_idx
                 | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
