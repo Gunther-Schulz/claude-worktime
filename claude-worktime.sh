@@ -1351,7 +1351,7 @@ Statusline token reference:
     ctx 77%        context window fullness (auto-compacts at ~95%)
     ⟳93%           KV cache hit ratio — how much was served from cache
                    vs reprocessed. Drops during tool-heavy work (new
-                   content) or after breaks (cache TTL ~5min). Accumulates
+                   content) or after breaks (cache expires after inactivity). Accumulates
                    across the 5h window.
 
   Other
