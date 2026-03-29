@@ -574,7 +574,8 @@ mode_statusline() {
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
                 # Build set of break block indices using rounded block count
                 | [range(1; \$today|length)
-                    | select(\$today[.].e == \"prompt\" and (\$today[.-1].e == \"response\" or \$today[.-1].e == \"start\")
+                    | select((\$today[.].e == \"prompt\" or \$today[.].e == \"start\")
+                        and (\$today[.-1].e == \"response\" or \$today[.-1].e == \"start\")
                         and (\$today[.].t - \$today[.-1].t) > \$pause)
                     | {from: \$today[.-1].t, to: \$today[.].t}
                     | . as \$brk
