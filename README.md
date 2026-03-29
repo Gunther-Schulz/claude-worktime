@@ -66,6 +66,8 @@ my-org/my-project · ⏱  45m (2h10m) · ◑20%
 
 **Note:** The statusline is not real-time. Claude Code only refreshes it after each assistant response — not when you send a prompt, not during tool execution, and not on a timer. The display stays frozen until Claude finishes responding. The underlying time tracking is accurate regardless; only the display is event-driven.
 
+**First-message warm-up:** Rate limits, context usage, cache ratio, and cost data come from Claude Code's stdin JSON, which is only available after the first API round-trip. On a fresh session start, the statusline shows time tracking and project info but omits these tokens until you submit your first message. This is expected — the data simply doesn't exist yet.
+
 ## Configuration
 
 Config file: `~/.config/claude-worktime/config.sh` — plain bash key-value pairs with comments.
@@ -144,8 +146,8 @@ Reorder groups by moving names. Add a third line with `STATUSLINE_3="MODEL"` and
 **Per-group colors:** Set `GROUP_<NAME>_COLOR` to give a group its own color. Falls back to `COLOR_NORMAL`. Item-level colors (rate projections, timeline blocks) still apply and correctly restore to the group's color.
 
 ```bash
-GROUP_RATE_7D_COLOR="white"    # muted 7d info
-GROUP_CONTEXT_COLOR="white"    # muted context info
+GROUP_RATE_7D_COLOR="dark-gray"    # muted 7d info
+GROUP_CONTEXT_COLOR="dark-gray"    # muted context info
 ```
 
 ### Rate limit projections
@@ -195,7 +197,7 @@ COLOR_RATE_CRITICAL="red"         # projected rate ≥100%
 COLOR_RESET="reset"               # reset to terminal default
 ```
 
-Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `orange`, `pink`, `purple`, `bright-green`, `bright-red`, `bright-yellow`, `bright-blue`, `bright-white`, `dim`, `reset`, `none`. Raw ANSI codes (e.g. `"\033[38;5;208m"`) also work. Set to `""` or `"none"` to disable.
+Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `dark-gray`, `light-gray`, `orange`, `pink`, `purple`, `bright-green`, `bright-red`, `bright-yellow`, `bright-blue`, `bright-white`, `dim`, `reset`, `none`. Raw ANSI codes (e.g. `"\033[38;5;208m"`) also work. Set to `""` or `"none"` to disable.
 
 ### Environment variables
 
@@ -415,6 +417,8 @@ No python, no node, no extra runtimes.
 **Hook reliability (~93%).** Claude Code hooks occasionally don't fire — in our testing, about 7% of events are missed (typically `response` or `prompt` events). This does **not** affect total active time, breaks, or downtime — those are calculated from the gaps between events that *do* fire, and the totals remain accurate. The only impact is on the Claude/You split in `--breakdown`, which may shift by a few percent in either direction. Missed `response` events attribute your reading time to Claude; missed `prompt` events do the opposite. These errors partially cancel out.
 
 **Statusline is not real-time.** Claude Code only refreshes the statusline after each assistant response. The display freezes during tool execution and while you're typing. Time tracking continues accurately in the background; only the display is delayed.
+
+**Incomplete statusline on session start.** Rate limit, context, and cache tokens require data from Claude Code's stdin JSON, which isn't available until the first API call completes. The statusline populates fully after your first message.
 
 ## License
 
