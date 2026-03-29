@@ -105,30 +105,30 @@ JQ_BREAKDOWN='def calc_breakdown($pause):
       else .claude += $gap
       end);'
 
-# --- Color name resolver: "red" → "\033[31m", passthrough for raw codes ---
+# --- Color name resolver: "red" → actual ANSI escape bytes ---
 _resolve_color() {
     case "${1:-}" in
-        black)        echo "\033[30m" ;;
-        red)          echo "\033[31m" ;;
-        green)        echo "\033[32m" ;;
-        yellow)       echo "\033[33m" ;;
-        blue)         echo "\033[34m" ;;
-        magenta)      echo "\033[35m" ;;
-        cyan)         echo "\033[36m" ;;
-        white)        echo "\033[37m" ;;
-        gray|grey)    echo "\033[90m" ;;
-        orange)       echo "\033[38;5;208m" ;;
-        pink)         echo "\033[38;5;213m" ;;
-        purple)       echo "\033[38;5;141m" ;;
-        bright-green) echo "\033[1;32m" ;;
-        bright-red)   echo "\033[1;31m" ;;
-        bright-yellow) echo "\033[1;33m" ;;
-        bright-blue)  echo "\033[1;34m" ;;
-        bright-white) echo "\033[1;37m" ;;
-        dim)          echo "\033[2m" ;;
-        reset)        echo "\033[0m" ;;
-        ""|none)      echo "" ;;
-        *)            echo "$1" ;;  # passthrough raw ANSI codes
+        black)        printf '\033[30m' ;;
+        red)          printf '\033[31m' ;;
+        green)        printf '\033[32m' ;;
+        yellow)       printf '\033[33m' ;;
+        blue)         printf '\033[34m' ;;
+        magenta)      printf '\033[35m' ;;
+        cyan)         printf '\033[36m' ;;
+        white)        printf '\033[37m' ;;
+        gray|grey)    printf '\033[90m' ;;
+        orange)       printf '\033[38;5;208m' ;;
+        pink)         printf '\033[38;5;213m' ;;
+        purple)       printf '\033[38;5;141m' ;;
+        bright-green) printf '\033[1;32m' ;;
+        bright-red)   printf '\033[1;31m' ;;
+        bright-yellow) printf '\033[1;33m' ;;
+        bright-blue)  printf '\033[1;34m' ;;
+        bright-white) printf '\033[1;37m' ;;
+        dim)          printf '\033[2m' ;;
+        reset)        printf '\033[0m' ;;
+        ""|none)      printf '' ;;
+        *)            printf '%b' "$1" ;;  # passthrough raw ANSI codes
     esac
 }
 
@@ -522,7 +522,7 @@ mode_statusline() {
     _read_hook_stdin
 
     local sid="${HOOK_SESSION_ID:-$(_current_session_id)}"
-    [ -z "$sid" ] && { printf '%b' "⏱ --"; return; }
+    [ -z "$sid" ] && { printf '%s' "⏱ --"; return; }
 
     local now=$(date +%s)
 
@@ -764,7 +764,7 @@ mode_statusline() {
                 proj_color="$COLOR_RATE_WARNING"
             fi
             if [ -n "$proj_color" ]; then
-                _V="${proj_color}→${proj}%${COLOR_RESET}${color}"
+                _V="${proj_color}→${proj}%${COLOR_RESET}"
             else
                 _V="→${proj}%"
             fi
@@ -788,7 +788,7 @@ mode_statusline() {
                     proj_color="$COLOR_RATE_WARNING"
                 fi
                 if [ -n "$proj_color" ]; then
-                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}${color}"
+                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
                 else
                     tok_rate_7d_proj="→${proj}%"
                 fi
@@ -811,10 +811,10 @@ mode_statusline() {
     local tok_status="⏱"
 
     # Colorize timeline blocks if colors are configured
-    # Uses \033 escapes that printf '%b' will interpret in the final output
+    # Colorize timeline blocks using actual ANSI escape bytes
     if [ -n "${tok_timeline:-}" ]; then
-        [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//▮/${COLOR_TIMELINE_WORK}▮${COLOR_RESET}${color}}"
-        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_RESET}${color}}"
+        [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//▮/${COLOR_TIMELINE_WORK}▮${COLOR_RESET}}"
+        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_RESET}}"
     fi
 
     # Token arrays (constant per statusline refresh, shared by all groups)
@@ -861,7 +861,7 @@ mode_statusline() {
     _render_groups() {
         local group_names="$1"
         local divider="${GROUP_DIVIDER:- · }"
-        local result="" name var_name template raw nonempty rendered
+        local result="" name var_name color_var_name grp_color template raw nonempty rendered
 
         for name in $group_names; do
             var_name="GROUP_${name}"
@@ -872,8 +872,17 @@ mode_statusline() {
             nonempty="${raw%%:*}"
             rendered="${raw#?:}"
             if [ "$nonempty" = "1" ] && [ -n "$rendered" ]; then
+                # Per-group color: GROUP_<NAME>_COLOR, falls back to line color
+                color_var_name="GROUP_${name}_COLOR"
+                grp_color="${!color_var_name:-}"
+                [ -n "$grp_color" ] && grp_color=$(_resolve_color "$grp_color")
+                grp_color="${grp_color:-$color}"
+                # Replace bare COLOR_RESET with reset+group_color so item colors
+                # (projections, timeline) restore to the group color, not default
+                rendered="${rendered//${COLOR_RESET}/${COLOR_RESET}${grp_color}}"
+                rendered="${grp_color}${rendered}"
                 if [ -n "$result" ]; then
-                    result="${result}${divider}${rendered}"
+                    result="${result}${COLOR_RESET}${divider}${rendered}"
                 else
                     result="$rendered"
                 fi
@@ -883,12 +892,12 @@ mode_statusline() {
     }
 
     # Output
-    printf '%b' "${color}$(_render_groups "$STATUSLINE_1")${COLOR_RESET}"
+    printf '%s' "$(_render_groups "$STATUSLINE_1")${COLOR_RESET}"
     local _sl_extra _sl_rendered
     for _sl_extra in "${STATUSLINE_2:-}" "${STATUSLINE_3:-}"; do
         [ -z "$_sl_extra" ] && continue
         _sl_rendered=$(_render_groups "$_sl_extra")
-        [ -n "$_sl_rendered" ] && printf '\n%b' "${color}${_sl_rendered}${COLOR_RESET}"
+        [ -n "$_sl_rendered" ] && printf '\n%s' "${_sl_rendered}${COLOR_RESET}"
     done
 }
 
@@ -1368,7 +1377,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ ! -f "$LOGFILE" ]; then
-    if [ "$MODE" = "statusline" ]; then printf '%b' "${COLOR_IDLE}⏱ --${COLOR_RESET}"
+    if [ "$MODE" = "statusline" ]; then printf '%s' "${COLOR_IDLE}⏱ --${COLOR_RESET}"
     elif $RAW; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
     else echo "No session activity recorded"; fi
     exit 0
