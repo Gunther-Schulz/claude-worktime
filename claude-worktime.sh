@@ -50,7 +50,7 @@ PAUSE_THRESHOLD=900
 GROUP_PROJECT="{project} ({git})"
 GROUP_TODAY="{status} today {today_project}"
 GROUP_TOTAL="total {project_total}"
-GROUP_TIMELINE="{timeline} {today_wall}"
+GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
@@ -682,6 +682,9 @@ mode_statusline() {
     _fmt_short_v "$session_wall"; tok_session_wall="$_V"
     _fmt_short_v "$today_active"; tok_today="$_V"
     _fmt_short_v "$today_wall"; tok_today_wall="$_V"
+    local tok_today_start="" tok_today_now=""
+    [ "${today_first:-0}" -gt 0 ] && tok_today_start=$(date -d "@$today_first" +%H:%M 2>/dev/null || date -r "$today_first" +%H:%M 2>/dev/null)
+    tok_today_now=$(date +%H:%M)
     _fmt_short_v "$today_project_active"; tok_today_project="$_V"
     _fmt_short_v "${today_claude_active:-0}"; tok_today_claude="$_V"
     _fmt_short_v "${today_you_active:-0}"; tok_today_you="$_V"
@@ -889,8 +892,8 @@ mode_statusline() {
     fi
 
     # Token arrays (constant per statusline refresh, shared by all groups)
-    local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
-    local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
+    local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
+    local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
     local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
     local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
 
@@ -1401,7 +1404,7 @@ Statusline token reference:
     total 8h30m    all-time total for this project
     🤖 total        all-time Claude work for this project
     👤 total        all-time your work for this project
-    ▮▮··▮▮ 11h    day timeline (▮=present ·=away) + wall clock span
+    08:22 ▮▮··▮▮ 17:30  day timeline with start/end times (▮=present ·=away)
     ▶1h12m         presence streak since last break (yellow >1.5h, red >2.5h)
     ⏸ 20m          last break duration (after first break)
     45m            current session active time

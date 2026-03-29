@@ -4,7 +4,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
-▮▮▮···▮▮▮▮··▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 ```
 
 Two lines, two perspectives on the same data:
@@ -62,13 +62,14 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 2 — Your day** (cross-session):
 ```
-▮▮▮···▮▮▮▮··▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 ```
 
 | Element | Meaning |
 |---------|---------|
 | `▮▮··▮▮▮` | Day timeline — ▮ = present, · = away |
-| `8h30m` | Wall clock span (first event to now) |
+| `08:22` | Start time (first event today) |
+| `17:30` | Current time |
 | `▶1h12m` | Presence streak since last break (yellow >1.5h, red >2.5h) |
 | `⏸ 20m` | Duration of most recent break |
 | `◑30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
@@ -145,6 +146,8 @@ A commented-out template with all options is created on install.
 | `{session_wall}` | Wall clock time since session started |
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_wall}` | Wall clock span of today (first event to now) |
+| `{today_start}` | Start time today (e.g. `08:22`) |
+| `{today_now}` | Current time (e.g. `19:25`) |
 | `{today_project}` | Today's total for current project (Claude + You) |
 | `{today_claude}` | Today's Claude work time for current project |
 | `{today_you}` | Today's your active time for current project |
@@ -189,7 +192,7 @@ Define named groups, then compose lines by listing group names. The divider (`GR
 GROUP_PROJECT="{project} ({git})"
 GROUP_TODAY="{status} today {today_project}"
 GROUP_TOTAL="total {project_total}"
-GROUP_TIMELINE="{timeline} {today_wall}"
+GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"

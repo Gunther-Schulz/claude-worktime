@@ -51,7 +51,7 @@
 #GROUP_PROJECT="{project} ({git})"
 #GROUP_TODAY="{status} today {today_project}"
 #GROUP_TOTAL="total {project_total}"
-#GROUP_TIMELINE="{timeline} {today_wall}"
+#GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 #GROUP_BREAKS="{since_break} {last_break}"
 #GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 #GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
