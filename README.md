@@ -132,8 +132,10 @@ Define named groups, then compose lines by listing group names. The divider (`GR
 ```bash
 # Groups
 GROUP_PROJECT="{project} ({git})"
-GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
+GROUP_TODAY="{status} today {today_project}"
+GROUP_TODAY_SPLIT="🤖{today_claude} 👤{today_you}"
 GROUP_TOTAL="total {project_total}"
+GROUP_TOTAL_SPLIT="🤖{total_claude} 👤{total_you}"
 GROUP_TIMELINE="{timeline} {today_wall}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
@@ -146,7 +148,7 @@ STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
 GROUP_DIVIDER=" · "
 ```
 
-Reorder groups by moving names. Add a third line with `STATUSLINE_3="MODEL"` and `GROUP_MODEL="{model} · {cost}"`. Create custom groups with any mix of tokens.
+Reorder groups by moving names. Add `TODAY_SPLIT` and `TOTAL_SPLIT` to show the Claude/You breakdown. Add a third line with `STATUSLINE_3="MODEL"` and `GROUP_MODEL="{model} · {cost}"`. Create custom groups with any mix of tokens.
 
 **Per-group colors:** Set `GROUP_<NAME>_COLOR` to give a group its own color. Falls back to `COLOR_NORMAL`. Item-level colors (rate projections, timeline blocks) still apply and correctly restore to the group's color.
 
