@@ -23,9 +23,6 @@ CONFIG_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/mai
 CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
 DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-worktime}"
 
-# Legacy path
-LEGACY_DIR="${CLAUDE_DIR}/worktime"
-
 ENABLE_STATUSLINE=false
 FORCE=false
 
@@ -45,26 +42,6 @@ if ! command -v jq &>/dev/null; then
     echo "Error: jq is required. Install with your package manager."
     echo "  apt: sudo apt install jq  |  brew: brew install jq  |  pacman: sudo pacman -S jq"
     exit 1
-fi
-
-# Migrate from legacy location (~/.claude/worktime/)
-if [ -d "$LEGACY_DIR" ]; then
-    echo "  Migrating from legacy location ($LEGACY_DIR)..."
-    # Move config
-    if [ -f "$LEGACY_DIR/config.sh" ] && [ ! -f "$CONFIGDIR/config.sh" ]; then
-        cp "$LEGACY_DIR/config.sh" "$CONFIGDIR/config.sh"
-        echo "    Config → $CONFIGDIR/config.sh"
-    fi
-    # Move data files
-    for f in "$LEGACY_DIR"/activity*.jsonl; do
-        [ -f "$f" ] || continue
-        local_name=$(basename "$f")
-        if [ ! -f "$DATADIR/$local_name" ]; then
-            cp "$f" "$DATADIR/$local_name"
-            echo "    $local_name → $DATADIR/"
-        fi
-    done
-    echo "  Migration complete. Legacy files kept at $LEGACY_DIR (safe to remove)."
 fi
 
 # Install the script

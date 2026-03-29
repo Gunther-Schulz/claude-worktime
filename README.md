@@ -32,7 +32,6 @@ The installer:
 - Creates default config at `~/.config/claude-worktime/config.sh` (preserved on reinstall)
 - Adds event hooks to `~/.claude/settings.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure)
 - Adds a fenced section to `~/.claude/CLAUDE.md` so Claude knows about the tool (auto-updated on reinstall)
-- Migrates data from legacy locations if found
 - Verifies dependencies
 
 Then **restart Claude Code** to activate.
@@ -273,9 +272,9 @@ All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`
 ```
 
 - **Claude** — time from `prompt` until `response` (thinking, tools, output)
-- **You** — time from `response` until next `prompt` (reading, thinking, typing)
-- **Breaks** — `response` → `prompt` gaps over threshold within a session (you paused but didn't quit)
-- **Downtime** — `response` → `start` gaps (you quit the CLI and came back)
+- **You** — time from `response` until next `prompt` within threshold (reading, thinking, typing)
+- **Breaks** — idle gaps where you stayed in the CLI (`response` → `prompt` over threshold)
+- **Downtime** — idle gaps where you quit the CLI (`response` → `start` over threshold)
 
 ### Gap analysis
 
@@ -346,15 +345,14 @@ Six hooks log events to a JSONL file:
 
 ### Idle detection
 
-Only one type of gap can be idle: **`response` → `prompt`** — the moment between Claude finishing its response and the user sending the next message. If this gap exceeds `PAUSE_THRESHOLD` (default: 15 minutes), it's counted as idle.
+A gap is idle when the **user had the ball** (previous event was `response` or `start`) and the gap exceeds `PAUSE_THRESHOLD` (default: 15 minutes). This covers both staying idle in the CLI (`response → prompt`) and quitting and coming back (`response → start`).
 
 All other gaps are always active work:
-- `tool_start` → `tool_end` — tool running (even if it takes 20 minutes)
-- `prompt` → `tool_start` — Claude thinking before using a tool
-- `tool_end` → `response` — Claude generating output after tools
-- `prompt` → `response` — Claude thinking (text-only, no tools)
+- `prompt` → `response` — Claude's full turn (thinking, tools, output)
+- `tool_start` → `tool_end` — tool running
+- Any gap within Claude's turn
 
-This means long-running tools never get misclassified as idle time.
+Long-running tools are never misclassified as idle time.
 
 ### Tracking dimensions
 

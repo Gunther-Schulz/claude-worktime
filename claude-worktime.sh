@@ -1402,7 +1402,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ ! -f "$LOGFILE" ]; then
-    if [ "$MODE" = "statusline" ]; then printf '%s' "${COLOR_IDLE}⏱ --${COLOR_RESET}"
+    if [ "$MODE" = "statusline" ]; then printf '%s' "${COLOR_NORMAL}⏱ --${COLOR_RESET}"
     elif $RAW; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
     else echo "No session activity recorded"; fi
     exit 0
