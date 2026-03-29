@@ -574,9 +574,7 @@ mode_statusline() {
                 ] | unique as \$break_blocks
                 | [range(0; \$width) | . as \$i
                     | if ([\$break_blocks[] | select(. == \$i)] | length) > 0
-                      then \"▯\"
-                      elif ([\$today[] | select(.t >= (\$tstart + \$i * \$tblock) and .t < (\$tstart + (\$i + 1) * \$tblock))] | length) > 0
-                      then \"▮\" else \"▯\" end
+                      then \"▯\" else \"▮\" end
                 ] | join(\"\")
               else \"\" end)
         }
