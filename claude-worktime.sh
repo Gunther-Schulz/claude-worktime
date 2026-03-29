@@ -108,41 +108,42 @@ JQ_BREAKDOWN='def calc_breakdown($pause):
       end);'
 
 # --- Color name resolver: "red" → actual ANSI escape bytes ---
-_resolve_color() {
+# Variable-setting variant: sets _V instead of printing (avoids subshell)
+_resolve_color_v() {
     case "${1:-}" in
-        black)        printf '\033[30m' ;;
-        red)          printf '\033[31m' ;;
-        green)        printf '\033[32m' ;;
-        yellow)       printf '\033[33m' ;;
-        blue)         printf '\033[34m' ;;
-        magenta)      printf '\033[35m' ;;
-        cyan)         printf '\033[36m' ;;
-        white)        printf '\033[37m' ;;
-        gray|grey)    printf '\033[90m' ;;
-        orange)       printf '\033[38;5;208m' ;;
-        pink)         printf '\033[38;5;213m' ;;
-        purple)       printf '\033[38;5;141m' ;;
-        bright-green) printf '\033[1;32m' ;;
-        bright-red)   printf '\033[1;31m' ;;
-        bright-yellow) printf '\033[1;33m' ;;
-        bright-blue)  printf '\033[1;34m' ;;
-        bright-white) printf '\033[1;37m' ;;
-        dim)          printf '\033[2m' ;;
-        dark-gray|dark-grey) printf '\033[38;5;246m' ;;
-        light-gray|light-grey) printf '\033[38;5;248m' ;;
-        reset)        printf '\033[0m' ;;
-        ""|none)      printf '' ;;
-        *)            printf '%b' "$1" ;;  # passthrough raw ANSI codes
+        black)        _V=$'\033[30m' ;;
+        red)          _V=$'\033[31m' ;;
+        green)        _V=$'\033[32m' ;;
+        yellow)       _V=$'\033[33m' ;;
+        blue)         _V=$'\033[34m' ;;
+        magenta)      _V=$'\033[35m' ;;
+        cyan)         _V=$'\033[36m' ;;
+        white)        _V=$'\033[37m' ;;
+        gray|grey)    _V=$'\033[90m' ;;
+        orange)       _V=$'\033[38;5;208m' ;;
+        pink)         _V=$'\033[38;5;213m' ;;
+        purple)       _V=$'\033[38;5;141m' ;;
+        bright-green) _V=$'\033[1;32m' ;;
+        bright-red)   _V=$'\033[1;31m' ;;
+        bright-yellow) _V=$'\033[1;33m' ;;
+        bright-blue)  _V=$'\033[1;34m' ;;
+        bright-white) _V=$'\033[1;37m' ;;
+        dim)          _V=$'\033[2m' ;;
+        dark-gray|dark-grey) _V=$'\033[38;5;246m' ;;
+        light-gray|light-grey) _V=$'\033[38;5;248m' ;;
+        reset)        _V=$'\033[0m' ;;
+        ""|none)      _V='' ;;
+        *)            printf -v _V '%b' "$1" ;;  # passthrough raw ANSI codes
     esac
 }
 
-# Resolve all color config values
-COLOR_NORMAL=$(_resolve_color "$COLOR_NORMAL")
-COLOR_RATE_WARNING=$(_resolve_color "$COLOR_RATE_WARNING")
-COLOR_RATE_CRITICAL=$(_resolve_color "$COLOR_RATE_CRITICAL")
-COLOR_TIMELINE_WORK=$(_resolve_color "$COLOR_TIMELINE_WORK")
-COLOR_TIMELINE_BREAK=$(_resolve_color "$COLOR_TIMELINE_BREAK")
-COLOR_RESET=$(_resolve_color "${COLOR_RESET:-"\033[0m"}")
+# Resolve all color config values (no subshells)
+_resolve_color_v "$COLOR_NORMAL"; COLOR_NORMAL="$_V"
+_resolve_color_v "$COLOR_RATE_WARNING"; COLOR_RATE_WARNING="$_V"
+_resolve_color_v "$COLOR_RATE_CRITICAL"; COLOR_RATE_CRITICAL="$_V"
+_resolve_color_v "$COLOR_TIMELINE_WORK"; COLOR_TIMELINE_WORK="$_V"
+_resolve_color_v "$COLOR_TIMELINE_BREAK"; COLOR_TIMELINE_BREAK="$_V"
+_resolve_color_v "${COLOR_RESET:-reset}"; COLOR_RESET="$_V"
 
 # Precompute derived config values (once, not per statusline call)
 # Convert RATE_7D_PROJ_MIN_DAYS (float) to seconds (integer) for bash comparison
@@ -161,14 +162,10 @@ _date_parse() { date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2
 # --- Dependency check ---
 _require_jq() { command -v jq &>/dev/null || { echo "Error: jq is required." >&2; exit 1; }; }
 
-# Read log file safely. Fast path: direct read. Fallback: skip corrupt lines.
+# Read log file safely — single pass, skips corrupt lines
 _safe_log() {
     local file="${1:-$LOGFILE}"
-    if jq -ce '.' "$file" >/dev/null 2>&1; then
-        cat "$file"
-    else
-        jq -Rc 'fromjson? // empty' "$file" 2>/dev/null
-    fi
+    jq -Rc 'fromjson? // empty' "$file" 2>/dev/null
 }
 
 # Minimum versions: bash 4.0, jq 1.6, git 2.22
@@ -448,11 +445,15 @@ cmd_log() {
     local jp="${path//\\/\\\\}"; jp="${jp//\"/\\\"}"
     local jb="${branch//\\/\\\\}"; jb="${jb//\"/\\\"}"
     local js="${session_id//\\/\\\\}"; js="${js//\"/\\\"}"
-    if [ -n "$branch" ]; then
-        printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$jb" "$js" "$event" >> "$LOGFILE"
-    else
-        printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$js" "$event" >> "$LOGFILE"
-    fi
+    # flock: serialize log writes with rotation to prevent lost entries
+    (
+        flock -w 2 9 2>/dev/null || true  # best-effort lock — don't block hooks
+        if [ -n "$branch" ]; then
+            printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$jb" "$js" "$event" >> "$LOGFILE"
+        else
+            printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$js" "$event" >> "$LOGFILE"
+        fi
+    ) 9>"${LOGFILE}.lock"
 
     if [ "$event" = "start" ]; then
         # Auto-rotate on session start
@@ -505,14 +506,15 @@ _session_entries() {
 }
 
 _current_session_id() {
-    # Read last valid JSON line — extract "s" field with bash (no jq)
+    # Read last few lines to find session ID — avoids reading entire file
+    # tail is safe even on large files; 50 lines covers any reasonable gap
     local line tmp sid
     while IFS= read -r line; do
         tmp="${line#*\"s\":\"}"
         [ "$tmp" = "$line" ] && continue  # no "s" field
         sid="${tmp%%\"*}"
         [ -n "$sid" ] && { echo "$sid"; return; }
-    done < <(tac "$LOGFILE" 2>/dev/null || true)
+    done < <(tail -50 "$LOGFILE" 2>/dev/null | tac || true)
 }
 
 # ============================================================
@@ -715,7 +717,9 @@ mode_statusline() {
 
             # Accumulate cache ratio across the 5h window via state file
             # State: reset_ts total_cc total_cr prev_cc prev_cr
-            # Uses deltas (current - previous) so absolute totals are meaningful
+            # cc/cr are per-request values (not cumulative), so we add the full
+            # value on each new API call and use prev_cc/prev_cr only to detect
+            # duplicate refreshes (same data = no new API call = skip).
             local cache_state="${LOGDIR}/.cache_ratio"
             local stored_reset=0 total_cc=0 total_cr=0 prev_cc=0 prev_cr=0
             if [ -f "$cache_state" ]; then
@@ -725,13 +729,11 @@ mode_statusline() {
             if [ -n "$r5h_reset" ] && [ "$stored_reset" != "$r5h_reset" ]; then
                 total_cc=0; total_cr=0; prev_cc=0; prev_cr=0; stored_reset="$r5h_reset"
             fi
-            # Compute deltas; negative means new conversation (values reset)
-            local delta_cc=$(( ${cc:-0} - prev_cc ))
-            local delta_cr=$(( ${cr:-0} - prev_cr ))
-            [ "$delta_cc" -lt 0 ] && delta_cc=${cc:-0}
-            [ "$delta_cr" -lt 0 ] && delta_cr=${cr:-0}
-            total_cc=$(( total_cc + delta_cc ))
-            total_cr=$(( total_cr + delta_cr ))
+            # Only accumulate if values changed (new API call, not a duplicate refresh)
+            if [ "${cc:-0}" != "$prev_cc" ] || [ "${cr:-0}" != "$prev_cr" ]; then
+                total_cc=$(( total_cc + ${cc:-0} ))
+                total_cr=$(( total_cr + ${cr:-0} ))
+            fi
             echo "${stored_reset:-0} $total_cc $total_cr ${cc:-0} ${cr:-0}" > "$cache_state" 2>/dev/null
 
             local total=$(( total_cc + total_cr ))
@@ -839,12 +841,14 @@ mode_statusline() {
     local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
     local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
 
-    # Substitute all tokens in a group template. Output: "0:text" or "1:text"
-    # where prefix indicates whether any token resolved to non-empty.
-    _subst_tokens() {
+    # Substitute all tokens in a group template.
+    # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
+    _subst_tokens_v() {
         local output="$1"
         # Fast path: no token placeholders at all
-        [[ "$output" != *"{"* ]] && { echo "1:${output}"; return; }
+        if [[ "$output" != *"{"* ]]; then
+            _SUBST_NONEMPTY=1; _SUBST_RESULT="$output"; return
+        fi
         local nonempty=0 i
 
         # Always-available tokens
@@ -870,28 +874,29 @@ mode_statusline() {
         # Trim leading/trailing whitespace
         output="${output#"${output%%[![:space:]]*}"}"
         output="${output%"${output##*[![:space:]]}"}"
-        echo "${nonempty}:${output}"
+        _SUBST_NONEMPTY="$nonempty"
+        _SUBST_RESULT="$output"
     }
 
-    # Render a line from space-separated group names
-    _render_groups() {
+    # Render a line from space-separated group names.
+    # Variable-setting: sets _RENDER_RESULT
+    _render_groups_v() {
         local group_names="$1"
         local divider="${GROUP_DIVIDER:- · }"
-        local result="" name var_name color_var_name grp_color template raw nonempty rendered
+        local result="" name var_name color_var_name grp_color template rendered
 
         for name in $group_names; do
             var_name="GROUP_${name}"
             template="${!var_name:-}"
             [ -z "$template" ] && continue
 
-            raw=$(_subst_tokens "$template")
-            nonempty="${raw%%:*}"
-            rendered="${raw#?:}"
-            if [ "$nonempty" = "1" ] && [ -n "$rendered" ]; then
+            _subst_tokens_v "$template"
+            if [ "$_SUBST_NONEMPTY" = "1" ] && [ -n "$_SUBST_RESULT" ]; then
+                rendered="$_SUBST_RESULT"
                 # Per-group color: GROUP_<NAME>_COLOR, falls back to line color
                 color_var_name="GROUP_${name}_COLOR"
                 grp_color="${!color_var_name:-}"
-                [ -n "$grp_color" ] && grp_color=$(_resolve_color "$grp_color")
+                if [ -n "$grp_color" ]; then _resolve_color_v "$grp_color"; grp_color="$_V"; fi
                 grp_color="${grp_color:-$color}"
                 # Replace bare COLOR_RESET with reset+group_color so item colors
                 # (projections, timeline) restore to the group color, not default
@@ -904,16 +909,17 @@ mode_statusline() {
                 fi
             fi
         done
-        echo "$result"
+        _RENDER_RESULT="$result"
     }
 
-    # Output
-    printf '%s' "$(_render_groups "$STATUSLINE_1")${COLOR_RESET}"
-    local _sl_extra _sl_rendered
+    # Output (no subshells)
+    _render_groups_v "$STATUSLINE_1"
+    printf '%s' "${_RENDER_RESULT}${COLOR_RESET}"
+    local _sl_extra
     for _sl_extra in "${STATUSLINE_2:-}" "${STATUSLINE_3:-}"; do
         [ -z "$_sl_extra" ] && continue
-        _sl_rendered=$(_render_groups "$_sl_extra")
-        [ -n "$_sl_rendered" ] && printf '\n%s' "${_sl_rendered}${COLOR_RESET}"
+        _render_groups_v "$_sl_extra"
+        [ -n "$_RENDER_RESULT" ] && printf '\n%s' "${_RENDER_RESULT}${COLOR_RESET}"
     done
 }
 
@@ -1281,10 +1287,14 @@ _do_rotate() {
     existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null || true)
     current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null || true)
 
-    { [ -n "$existing_summaries" ] && echo "$existing_summaries"
-      [ -n "$summaries" ] && echo "$summaries"
-      [ -n "$current_entries" ] && echo "$current_entries"
-    } > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
+    # flock: serialize with log writes to prevent lost entries during rewrite
+    (
+        flock -w 5 9 2>/dev/null || true
+        { [ -n "$existing_summaries" ] && echo "$existing_summaries"
+          [ -n "$summaries" ] && echo "$summaries"
+          [ -n "$current_entries" ] && echo "$current_entries"
+        } > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
+    ) 9>"${LOGFILE}.lock"
 
     if ! $quiet; then
         local old_count

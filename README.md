@@ -70,9 +70,9 @@ my-org/my-project · ⏱  45m (2h10m) · ◑20%
 
 ## Configuration
 
-Config file: `~/.config/claude-worktime/config.sh` — plain bash key-value pairs with comments.
+Config file: `~/.config/claude-worktime/config.sh` — plain bash, sourced at startup. All defaults are built into the script; the config file only needs to contain settings you want to override. Uncomment and modify what you need.
 
-A default config with examples is created on install.
+A commented-out template with all options is created on install.
 
 ### Format tokens
 

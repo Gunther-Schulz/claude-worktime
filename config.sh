@@ -1,5 +1,6 @@
 # claude-worktime configuration
-# Copy to ~/.config/claude-worktime/config.sh and customize
+# Uncomment and modify only the settings you want to change.
+# All values shown are the built-in defaults from the script.
 #
 # Format tokens for statusline:
 #
@@ -34,7 +35,7 @@
 # A gap is idle ONLY when: Claude finished responding (response event) and the
 # user hasn't sent the next prompt within this threshold. All other gaps
 # (tool execution, Claude thinking) are always counted as active work.
-PAUSE_THRESHOLD=900  # 15 minutes
+#PAUSE_THRESHOLD=900  # 15 minutes
 
 # ---------------------------------------------------------------------------
 # Statusline format — group-based
@@ -43,71 +44,71 @@ PAUSE_THRESHOLD=900  # 15 minutes
 # Divider (GROUP_DIVIDER) is inserted automatically between non-empty groups.
 # Empty groups (all tokens unavailable) are hidden automatically.
 
-GROUP_PROJECT="{project} ({git})"
-GROUP_TODAY="{status} today {today_project}"
-GROUP_TOTAL="total {project_total}"
-GROUP_TIMELINE="{timeline} {today_wall}"
-GROUP_BREAKS="{since_break} {last_break}"
-GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
-GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
-GROUP_CONTEXT="ctx {context}"
+#GROUP_PROJECT="{project} ({git})"
+#GROUP_TODAY="{status} today {today_project}"
+#GROUP_TOTAL="total {project_total}"
+#GROUP_TIMELINE="{timeline} {today_wall}"
+#GROUP_BREAKS="{since_break} {last_break}"
+#GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
+#GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+#GROUP_CONTEXT="ctx {context}"
 
-STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
-STATUSLINE_3=""
-GROUP_DIVIDER=" · "
+#STATUSLINE_1="PROJECT TODAY TOTAL"
+#STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
+#STATUSLINE_3=""
+#GROUP_DIVIDER=" · "
 
 # Per-group colors (optional, falls back to COLOR_NORMAL)
 # Mute secondary info for visual hierarchy
-GROUP_RATE_7D_COLOR="white"
-GROUP_CONTEXT_COLOR="white"
+#GROUP_RATE_7D_COLOR="dark-gray"
+#GROUP_CONTEXT_COLOR="dark-gray"
 
 # ---------------------------------------------------------------------------
 # Colors — use preset names or raw ANSI codes
 # ---------------------------------------------------------------------------
 # Presets: black, red, green, yellow, blue, magenta, cyan, white, gray,
-#          orange, pink, purple, bright-green, bright-red, bright-yellow,
-#          bright-blue, bright-white, dim, none
+#          dark-gray, light-gray, orange, pink, purple, bright-green,
+#          bright-red, bright-yellow, bright-blue, bright-white, dim, none
 # Raw:     "\033[32m", "\033[38;5;208m", etc.
-COLOR_NORMAL="green"
-COLOR_RATE_WARNING="yellow"
-COLOR_RATE_CRITICAL="red"
-COLOR_TIMELINE_WORK=""             # empty = same as line color
-COLOR_TIMELINE_BREAK=""            # empty = same as line color
-COLOR_RESET="reset"
+#COLOR_NORMAL="green"
+#COLOR_RATE_WARNING="yellow"
+#COLOR_RATE_CRITICAL="red"
+#COLOR_TIMELINE_WORK=""             # empty = same as line color
+#COLOR_TIMELINE_BREAK=""            # empty = same as line color
+#COLOR_RESET="reset"
 
 # ---------------------------------------------------------------------------
 # Break reminder — work streak color warning
 # ---------------------------------------------------------------------------
 # The ▶ work streak indicator changes color when you've been working
 # too long without a break (response→prompt gap > PAUSE_THRESHOLD).
-STREAK_WARNING=5400    # 1.5h — turns yellow
-STREAK_CRITICAL=9000   # 2.5h — turns red
+#STREAK_WARNING=5400    # 1.5h — turns yellow
+#STREAK_CRITICAL=9000   # 2.5h — turns red
 
 # Example: green work blocks, orange break blocks
-# COLOR_TIMELINE_WORK="green"
-# COLOR_TIMELINE_BREAK="orange"
+#COLOR_TIMELINE_WORK="green"
+#COLOR_TIMELINE_BREAK="orange"
 
 # ---------------------------------------------------------------------------
 # Auto-rotation — archive old log entries on session start
 # ---------------------------------------------------------------------------
-AUTO_ROTATE=true
-ROTATE_INTERVAL=daily    # daily, weekly, monthly
+#AUTO_ROTATE=true
+#ROTATE_INTERVAL=daily    # daily, weekly, monthly
 
 # ---------------------------------------------------------------------------
 # Projections
 # ---------------------------------------------------------------------------
 # Minimum days elapsed before showing 7d rate limit projection.
 # Below this threshold, the projection is hidden (not enough data).
-RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
+#RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
 
 # ---------------------------------------------------------------------------
 # Gap analysis (--gaps)
 # ---------------------------------------------------------------------------
 # Bucket boundaries in seconds for response→prompt gap distribution.
 # Helps you tune PAUSE_THRESHOLD by seeing where your gaps cluster.
-GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
-TIMELINE_WIDTH=20  # number of blocks in {timeline} sparkline
+#GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
+#TIMELINE_WIDTH=20  # number of blocks in {timeline} sparkline
 
 # ---------------------------------------------------------------------------
 # Cost tracking
@@ -116,7 +117,7 @@ TIMELINE_WIDTH=20  # number of blocks in {timeline} sparkline
 # Shows what your session would cost at API rates ($15/$75 per MTok for Opus).
 # On subscription plans (Pro/Max), this is informational — not your actual bill.
 # Your real budget is the rate limit windows ({rate_5h}, {rate_7d}).
-LOG_COST=false
+#LOG_COST=false
 
 # ============================= EXAMPLES ====================================
 #
