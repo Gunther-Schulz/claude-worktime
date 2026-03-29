@@ -1401,7 +1401,7 @@ Statusline token reference:
     total 8h30m    all-time total for this project
     🤖 total        all-time Claude work for this project
     👤 total        all-time your work for this project
-    ▮▯▯▮▮▮ 11h    day timeline (▮=present ▯=away) + wall clock span
+    ▮▮··▮▮ 11h    day timeline (▮=present ·=away) + wall clock span
     ▶1h12m         presence streak since last break (yellow >1.5h, red >2.5h)
     ⏸ 20m          last break duration (after first break)
     45m            current session active time

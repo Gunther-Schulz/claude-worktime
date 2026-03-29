@@ -4,7 +4,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
-▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+▮▮▮···▮▮▮▮··▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 ```
 
 Two lines, two perspectives on the same data:
@@ -62,12 +62,12 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 2 — Your day** (cross-session):
 ```
-▮▯▯▮▮▮▮▮▮▮▮▮▮▮▮▯▯▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+▮▮▮···▮▮▮▮··▮▮▮ 8h30m · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 ```
 
 | Element | Meaning |
 |---------|---------|
-| `▮▮▯▯▮▮▮` | Day timeline — ▮ = present, ▯ = away |
+| `▮▮··▮▮▮` | Day timeline — ▮ = present, · = away |
 | `8h30m` | Wall clock span (first event to now) |
 | `▶1h12m` | Presence streak since last break (yellow >1.5h, red >2.5h) |
 | `⏸ 20m` | Duration of most recent break |
@@ -75,7 +75,7 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 | `⑦5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77% ⟳93%` | Context window fullness + KV cache hit ratio |
 
-The timeline adapts its width to your day length (`TIMELINE_WIDTH`, default: 20 blocks).
+One character per time slot (`TIMELINE_SLOT`, default: 1800 seconds / 30 minutes). Set to `3600` for hourly or `900` for 15-minute resolution.
 
 ### CLI queries
 
@@ -153,7 +153,7 @@ A commented-out template with all options is created on install.
 | `{total_you}` | All-time your active time for current project |
 | `{since_break}` | ▶2h40m — presence streak since last break |
 | `{last_break}` | ⏸ 41m — most recent break duration (hidden until first break) |
-| `{timeline}` | ▮▯▯▮▮▮ — day sparkline (▮=present ▯=away) |
+| `{timeline}` | ▮▮··▮▮▮ — day timeline (▮=present ·=away), one char per `TIMELINE_SLOT` |
 
 **Project tokens:**
 

@@ -17,7 +17,7 @@
 #   {total_you}      — all-time your active time for current project
 #   {last_break}     — last break duration with ⏸ icon (empty if none)
 #   {since_break}    — presence time since last break with ▶ icon
-#   {timeline}       — ▮▯▮▮▮▮▯▮▮▮ day sparkline (filled=work, empty=break)
+#   {timeline}       — ▮▮··▮▮▮ day timeline (▮=present, ·=away)
 #
 #   Project tokens:
 #   {project}        — project name (last 2 path segments)
