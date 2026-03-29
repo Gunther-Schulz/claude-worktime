@@ -762,7 +762,7 @@ mode_statusline() {
                 proj_color="$COLOR_RATE_WARNING"
             fi
             if [ -n "$proj_color" ]; then
-                _V="${proj_color}→${proj}%${COLOR_RESET}"
+                _V="${proj_color}→${proj}%${COLOR_RESET}${color}"
             else
                 _V="→${proj}%"
             fi
@@ -786,7 +786,7 @@ mode_statusline() {
                     proj_color="$COLOR_RATE_WARNING"
                 fi
                 if [ -n "$proj_color" ]; then
-                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
+                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}${color}"
                 else
                     tok_rate_7d_proj="→${proj}%"
                 fi
