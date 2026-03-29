@@ -80,30 +80,49 @@ LOG_COST=false  # log session cost snapshots (for API/extra usage billing)
 LOGDIR="${DATADIR}"
 LOGFILE="${LOGDIR}/activity.jsonl"
 
-# Reusable jq: compute active seconds using event-aware idle detection
-# A gap is idle ONLY when: previous event is "response" (or "start") AND gap > pause threshold
-# All other gaps (tool_start→tool_end, prompt→tool_start, etc.) are always work
-JQ_CALC='def calc_active($pause):
+# Reusable jq predicates for gap classification
+#
+# Layer 1: Raw events in log (start, prompt, tool_start, tool_end, response)
+#
+# Layer 2: Gap classification (query time)
+#   is_user_turn — previous event is "response" or "start" (user has the ball)
+#   is_idle      — user turn gap exceeding pause threshold (user was away)
+#
+# Layer 3: Display labels for idle gaps (--breakdown and --gaps only)
+#   break    — idle, next event is "prompt" (stayed in CLI)
+#   downtime — idle, next event is "start" (quit CLI, came back)
+#
+JQ_PREDICATES='def is_user_turn($a; $i):
+  ($a[$i-1].e == "response" or $a[$i-1].e == "start");
+def is_idle($a; $i; $pause):
+  is_user_turn($a; $i) and ($a[$i].t - $a[$i-1].t) > $pause;'
+
+# Compute active seconds: total time minus idle gaps
+# Embeds JQ_PREDICATES so any query using JQ_CALC gets the predicates for free.
+JQ_CALC="${JQ_PREDICATES}"'
+def calc_active($pause):
   . as $a | reduce range(1; $a|length) as $i (0;
     ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
-      elif ($a[$i-1].e == "response" or $a[$i-1].e == "start") and $gap > $pause then .
+      elif is_idle($a; $i; $pause) then .
       else . + $gap
       end);'
 
-# Reusable jq: compute phase breakdown — four categories
+# Phase breakdown — four categories
 # claude = prompt→response (thinking, tools, output — Claude's turn)
 # user = response→prompt within threshold (reading, thinking, typing — your turn)
-# breaks = response→prompt over threshold, no "start" between (paused mid-session)
-# downtime = response→start (quit and came back)
-JQ_BREAKDOWN='def calc_breakdown($pause):
+# breaks = idle, user stayed in CLI (response→prompt over threshold)
+# downtime = idle, user quit CLI (response→start)
+# Embeds JQ_PREDICATES so any query using JQ_BREAKDOWN gets the predicates for free.
+JQ_BREAKDOWN="${JQ_PREDICATES}"'
+def calc_breakdown($pause):
   . as $a | reduce range(1; $a|length) as $i (
     {claude: 0, user: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
-      elif $a[$i].e == "start" then .downtime += $gap | .downtime_count += 1
-      elif ($a[$i-1].e == "response" or $a[$i-1].e == "start") and $gap > $pause then .breaks += $gap | .break_count += 1
-      elif $a[$i-1].e == "response" or $a[$i-1].e == "start" then .user += $gap
+      elif is_idle($a; $i; $pause) and ($a[$i].e == "start") then .downtime += $gap | .downtime_count += 1
+      elif is_idle($a; $i; $pause) then .breaks += $gap | .break_count += 1
+      elif is_user_turn($a; $i) then .user += $gap
       else .claude += $gap
       end);'
 
@@ -547,17 +566,11 @@ mode_statusline() {
             session_active: (\$session | calc_active(\$pause)),
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
             last_break: ([range(\$today|length-1; 0; -1) as \$i
-                | select(
-                    ((\$today[\$i].e == \"prompt\" or \$today[\$i].e == \"start\")
-                     and (\$today[\$i-1].e == \"response\" or \$today[\$i-1].e == \"start\"))
-                  )
-                | (\$today[\$i].t - \$today[\$i-1].t) | select(. > \$pause)] | first // 0),
+                | select(is_idle(\$today; \$i; \$pause))
+                | (\$today[\$i].t - \$today[\$i-1].t)] | first // 0),
             since_break: (\$today | . as \$s |
                 ([range(length-1; 0; -1) as \$i
-                    | select(
-                        ((\$s[\$i].e == \"prompt\" or \$s[\$i].e == \"start\")
-                         and (\$s[\$i-1].e == \"response\" or \$s[\$i-1].e == \"start\"))
-                        and (\$s[\$i].t - \$s[\$i-1].t) > \$pause)
+                    | select(is_idle(\$s; \$i; \$pause))
                     | \$i] | first) as \$brk_idx
                 | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
             project: \$proj,
@@ -574,9 +587,7 @@ mode_statusline() {
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
                 # Build set of break block indices using rounded block count
                 | [range(1; \$today|length)
-                    | select((\$today[.].e == \"prompt\" or \$today[.].e == \"start\")
-                        and (\$today[.-1].e == \"response\" or \$today[.-1].e == \"start\")
-                        and (\$today[.].t - \$today[.-1].t) > \$pause)
+                    | select(is_idle(\$today; .; \$pause))
                     | {from: \$today[.-1].t, to: \$today[.].t}
                     | . as \$brk
                     | ((.to - .from) / \$tblock | ceil | if . < 1 then 1 else . end) as \$nblocks
@@ -1132,7 +1143,7 @@ mode_csv() {
         | reduce range(1; length) as \$i (
             [[\$all[0]]];
             if (\$all[\$i].s != .[-1][-1].s) or
-               ((\$all[\$i-1].e == \"response\" or \$all[\$i-1].e == \"start\") and (\$all[\$i].t - .[-1][-1].t) > \$pause)
+               is_idle(\$all; \$i; \$pause)
             then . + [[\$all[\$i]]]
             else .[-1] += [\$all[\$i]] end)
         | .[] | . as \$s | {
@@ -1160,31 +1171,32 @@ mode_gaps() {
     local buckets_jq="[${GAP_BUCKETS}]"
 
     local result
-    result=$(echo "$entries" | jq -sr --argjson pause "$PAUSE_THRESHOLD" --argjson buckets "$buckets_jq" '
-        def bucket_gaps($gaps; $bounds; $pause):
-            [range(0; $bounds | length) as $i |
-                (if $i == 0 then 0 else $bounds[$i-1] end) as $lo | $bounds[$i] as $hi
+    result=$(echo "$entries" | jq -sr --argjson pause "$PAUSE_THRESHOLD" --argjson buckets "$buckets_jq" "
+        ${JQ_PREDICATES}
+        def bucket_gaps(\$gaps; \$bounds; \$pause):
+            [range(0; \$bounds | length) as \$i |
+                (if \$i == 0 then 0 else \$bounds[\$i-1] end) as \$lo | \$bounds[\$i] as \$hi
                 | {
-                    label: (if $i == 0 then "< \($bounds[0] / 60 | floor)min"
-                            elif $i == ($bounds | length) - 1 then "> \($bounds[$i-1] / 60 | floor)min"
-                            else "\($lo / 60 | floor)-\($hi / 60 | floor)min" end),
-                    count: ([$gaps[] | select(. >= $lo and . < $hi)] | length),
-                    total: ([$gaps[] | select(. >= $lo and . < $hi)] | add // 0),
-                    is_active: ($lo < $pause)
+                    label: (if \$i == 0 then \"< \(\$bounds[0] / 60 | floor)min\"
+                            elif \$i == (\$bounds | length) - 1 then \"> \(\$bounds[\$i-1] / 60 | floor)min\"
+                            else \"\(\$lo / 60 | floor)-\(\$hi / 60 | floor)min\" end),
+                    count: ([\$gaps[] | select(. >= \$lo and . < \$hi)] | length),
+                    total: ([\$gaps[] | select(. >= \$lo and . < \$hi)] | add // 0),
+                    is_active: (\$lo < \$pause)
                 }];
-        sort_by(.t) | . as $a
-        | ($buckets + [99999999]) as $bounds
-        # Separate breaks (response→prompt, no start between) from downtime (→start)
+        sort_by(.t) | . as \$a
+        | (\$buckets + [99999999]) as \$bounds
+        # Collect user-turn gaps, labeled as break or downtime (Layer 3)
         | [range(1; length)
-            | select($a[.-1].e == "response" or $a[.-1].e == "start")
-            | {gap: ($a[.].t - $a[.-1].t), is_downtime: ($a[.].e == "start")}]
+            | select(is_user_turn(\$a; .))
+            | {gap: (\$a[.].t - \$a[.-1].t), is_downtime: (\$a[.].e == \"start\")}]
         | {
-            breaks: bucket_gaps([.[] | select(.is_downtime | not) | .gap]; $bounds; $pause),
+            breaks: bucket_gaps([.[] | select(.is_downtime | not) | .gap]; \$bounds; \$pause),
             downtime: [.[] | select(.is_downtime) | .gap],
-            near_threshold: ([.[] | select(.is_downtime | not) | .gap | select(. >= ($pause * 0.67) and . < $pause)] | length),
-            threshold: $pause
+            near_threshold: ([.[] | select(.is_downtime | not) | .gap | select(. >= (\$pause * 0.67) and . < \$pause)] | length),
+            threshold: \$pause
           }
-    ')
+    ")
 
     if $raw; then
         echo "$result"

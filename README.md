@@ -420,6 +420,8 @@ No python, no node, no extra runtimes.
 
 **Incomplete statusline on session start.** Rate limit, context, and cache tokens require data from Claude Code's stdin JSON, which isn't available until the first API call completes. The statusline populates fully after your first message.
 
+**Break splitting.** Any work between two idle gaps — regardless of how short — splits them into separate breaks. `{last_break}` shows only the most recent gap, which may appear shorter than expected when the timeline shows a longer break period. The timeline is unaffected since all idle gaps appear as break blocks.
+
 ## License
 
 MIT
