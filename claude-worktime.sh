@@ -150,15 +150,17 @@ JQ_BREAKDOWN="${JQ_PREDICATES}${JQ_AWAY}"'
 def calc_breakdown($pause):
   away_spans($pause) as $away
   | . as $a | reduce range(1; $a|length) as $i (
-    {claude: 0, user: 0, unattended: 0, unattended_count: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
+    {claude: 0, user: 0, away: 0, away_count: 0, away_claude: 0, away_idle: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
       else
         ([$away[] | select(.from_t <= $a[$i-1].t and $a[$i].t <= .to_t)] | length > 0) as $in_away
         | if $in_away and ($a[$i].e == "prompt") then
-            .unattended += $gap | .unattended_count += 1
+            .away += $gap | .away_count += 1
+            | if is_user_turn($a; $i) then .away_idle += $gap else .away_claude += $gap end
           elif $in_away then
-            .unattended += $gap
+            .away += $gap
+            | if is_idle($a; $i; $pause) or is_user_turn($a; $i) then .away_idle += $gap else .away_claude += $gap end
           elif is_idle($a; $i; $pause) and ($a[$i].e == "start") then
             .downtime += $gap | .downtime_count += 1
           elif is_idle($a; $i; $pause) then
@@ -1064,13 +1066,13 @@ mode_breakdown() {
         }
     ")
 
-    local claude_time user_time unattended unattended_count breaks break_count downtime downtime_count active
+    local claude_time user_time away away_count breaks break_count downtime downtime_count active
     local bd_parsed
-    bd_parsed=$(echo "$result" | jq -r '[.breakdown.claude, .breakdown.user, .breakdown.unattended, .breakdown.unattended_count, .breakdown.breaks, .breakdown.break_count, .breakdown.downtime, .breakdown.downtime_count, .active] | @tsv')
-    IFS=$'\t' read -r claude_time user_time unattended unattended_count breaks break_count downtime downtime_count active <<< "$bd_parsed"
+    bd_parsed=$(echo "$result" | jq -r '[.breakdown.claude, .breakdown.user, .breakdown.away, .breakdown.away_count, .breakdown.breaks, .breakdown.break_count, .breakdown.downtime, .breakdown.downtime_count, .active] | @tsv')
+    IFS=$'\t' read -r claude_time user_time away away_count breaks break_count downtime downtime_count active <<< "$bd_parsed"
 
     if $raw; then
-        echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, unattended: .breakdown.unattended, unattended_count: .breakdown.unattended_count, breaks: .breakdown.breaks, break_count: .breakdown.break_count, downtime: .breakdown.downtime, downtime_count: .breakdown.downtime_count, active: .active}'
+        echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, away: .breakdown.away, away_count: .breakdown.away_count, away_claude: .breakdown.away_claude, away_idle: .breakdown.away_idle, breaks: .breakdown.breaks, break_count: .breakdown.break_count, downtime: .breakdown.downtime, downtime_count: .breakdown.downtime_count, active: .active}'
     else
         local pct_claude=0 pct_user=0
         if [ "$active" -gt 0 ]; then
@@ -1082,8 +1084,8 @@ mode_breakdown() {
         printf "  You:        %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
         echo "  ─────────────────────────"
         printf "  Active:     %s\n" "$(_fmt $active)"
-        if [ "${unattended:-0}" -gt 0 ]; then
-            printf "  Away:       %-12s (%d)\n" "$(_fmt $unattended)" "$unattended_count"
+        if [ "${away:-0}" -gt 0 ]; then
+            printf "  Away:       %-12s (%d)\n" "$(_fmt $away)" "$away_count"
         fi
         if [ "$breaks" -gt 0 ]; then
             printf "  Breaks:     %-12s (%d)\n" "$(_fmt $breaks)" "$break_count"
