@@ -84,15 +84,19 @@ A commented-out template with all options is created on install.
 | `{session_wall}` | Wall clock time since session started |
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_wall}` | Wall clock span of today's timeline (first event to now) |
-| `{today_project}` | Today's total for current project only |
+| `{today_project}` | Today's total for current project (Claude + You) |
+| `{today_claude}` | Today's Claude work time for current project (prompt→response spans) |
+| `{today_you}` | Today's your active time for current project (response→prompt within threshold) |
 | `{project_total}` | All-time total for current project |
-| `{since_break}` | ▶2h40m — continuous work time since most recent break (always visible) |
+| `{since_break}` | ▶2h40m — time you were present since most recent break (always visible) |
 | `{last_break}` | ⏸ 41m — duration of most recent break (hidden until first break) |
-| `{timeline}` | ▮▯▯▮▮▮▮▮▮▯▯▮▮▮ — day sparkline (▮=work ▯=break) |
+| `{timeline}` | ▮▯▯▮▮▮▮▮▮▯▯▮▮▮ — day sparkline (▮=present ▯=away) |
 
-`{since_break}`, `{last_break}`, and `{timeline}` are **cross-session** — they reflect your whole day across all projects and sessions, not just the current one. This gives an accurate picture of your personal work/break rhythm even when switching between multiple sessions.
+`{today_project}` counts all productive time — both your turns and Claude's. `{today_claude}` and `{today_you}` split this into who was working. All three are scoped to the current project.
 
-`{since_break}` is always visible — it shows your current work streak even before the first break. `{last_break}` appears only after the first break exceeding `PAUSE_THRESHOLD`. `{timeline}` auto-hides when no data is available.
+`{since_break}`, `{last_break}`, and `{timeline}` are **cross-session** and track your **presence** — they reflect when you were personally engaged. A long Claude turn exceeding `PAUSE_THRESHOLD` counts as a break (you were probably away). This means the streak/timeline may differ from active time when Claude runs long autonomous jobs.
+
+`{since_break}` is always visible — it shows your current presence streak even before the first break. `{last_break}` appears only after the first break exceeding `PAUSE_THRESHOLD`. `{timeline}` auto-hides when no data is available.
 
 **Project tokens:**
 
@@ -265,16 +269,20 @@ All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`
 ```
   Claude:     1h 39min     51%
   You:        1h 32min     48%
+  Unattended: 45min        (1)
   ─────────────────────────
   Active:     3h 13min
   Breaks:     20min        (1)
   Downtime:   12h 15min
 ```
 
-- **Claude** — time from `prompt` until `response` (thinking, tools, output)
-- **You** — time from `response` until next `prompt` within threshold (reading, thinking, typing)
+- **Claude** — Claude's turns within threshold (`prompt` → `response`)
+- **You** — your turns within threshold (`response` → `prompt`)
+- **Unattended** — long Claude turns exceeding threshold (you probably walked away)
 - **Breaks** — idle gaps where you stayed in the CLI (`response` → `prompt` over threshold)
 - **Downtime** — idle gaps where you quit the CLI (`response` → `start` over threshold)
+
+Note: Unattended time is still counted in Active — the work happened, Claude was productive. It appears separately to show that you weren't present for that portion.
 
 ### Gap analysis
 
@@ -345,14 +353,13 @@ Six hooks log events to a JSONL file:
 
 ### Idle detection
 
-A gap is idle when the **user had the ball** (previous event was `response` or `start`) and the gap exceeds `PAUSE_THRESHOLD` (default: 15 minutes). This covers both staying idle in the CLI (`response → prompt`) and quitting and coming back (`response → start`).
+A gap is **idle** when the user had the ball (previous event was `response` or `start`) and the gap exceeds `PAUSE_THRESHOLD` (default: 15 minutes). This covers both staying idle in the CLI (`response → prompt`) and quitting and coming back (`response → start`).
 
-All other gaps are always active work:
-- `prompt` → `response` — Claude's full turn (thinking, tools, output)
-- `tool_start` → `tool_end` — tool running
-- Any gap within Claude's turn
+For active time tracking (`{today_project}`, `--breakdown`), all Claude turns count as productive work regardless of duration.
 
-Long-running tools are never misclassified as idle time.
+For presence tracking (`{since_break}`, `{last_break}`, `{timeline}`), a long Claude turn (`prompt → response` span exceeding the threshold) is treated as an absence — you probably walked away during a long agent job. This means the streak and timeline may differ from active time when Claude runs long autonomous tasks.
+
+Long-running tools are never misclassified as idle in active time tracking.
 
 ### Tracking dimensions
 

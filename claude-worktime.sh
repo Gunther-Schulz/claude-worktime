@@ -85,19 +85,31 @@ LOGFILE="${LOGDIR}/activity.jsonl"
 # Layer 1: Raw events in log (start, prompt, tool_start, tool_end, response)
 #
 # Layer 2: Gap classification (query time)
-#   is_user_turn — previous event is "response" or "start" (user has the ball)
-#   is_idle      — user turn gap exceeding pause threshold (user was away)
+#   is_user_turn    — previous event is "response" or "start" (user has the ball)
+#   is_idle         — user turn gap > threshold (user was away)
+#   is_long_claude  — current event is "response" and the prompt→response span > threshold
+#                     (user was probably away during a long agent job)
+#   is_absent       — is_idle OR is_long_claude (user wasn't present, for streak/timeline)
 #
 # Layer 3: Display labels for idle gaps (--breakdown and --gaps only)
-#   break    — idle, next event is "prompt" (stayed in CLI)
-#   downtime — idle, next event is "start" (quit CLI, came back)
+#   break      — idle user turn, next event is "prompt" (stayed in CLI)
+#   downtime   — idle user turn, next event is "start" (quit CLI, came back)
+#   unattended — long Claude turn (user probably walked away)
 #
 JQ_PREDICATES='def is_user_turn($a; $i):
   ($a[$i-1].e == "response" or $a[$i-1].e == "start");
 def is_idle($a; $i; $pause):
-  is_user_turn($a; $i) and ($a[$i].t - $a[$i-1].t) > $pause;'
+  is_user_turn($a; $i) and ($a[$i].t - $a[$i-1].t) > $pause;
+def is_long_claude($a; $i; $pause):
+  if $a[$i].e != "response" then false
+  else ([range($i-1; -1; -1) | select($a[.].e == "prompt")] | if length > 0 then .[0] else null end) as $pi
+  | if $pi then ($a[$i].t - $a[$pi].t) > $pause else false end
+  end;
+def is_absent($a; $i; $pause):
+  is_idle($a; $i; $pause) or is_long_claude($a; $i; $pause);'
 
 # Compute active seconds: total time minus idle gaps
+# Note: uses is_idle (not is_absent) — long Claude turns count as productive time.
 # Embeds JQ_PREDICATES so any query using JQ_CALC gets the predicates for free.
 JQ_CALC="${JQ_PREDICATES}"'
 def calc_active($pause):
@@ -106,23 +118,34 @@ def calc_active($pause):
     | if $gap <= 0 then .
       elif is_idle($a; $i; $pause) then .
       else . + $gap
+      end);
+def calc_split($pause):
+  . as $a | reduce range(1; $a|length) as $i (
+    {claude: 0, user: 0};
+    ($a[$i].t - $a[$i-1].t) as $gap
+    | if $gap <= 0 then .
+      elif is_idle($a; $i; $pause) then .
+      elif is_user_turn($a; $i) then .user += $gap
+      else .claude += $gap
       end);'
 
-# Phase breakdown — four categories
-# claude = prompt→response (thinking, tools, output — Claude's turn)
-# user = response→prompt within threshold (reading, thinking, typing — your turn)
-# breaks = idle, user stayed in CLI (response→prompt over threshold)
-# downtime = idle, user quit CLI (response→start)
+# Phase breakdown — five categories
+# claude     = prompt→response within threshold (Claude's turn, user present)
+# user       = response→prompt within threshold (user's turn)
+# unattended = long Claude turn > threshold (prompt→response, user probably away)
+# breaks     = idle user turn, stayed in CLI (response→prompt over threshold)
+# downtime   = idle user turn, quit CLI (response→start over threshold)
 # Embeds JQ_PREDICATES so any query using JQ_BREAKDOWN gets the predicates for free.
 JQ_BREAKDOWN="${JQ_PREDICATES}"'
 def calc_breakdown($pause):
   . as $a | reduce range(1; $a|length) as $i (
-    {claude: 0, user: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
+    {claude: 0, user: 0, unattended: 0, unattended_count: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
       elif is_idle($a; $i; $pause) and ($a[$i].e == "start") then .downtime += $gap | .downtime_count += 1
       elif is_idle($a; $i; $pause) then .breaks += $gap | .break_count += 1
       elif is_user_turn($a; $i) then .user += $gap
+      elif is_long_claude($a; $i; $pause) then .unattended += $gap | .unattended_count += 1
       else .claude += $gap
       end);'
 
@@ -566,11 +589,14 @@ mode_statusline() {
             session_active: (\$session | calc_active(\$pause)),
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
             last_break: ([range(\$today|length-1; 0; -1) as \$i
-                | select(is_idle(\$today; \$i; \$pause))
-                | (\$today[\$i].t - \$today[\$i-1].t)] | first // 0),
+                | select(is_absent(\$today; \$i; \$pause))
+                | (if is_long_claude(\$today; \$i; \$pause) then
+                    ([range(\$i-1; -1; -1) | select(\$today[.].e == \"prompt\")] | first // 0) as \$pi
+                    | (\$today[\$i].t - \$today[\$pi].t)
+                  else (\$today[\$i].t - \$today[\$i-1].t) end)] | first // 0),
             since_break: (\$today | . as \$s |
                 ([range(length-1; 0; -1) as \$i
-                    | select(is_idle(\$s; \$i; \$pause))
+                    | select(is_absent(\$s; \$i; \$pause))
                     | \$i] | first) as \$brk_idx
                 | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
             project: \$proj,
@@ -578,6 +604,7 @@ mode_statusline() {
             today_first_t: (\$today | if length > 0 then .[0].t else 0 end),
             today_active: (\$today | calc_active(\$pause)),
             today_project_active: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause)),
+            today_project_split: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_split(\$pause)),
             project_total_active: (
                 (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause))
                 + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
@@ -587,8 +614,11 @@ mode_statusline() {
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
                 # Build set of break block indices using rounded block count
                 | [range(1; \$today|length)
-                    | select(is_idle(\$today; .; \$pause))
-                    | {from: \$today[.-1].t, to: \$today[.].t}
+                    | select(is_absent(\$today; .; \$pause))
+                    | (if is_long_claude(\$today; .; \$pause) then
+                        ([range(.-1; -1; -1) | select(\$today[.].e == \"prompt\")] | first // 0) as \$pi
+                        | {from: \$today[\$pi].t, to: \$today[.].t}
+                      else {from: \$today[.-1].t, to: \$today[.].t} end)
                     | . as \$brk
                     | ((.to - .from) / \$tblock | ceil | if . < 1 then 1 else . end) as \$nblocks
                     | ((.from - \$tstart) / \$tblock | floor) as \$first_block
@@ -601,7 +631,7 @@ mode_statusline() {
                 ] | join(\"\")
               else \"\" end)
         }
-        | [.session_active, .first_t, .last_break, .since_break, .project, .branch, .today_first_t, .today_active, .today_project_active, .project_total_active, .timeline]
+        | [.session_active, .first_t, .last_break, .since_break, .project, .branch, .today_first_t, .today_active, .today_project_active, .project_total_active, .today_project_split.claude, .today_project_split.user, .timeline]
         | map(. // \"\" | tostring) | join(\"\\u001e\")
     "
     local tl_width=${TIMELINE_WIDTH:-20}
@@ -618,8 +648,8 @@ mode_statusline() {
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
         || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
 
-    local session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active tok_timeline
-    IFS=$'\x1e' read -r session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active tok_timeline <<< "$all_info"
+    local session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active today_claude_active today_you_active tok_timeline
+    IFS=$'\x1e' read -r session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active today_claude_active today_you_active tok_timeline <<< "$all_info"
 
     local session_wall=$(( now - session_first ))
     local today_wall=0
@@ -628,12 +658,14 @@ mode_statusline() {
     local color="$COLOR_NORMAL"
 
     # Build tokens (using _v variants to avoid subshells)
-    local tok_session tok_session_wall tok_today tok_today_wall tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_since_break tok_git
+    local tok_session tok_session_wall tok_today tok_today_wall tok_today_project tok_today_claude tok_today_you tok_project_total tok_project tok_branch tok_last_break tok_since_break tok_git
     _fmt_short_v "$session_active"; tok_session="$_V"
     _fmt_short_v "$session_wall"; tok_session_wall="$_V"
     _fmt_short_v "$today_active"; tok_today="$_V"
     _fmt_short_v "$today_wall"; tok_today_wall="$_V"
     _fmt_short_v "$today_project_active"; tok_today_project="$_V"
+    _fmt_short_v "${today_claude_active:-0}"; tok_today_claude="$_V"
+    _fmt_short_v "${today_you_active:-0}"; tok_today_you="$_V"
     _fmt_short_v "$project_total_active"; tok_project_total="$_V"
     _short_project_v "$project"; tok_project="$_V"
     tok_branch="$branch"
@@ -835,8 +867,8 @@ mode_statusline() {
     fi
 
     # Token arrays (constant per statusline refresh, shared by all groups)
-    local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_project}' '{project_total}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
-    local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_project" "$tok_project_total" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
+    local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
+    local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
     local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
     local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
 
@@ -1016,13 +1048,13 @@ mode_breakdown() {
         }
     ")
 
-    local claude_time user_time breaks break_count downtime downtime_count active
+    local claude_time user_time unattended unattended_count breaks break_count downtime downtime_count active
     local bd_parsed
-    bd_parsed=$(echo "$result" | jq -r '[.breakdown.claude, .breakdown.user, .breakdown.breaks, .breakdown.break_count, .breakdown.downtime, .breakdown.downtime_count, .active] | @tsv')
-    IFS=$'\t' read -r claude_time user_time breaks break_count downtime downtime_count active <<< "$bd_parsed"
+    bd_parsed=$(echo "$result" | jq -r '[.breakdown.claude, .breakdown.user, .breakdown.unattended, .breakdown.unattended_count, .breakdown.breaks, .breakdown.break_count, .breakdown.downtime, .breakdown.downtime_count, .active] | @tsv')
+    IFS=$'\t' read -r claude_time user_time unattended unattended_count breaks break_count downtime downtime_count active <<< "$bd_parsed"
 
     if $raw; then
-        echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, breaks: .breakdown.breaks, break_count: .breakdown.break_count, downtime: .breakdown.downtime, downtime_count: .breakdown.downtime_count, active: .active}'
+        echo "$result" | jq '{claude: .breakdown.claude, user: .breakdown.user, unattended: .breakdown.unattended, unattended_count: .breakdown.unattended_count, breaks: .breakdown.breaks, break_count: .breakdown.break_count, downtime: .breakdown.downtime, downtime_count: .breakdown.downtime_count, active: .active}'
     else
         local pct_claude=0 pct_user=0
         if [ "$active" -gt 0 ]; then
@@ -1032,6 +1064,9 @@ mode_breakdown() {
 
         printf "  Claude:     %-12s %d%%\n" "$(_fmt $claude_time)" "$pct_claude"
         printf "  You:        %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
+        if [ "${unattended:-0}" -gt 0 ]; then
+            printf "  Unattended: %-12s (%d)\n" "$(_fmt $unattended)" "$unattended_count"
+        fi
         echo "  ─────────────────────────"
         printf "  Active:     %s\n" "$(_fmt $active)"
         if [ "$breaks" -gt 0 ]; then
@@ -1333,10 +1368,12 @@ Statusline token reference:
 
   Time (from activity log)
     ⏱              status icon
-    today 2h32m    today's active time for this project
+    today 2h32m    today's active time for this project (Claude + You)
+    ⏳55m           today's Claude work time for this project
+    👤1h37m         today's your active time for this project
     total 8h30m    all-time total for this project
-    ▮▯▯▮▮▮ 11h    day timeline (▮=work ▯=break) + wall clock span
-    ▶1h12m         work streak since last break (yellow >1.5h, red >2.5h)
+    ▮▯▯▮▮▮ 11h    day timeline (▮=present ▯=away) + wall clock span
+    ▶1h12m         presence streak since last break (yellow >1.5h, red >2.5h)
     ⏸ 20m          last break duration (after first break)
     45m            current session active time
 

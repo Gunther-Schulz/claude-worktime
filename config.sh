@@ -9,10 +9,12 @@
 #   {session}        — active time in current session (by session ID)
 #   {session_wall}   — wall clock time since session started
 #   {today}          — today's total active time (all sessions, all projects)
-#   {today_project}  — today's total for current project only
+#   {today_project}  — today's total for current project (Claude + You)
+#   {today_claude}   — today's Claude work time for current project
+#   {today_you}      — today's your active time for current project
 #   {project_total}  — all-time total for current project (across all days)
 #   {last_break}     — last break duration with ⏸ icon (empty if none)
-#   {since_break}    — work time since last break with ▶ icon (empty if none)
+#   {since_break}    — presence time since last break with ▶ icon
 #   {timeline}       — ▮▯▮▮▮▮▯▮▮▮ day sparkline (filled=work, empty=break)
 #
 #   Project tokens:
