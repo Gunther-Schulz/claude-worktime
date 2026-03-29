@@ -714,35 +714,13 @@ mode_statusline() {
         [ "$mdl" = "_" ] && mdl=""
 
         # Merge cache hit rate into context token: "77% ⟳99%"
+        # Instantaneous ratio from the most recent API response — no state file needed.
         if [ -n "$ctx" ] && [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
             local cc=${cache_create%.*} cr=${cache_read%.*} ui=${uncached_input%.*}
             [ -z "$ui" ] && ui=0
-
-            # Accumulate cache ratio per session via state file
-            # State: session_id total_cc total_cr total_ui prev_cc prev_cr
-            # cc/cr/ui are per-request values (not cumulative), so we add the full
-            # value on each new API call and use prev_cc/prev_cr only to detect
-            # duplicate refreshes (same data = no new API call = skip).
-            local cache_state="${LOGDIR}/.cache_ratio"
-            local stored_sid="" total_cc=0 total_cr=0 total_ui=0 prev_cc=0 prev_cr=0
-            if [ -f "$cache_state" ]; then
-                read -r stored_sid total_cc total_cr total_ui prev_cc prev_cr < "$cache_state" 2>/dev/null || true
-            fi
-            # Reset if session changed
-            if [ "$stored_sid" != "$sid" ]; then
-                total_cc=0; total_cr=0; total_ui=0; prev_cc=0; prev_cr=0
-            fi
-            # Only accumulate if values changed (new API call, not a duplicate refresh)
-            if [ "${cc:-0}" != "$prev_cc" ] || [ "${cr:-0}" != "$prev_cr" ]; then
-                total_cc=$(( total_cc + ${cc:-0} ))
-                total_cr=$(( total_cr + ${cr:-0} ))
-                total_ui=$(( total_ui + ${ui:-0} ))
-            fi
-            echo "$sid $total_cc $total_cr $total_ui ${cc:-0} ${cr:-0}" > "$cache_state" 2>/dev/null
-
-            local total=$(( total_cc + total_cr + total_ui ))
+            local total=$(( cc + cr + ui ))
             if [ "$total" -gt 0 ]; then
-                local cache_pct=$(( total_cr * 100 / total ))
+                local cache_pct=$(( cr * 100 / total ))
                 tok_context="${ctx%%.*}% ⟳${cache_pct}%"
             else
                 tok_context="${ctx%%.*}%"
@@ -1353,10 +1331,9 @@ Statusline token reference:
 
   Context (from Claude Code)
     ctx 77%        context window fullness (auto-compacts at ~95%)
-    ⟳93%           KV cache hit ratio — how much was served from cache
-                   vs reprocessed. Drops during tool-heavy work (new
-                   content) or after breaks (cache expires after inactivity).
-                   Per-session, resets when a new session starts.
+    ⟳93%           KV cache hit ratio from the last API response.
+                   Drops during tool-heavy work (new content) or
+                   after breaks (cache expires after inactivity).
 
   Other
     main ✓         git branch + status (✓=clean ✗=dirty +=staged ?=untracked)

@@ -114,7 +114,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d_reset}` | Time until 7d window resets |
 | `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
 | `{rate_7d_proj}` | Projected 7d usage (daily average) |
-| `{context}` | `77% ⟳93%` — context window usage + cache hit ratio, both scoped to the current session. **77%** = how full your context window is (Claude auto-compacts at ~95%). **⟳93%** = KV cache hit ratio — how much of your conversation the API served from its server-side cache vs had to reprocess from scratch. High (>95%) in steady conversation; drops during tool-heavy work (each new tool output is new content that must be processed for the first time) or after long breaks (the server-side cache expires after a period of inactivity). Resets when a new session starts. |
+| `{context}` | `77% ⟳93%` — context window usage + cache hit ratio from the most recent API response. **77%** = how full your context window is (Claude auto-compacts at ~95%). **⟳93%** = KV cache hit ratio — how much of the input was served from the server-side cache vs had to be processed from scratch. High (>95%) in steady conversation; drops during tool-heavy work (each new tool output is new content), after long breaks (the server-side cache expires after a period of inactivity), or at the start of a new conversation (nothing cached yet). Stateless — no accumulation, always reflects the current state. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name (e.g. `Opus 4.6`) |
 
