@@ -694,12 +694,13 @@ mode_statusline() {
             (.context_window.used_percentage // "_"),
             (.context_window.current_usage.cache_creation_input_tokens // "_"),
             (.context_window.current_usage.cache_read_input_tokens // "_"),
+            (.context_window.current_usage.input_tokens // "_"),
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_")
         ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read cst mdl
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read cst mdl <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input cst mdl
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input cst mdl <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
@@ -708,35 +709,38 @@ mode_statusline() {
         [ "$ctx" = "_" ] && ctx=""
         [ "$cache_create" = "_" ] && cache_create=""
         [ "$cache_read" = "_" ] && cache_read=""
+        [ "$uncached_input" = "_" ] && uncached_input=""
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
 
         # Merge cache hit rate into context token: "77% ⟳99%"
         if [ -n "$ctx" ] && [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
-            local cc=${cache_create%.*} cr=${cache_read%.*}
+            local cc=${cache_create%.*} cr=${cache_read%.*} ui=${uncached_input%.*}
+            [ -z "$ui" ] && ui=0
 
             # Accumulate cache ratio across the 5h window via state file
-            # State: reset_ts total_cc total_cr prev_cc prev_cr
-            # cc/cr are per-request values (not cumulative), so we add the full
+            # State: reset_ts total_cc total_cr total_ui prev_cc prev_cr
+            # cc/cr/ui are per-request values (not cumulative), so we add the full
             # value on each new API call and use prev_cc/prev_cr only to detect
             # duplicate refreshes (same data = no new API call = skip).
             local cache_state="${LOGDIR}/.cache_ratio"
-            local stored_reset=0 total_cc=0 total_cr=0 prev_cc=0 prev_cr=0
+            local stored_reset=0 total_cc=0 total_cr=0 total_ui=0 prev_cc=0 prev_cr=0
             if [ -f "$cache_state" ]; then
-                read -r stored_reset total_cc total_cr prev_cc prev_cr < "$cache_state" 2>/dev/null || true
+                read -r stored_reset total_cc total_cr total_ui prev_cc prev_cr < "$cache_state" 2>/dev/null || true
             fi
             # Reset if window changed
             if [ -n "$r5h_reset" ] && [ "$stored_reset" != "$r5h_reset" ]; then
-                total_cc=0; total_cr=0; prev_cc=0; prev_cr=0; stored_reset="$r5h_reset"
+                total_cc=0; total_cr=0; total_ui=0; prev_cc=0; prev_cr=0; stored_reset="$r5h_reset"
             fi
             # Only accumulate if values changed (new API call, not a duplicate refresh)
             if [ "${cc:-0}" != "$prev_cc" ] || [ "${cr:-0}" != "$prev_cr" ]; then
                 total_cc=$(( total_cc + ${cc:-0} ))
                 total_cr=$(( total_cr + ${cr:-0} ))
+                total_ui=$(( total_ui + ${ui:-0} ))
             fi
-            echo "${stored_reset:-0} $total_cc $total_cr ${cc:-0} ${cr:-0}" > "$cache_state" 2>/dev/null
+            echo "${stored_reset:-0} $total_cc $total_cr $total_ui ${cc:-0} ${cr:-0}" > "$cache_state" 2>/dev/null
 
-            local total=$(( total_cc + total_cr ))
+            local total=$(( total_cc + total_cr + total_ui ))
             if [ "$total" -gt 0 ]; then
                 local cache_pct=$(( total_cr * 100 / total ))
                 tok_context="${ctx%%.*}% ⟳${cache_pct}%"
