@@ -112,7 +112,7 @@
 # Bucket boundaries in seconds for response→prompt gap distribution.
 # Helps you tune PAUSE_THRESHOLD by seeing where your gaps cluster.
 #GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
-#TIMELINE_WIDTH=20  # number of blocks in {timeline} sparkline
+#TIMELINE_SLOT=1800  # seconds per timeline block (1800=30min, 3600=1h)
 
 # ---------------------------------------------------------------------------
 # Cost tracking

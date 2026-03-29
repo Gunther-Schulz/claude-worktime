@@ -65,8 +65,8 @@ COLOR_RATE_CRITICAL="red"
 STREAK_WARNING=5400    # 1.5h — work streak turns yellow
 STREAK_CRITICAL=9000   # 2.5h — work streak turns red
 COLOR_TIMELINE_WORK="green"    # color for ▮ blocks
-COLOR_TIMELINE_BREAK="orange"  # color for ▯ blocks
-TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
+COLOR_TIMELINE_BREAK="orange"  # color for · blocks
+TIMELINE_SLOT=1800  # seconds per timeline block (1800=30min, 3600=1h)
 COLOR_DEFAULT="dark-gray"
 RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true
@@ -630,35 +630,38 @@ mode_statusline() {
                     user: (\$current.user + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .user // 0] | add // 0))
                 }
             ),
-            timeline: (if \$width > 0 and (\$today | length) > 0 then
+            timeline: (if (\$today | length) > 0 then
+                # One character per time slot (configurable via TIMELINE_SLOT)
+                # ▮ = present (worked more than half the slot), · = away
                 (\$today[0].t) as \$tstart
-                | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
-                # Build break blocks from pre-computed away spans
-                | [\$away[]
-                    | {from: .from_t, to: .to_t}
-                    | ((.to - .from) / \$tblock | ceil | if . < 1 then 1 else . end) as \$nblocks
-                    | ((.from - \$tstart) / \$tblock | floor) as \$first_block
-                    | range(\$first_block; \$first_block + \$nblocks)
-                    | select(. >= 0 and . < \$width)
-                ] | unique as \$break_blocks
-                | [range(0; \$width) | . as \$i
-                    | if ([\$break_blocks[] | select(. == \$i)] | length) > 0
-                      then \"▯\" else \"▮\" end
+                | ((\$tstart / \$slot) | floor) as \$first_slot
+                | ((\$now / \$slot) | floor) as \$current_slot
+                | [\$away[] | {from: .from_t, to: .to_t}] as \$away_intervals
+                | [range(\$first_slot; \$current_slot + 1) | . as \$s
+                    | (\$s * \$slot) as \$slot_start
+                    | ((\$s + 1) * \$slot) as \$slot_end
+                    | ([(\$slot_start), \$tstart] | max) as \$eff_start
+                    | ([(\$slot_end), \$now] | min) as \$eff_end
+                    | (\$eff_end - \$eff_start) as \$slot_len
+                    | ([\$away_intervals[]
+                        | ([.from, \$eff_start] | max) as \$os
+                        | ([.to, \$eff_end] | min) as \$oe
+                        | if \$oe > \$os then (\$oe - \$os) else 0 end
+                      ] | add // 0) as \$away_in_slot
+                    | if \$slot_len > 0 and (\$away_in_slot < (\$slot_len / 2)) then \"▮\" else \"·\" end
                 ] | join(\"\")
               else \"\" end)
         }
         | [.session_active, .first_t, .last_break, .since_break, .project, .branch, .today_first_t, .today_active, .today_project_active, .project_total_active, .today_project_split.claude, .today_project_split.user, .project_total_split.claude, .project_total_split.user, .timeline]
         | map(. // \"\" | tostring) | join(\"\\u001e\")
     "
-    local tl_width=${TIMELINE_WIDTH:-20}
     local all_formats=""
     local _gname _gvar
     for _gname in ${STATUSLINE_1:-} ${STATUSLINE_2:-} ${STATUSLINE_3:-}; do
         _gvar="GROUP_${_gname}"
         all_formats="${all_formats}${!_gvar:-}"
     done
-    [[ "$all_formats" != *"{timeline}"* ]] && tl_width=0
-    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson width "$tl_width")
+    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson slot "${TIMELINE_SLOT:-1800}")
 
     # Fast path: direct read. Fallback: skip corrupt lines.
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
@@ -880,8 +883,9 @@ mode_statusline() {
     # Colorize timeline blocks if colors are configured
     # Colorize timeline blocks using actual ANSI escape bytes
     if [ -n "${tok_timeline:-}" ]; then
+        # Colorize timeline: ▮ = work, · = away
         [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//▮/${COLOR_TIMELINE_WORK}▮${COLOR_DEFAULT}}"
-        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_DEFAULT}}"
+        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//·/${COLOR_TIMELINE_BREAK}·${COLOR_DEFAULT}}"
     fi
 
     # Token arrays (constant per statusline refresh, shared by all groups)
