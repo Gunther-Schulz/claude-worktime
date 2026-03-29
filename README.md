@@ -88,6 +88,8 @@ A commented-out template with all options is created on install.
 | `{today_claude}` | Today's Claude work time for current project (prompt→response spans) |
 | `{today_you}` | Today's your active time for current project (response→prompt within threshold) |
 | `{project_total}` | All-time total for current project |
+| `{total_claude}` | All-time Claude work time for current project |
+| `{total_you}` | All-time your active time for current project |
 | `{since_break}` | ▶2h40m — time you were present since most recent break (always visible) |
 | `{last_break}` | ⏸ 41m — duration of most recent break (hidden until first break) |
 | `{timeline}` | ▮▯▯▮▮▮▮▮▮▯▯▮▮▮ — day sparkline (▮=present ▯=away) |

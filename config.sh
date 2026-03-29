@@ -13,6 +13,8 @@
 #   {today_claude}   — today's Claude work time for current project
 #   {today_you}      — today's your active time for current project
 #   {project_total}  — all-time total for current project (across all days)
+#   {total_claude}   — all-time Claude work time for current project
+#   {total_you}      — all-time your active time for current project
 #   {last_break}     — last break duration with ⏸ icon (empty if none)
 #   {since_break}    — presence time since last break with ▶ icon
 #   {timeline}       — ▮▯▮▮▮▮▯▮▮▮ day sparkline (filled=work, empty=break)
