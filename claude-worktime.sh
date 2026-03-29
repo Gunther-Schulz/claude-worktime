@@ -602,6 +602,8 @@ mode_statusline() {
     local today_wall=0
     [ "${today_first:-0}" -gt 0 ] && today_wall=$(( now - today_first ))
 
+    local color="$COLOR_NORMAL"
+
     # Build tokens (using _v variants to avoid subshells)
     local tok_session tok_session_wall tok_today tok_today_wall tok_today_project tok_project_total tok_project tok_branch tok_last_break tok_since_break tok_git
     _fmt_short_v "$session_active"; tok_session="$_V"
@@ -807,7 +809,6 @@ mode_statusline() {
     fi
 
     local tok_status="⏱"
-    local color="$COLOR_NORMAL"
 
     # Colorize timeline blocks if colors are configured
     # Uses \033 escapes that printf '%b' will interpret in the final output
