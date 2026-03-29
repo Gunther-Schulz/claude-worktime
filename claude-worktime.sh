@@ -89,6 +89,9 @@ LOGFILE="${LOGDIR}/activity.jsonl"
 #   is_idle         — user turn gap > threshold (user was away)
 #   is_long_claude  — current event is "response" and the prompt→response span > threshold
 #                     (user was probably away during a long agent job)
+#                     Safety: if another response exists between the found prompt and this
+#                     response, the prompt belongs to an earlier turn (missed hook). Returns
+#                     false to avoid false positives from inflated spans.
 #   is_absent       — is_idle OR is_long_claude (user wasn't present, for streak/timeline)
 #
 # Layer 3: Display labels for idle gaps (--breakdown and --gaps only)
@@ -103,7 +106,10 @@ def is_idle($a; $i; $pause):
 def is_long_claude($a; $i; $pause):
   if $a[$i].e != "response" then false
   else ([range($i-1; -1; -1) | select($a[.].e == "prompt")] | if length > 0 then .[0] else null end) as $pi
-  | if $pi then ($a[$i].t - $a[$pi].t) > $pause else false end
+  | if $pi then
+      ([range($i-1; $pi; -1) | select($a[.].e == "response")] | length) == 0
+      and ($a[$i].t - $a[$pi].t) > $pause
+    else false end
   end;
 def is_absent($a; $i; $pause):
   is_idle($a; $i; $pause) or is_long_claude($a; $i; $pause);'
@@ -609,7 +615,13 @@ mode_statusline() {
                 (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause))
                 + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
             ),
-            project_total_split: (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_split(\$pause)),
+            project_total_split: (
+                (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_split(\$pause)) as \$current
+                | {
+                    claude: (\$current.claude + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .claude // 0] | add // 0)),
+                    user: (\$current.user + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .user // 0] | add // 0))
+                }
+            ),
             timeline: (if \$width > 0 and (\$today | length) > 0 then
                 (\$today[0].t) as \$tstart
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
@@ -1304,12 +1316,17 @@ _do_rotate() {
     local summaries
     summaries=$(jq -sc --argjson since "$ROTATE_CUTOFF" --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
-        [.[] | select(.t < \$since)] | group_by(.p) | map({
-            type: \"summary\",
-            p: .[0].p,
-            active: (sort_by(.t) | calc_active(\$pause)),
-            period: \"$ROTATE_SUFFIX\"
-        }) | .[]
+        [.[] | select(.t < \$since)] | group_by(.p) | map(
+            (sort_by(.t) | calc_split(\$pause)) as \$split
+            | {
+                type: \"summary\",
+                p: .[0].p,
+                active: (sort_by(.t) | calc_active(\$pause)),
+                claude: \$split.claude,
+                user: \$split.user,
+                period: \"$ROTATE_SUFFIX\"
+            }
+        ) | .[]
     " "$LOGFILE" 2>/dev/null || true)
 
     # Archive old event entries (not summaries)
