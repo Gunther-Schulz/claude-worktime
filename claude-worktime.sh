@@ -80,44 +80,52 @@ LOG_COST=false  # log session cost snapshots (for API/extra usage billing)
 LOGDIR="${DATADIR}"
 LOGFILE="${LOGDIR}/activity.jsonl"
 
-# Reusable jq predicates for gap classification
+# Reusable jq definitions for time classification
 #
-# Layer 1: Raw events in log (start, prompt, tool_start, tool_end, response)
+# Two models, one fork point:
 #
-# Layer 2: Gap classification (query time)
-#   is_user_turn    — previous event is "response" or "start" (user has the ball)
-#   is_idle         — user turn gap > threshold (user was away)
-#   is_long_claude  — current event is "response" and the prompt→response span > threshold
-#                     (user was probably away during a long agent job)
-#                     Safety: if another response exists between the found prompt and this
-#                     response, the prompt belongs to an earlier turn (missed hook). Returns
-#                     false to avoid false positives from inflated spans.
-#   is_absent       — is_idle OR is_long_claude (user wasn't present, for streak/timeline)
+#   ACTIVE TIME (line 1 — "was work happening?")
+#     Gap-by-gap classification. Every gap between consecutive events is either
+#     productive (counted) or idle (excluded). Long Claude turns always count.
+#     Uses: is_idle
 #
-# Layer 3: Display labels for idle gaps (--breakdown and --gaps only)
-#   break      — idle user turn, next event is "prompt" (stayed in CLI)
-#   downtime   — idle user turn, next event is "start" (quit CLI, came back)
-#   unattended — long Claude turn (user probably walked away)
+#   PRESENCE (line 2 — "was the user at their desk?")
+#     Prompt-to-prompt spans. If the time between two consecutive prompts exceeds
+#     the threshold, the user was away for that entire period — regardless of what
+#     happened in between (Claude working, tools running, idle time).
+#     Uses: away_spans
 #
+# Both share the same events, same threshold, same log. They agree in normal
+# conversation and only diverge during long autonomous Claude turns.
+#
+# Display labels (--breakdown only):
+#   claude     — attended Claude work (prompt→response, user present)
+#   user       — user's active turns (response→prompt, within threshold)
+#   unattended — time within an away span (user wasn't present)
+#   breaks     — idle user turn outside away spans (response→prompt over threshold)
+#   downtime   — idle + quit CLI outside away spans (response→start over threshold)
+
+# --- Active time predicates (line 1) ---
 JQ_PREDICATES='def is_user_turn($a; $i):
   ($a[$i-1].e == "response" or $a[$i-1].e == "start");
 def is_idle($a; $i; $pause):
-  is_user_turn($a; $i) and ($a[$i].t - $a[$i-1].t) > $pause;
-def is_long_claude($a; $i; $pause):
-  if $a[$i].e != "response" then false
-  else ([range($i-1; -1; -1) | select($a[.].e == "prompt")] | if length > 0 then .[0] else null end) as $pi
-  | if $pi then
-      ([range($i-1; $pi; -1) | select($a[.].e == "response")] | length) == 0
-      and ($a[$i].t - $a[$pi].t) > $pause
-    else false end
-  end;
-def is_absent($a; $i; $pause):
-  is_idle($a; $i; $pause) or is_long_claude($a; $i; $pause);'
+  is_user_turn($a; $i) and ($a[$i].t - $a[$i-1].t) > $pause;'
+
+# --- Presence: away span computation (line 2) ---
+# Computes prompt-to-prompt spans exceeding threshold.
+# Returns array of {from_t, to_t, return_idx} objects.
+# Input: event array (sorted by time). $pause: threshold.
+JQ_AWAY='def away_spans($pause):
+  [to_entries[] | select(.value.e == "prompt") | {idx: .key, t: .value.t}] as $prompts
+  | if ($prompts | length) < 2 then []
+    else [range(1; $prompts|length)
+      | select($prompts[.].t - $prompts[.-1].t > $pause)
+      | {from_t: $prompts[.-1].t, to_t: $prompts[.].t, return_idx: $prompts[.].idx}]
+    end;'
 
 # Compute active seconds: total time minus idle gaps
-# Note: uses is_idle (not is_absent) — long Claude turns count as productive time.
-# Embeds JQ_PREDICATES so any query using JQ_CALC gets the predicates for free.
-JQ_CALC="${JQ_PREDICATES}"'
+# Long Claude turns count as productive — uses is_idle, not away_spans.
+JQ_CALC="${JQ_PREDICATES}${JQ_AWAY}"'
 def calc_active($pause):
   . as $a | reduce range(1; $a|length) as $i (0;
     ($a[$i].t - $a[$i-1].t) as $gap
@@ -136,29 +144,33 @@ def calc_split($pause):
       end);'
 
 # Phase breakdown — five categories
-# claude     = prompt→response within threshold (Claude's turn, user present)
-# user       = response→prompt within threshold (user's turn)
-# unattended = long Claude turn > threshold (prompt→response, user probably away)
-# breaks     = idle user turn, stayed in CLI (response→prompt over threshold)
-# downtime   = idle user turn, quit CLI (response→start over threshold)
-# Embeds JQ_PREDICATES so any query using JQ_BREAKDOWN gets the predicates for free.
-JQ_BREAKDOWN="${JQ_PREDICATES}"'
+# Pre-computes away spans, then classifies each gap by whether it falls
+# within an away span or not.
+JQ_BREAKDOWN="${JQ_PREDICATES}${JQ_AWAY}"'
 def calc_breakdown($pause):
-  . as $a | reduce range(1; $a|length) as $i (
-    {claude: 0, user: 0, unattended: 0, unattended_count: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0, _claude_accum: 0};
+  away_spans($pause) as $away
+  | . as $a | reduce range(1; $a|length) as $i (
+    {claude: 0, user: 0, unattended: 0, unattended_count: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
-      elif is_idle($a; $i; $pause) and ($a[$i].e == "start") then
-        .claude += ._claude_accum | ._claude_accum = 0 | .downtime += $gap | .downtime_count += 1
-      elif is_idle($a; $i; $pause) then
-        .claude += ._claude_accum | ._claude_accum = 0 | .breaks += $gap | .break_count += 1
-      elif is_user_turn($a; $i) then
-        .claude += ._claude_accum | ._claude_accum = 0 | .user += $gap
-      elif is_long_claude($a; $i; $pause) then
-        .unattended += (._claude_accum + $gap) | ._claude_accum = 0 | .unattended_count += 1
-      else ._claude_accum += $gap
-      end)
-  | .claude += ._claude_accum | del(._claude_accum);'
+      else
+        ([$away[] | select(.from_t <= $a[$i-1].t and $a[$i].t <= .to_t)] | length > 0) as $in_away
+        | if $in_away and is_idle($a; $i; $pause) and ($a[$i].e == "start") then
+            .downtime += $gap | .downtime_count += 1
+          elif $in_away and is_idle($a; $i; $pause) then
+            .breaks += $gap | .break_count += 1
+          elif $in_away and ($a[$i].e == "prompt") then
+            .unattended += $gap | .unattended_count += 1
+          elif $in_away then
+            .unattended += $gap
+          elif is_idle($a; $i; $pause) and ($a[$i].e == "start") then
+            .downtime += $gap | .downtime_count += 1
+          elif is_idle($a; $i; $pause) then
+            .breaks += $gap | .break_count += 1
+          elif is_user_turn($a; $i) then .user += $gap
+          else .claude += $gap
+          end
+      end);'
 
 # --- Color name resolver: "red" → actual ANSI escape bytes ---
 # Variable-setting variant: sets _V instead of printing (avoids subshell)
@@ -599,17 +611,10 @@ mode_statusline() {
         | {
             session_active: (\$session | calc_active(\$pause)),
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
-            last_break: ([range(\$today|length-1; 0; -1) as \$i
-                | select(is_absent(\$today; \$i; \$pause))
-                | (if is_long_claude(\$today; \$i; \$pause) then
-                    ([range(\$i-1; -1; -1) | select(\$today[.].e == \"prompt\")] | first // 0) as \$pi
-                    | (\$today[\$i].t - \$today[\$pi].t)
-                  else (\$today[\$i].t - \$today[\$i-1].t) end)] | first // 0),
-            since_break: (\$today | . as \$s |
-                ([range(length-1; 0; -1) as \$i
-                    | select(is_absent(\$s; \$i; \$pause))
-                    | \$i] | first) as \$brk_idx
-                | if \$brk_idx then \$s[\$brk_idx:] | calc_active(\$pause) else calc_active(\$pause) end),
+            last_break: (\$today | away_spans(\$pause) | if length > 0 then last | (.to_t - .from_t) else 0 end),
+            since_break: (\$today | away_spans(\$pause) as \$spans
+                | if (\$spans | length) > 0 then .[\$spans[-1].return_idx:] | calc_active(\$pause)
+                  else calc_active(\$pause) end),
             project: \$proj,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
             today_first_t: (\$today | if length > 0 then .[0].t else 0 end),
@@ -630,14 +635,9 @@ mode_statusline() {
             timeline: (if \$width > 0 and (\$today | length) > 0 then
                 (\$today[0].t) as \$tstart
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
-                # Build set of break block indices using rounded block count
-                | [range(1; \$today|length)
-                    | select(is_absent(\$today; .; \$pause))
-                    | (if is_long_claude(\$today; .; \$pause) then
-                        ([range(.-1; -1; -1) | select(\$today[.].e == \"prompt\")] | first // 0) as \$pi
-                        | {from: \$today[\$pi].t, to: \$today[.].t}
-                      else {from: \$today[.-1].t, to: \$today[.].t} end)
-                    | . as \$brk
+                # Build break blocks from away spans (prompt-to-prompt)
+                | [\$today | away_spans(\$pause) | .[]
+                    | {from: .from_t, to: .to_t}
                     | ((.to - .from) / \$tblock | ceil | if . < 1 then 1 else . end) as \$nblocks
                     | ((.from - \$tstart) / \$tblock | floor) as \$first_block
                     | range(\$first_block; \$first_block + \$nblocks)

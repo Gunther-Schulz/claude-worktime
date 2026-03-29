@@ -241,7 +241,7 @@ Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, 
 - **Yellow** at `STREAK_WARNING` (default: 1.5 hours)
 - **Red** at `STREAK_CRITICAL` (default: 2.5 hours)
 
-A "break" is any period exceeding `PAUSE_THRESHOLD` (default: 15 minutes) where you weren't actively engaged — idle in the CLI, quit and came back, or Claude ran a long autonomous job. Set thresholds to `0` to disable.
+A "break" is any period exceeding `PAUSE_THRESHOLD` (default: 15 minutes) since your last prompt — whether you were idle, quit and came back, or Claude was running a long autonomous job. Set thresholds to `0` to disable.
 
 ### Auto-rotation
 
@@ -283,18 +283,23 @@ The log stores raw events only — concepts like "break" and "idle" are derived 
 
 ### Time model
 
-Time is classified into two layers:
+Two models, one fork point — same events, same threshold, same log:
 
-**Active time** (line 1) counts all productive work:
-- **Your turns** (`response → prompt` within threshold) — reading, thinking, typing
-- **Claude's turns** (`prompt → response`) — thinking, tools, output
-- Idle gaps (user turns exceeding threshold) are excluded
+**Active time** (line 1 — "was work happening?"):
+Gap-by-gap classification. Each gap between consecutive events is either productive or idle. A user turn (`response → prompt`) exceeding the threshold is idle. All Claude turns count as productive regardless of duration.
 
-**Presence** (line 2) tracks when you were personally engaged:
-- Same as active time, but also treats long Claude turns (exceeding threshold) as absence
-- If Claude works for 20 minutes on an agent job, you probably walked away
+**Presence** (line 2 — "was the user at their desk?"):
+Prompt-to-prompt spans. If the time between two consecutive user prompts exceeds the threshold, the user was away for that entire period — regardless of what happened in between (Claude working, tools running, idle time). This naturally handles long agent jobs and post-response gaps as one continuous absence.
 
-Both use the same threshold, same events, same log. The only difference: presence subtracts long unattended Claude turns that active time counts.
+The two models agree in normal conversation and only diverge during long autonomous Claude turns. A 21-minute agent job followed by 10 minutes before the user returns is one 31-minute away span in line 2, while line 1 counts the 21 minutes of Claude work as productive.
+
+**Presence model trade-offs:**
+
+- **Return time included in away span.** When you come back from being away and read Claude's results before submitting your next prompt, that reading/typing time falls within the away span. For `--breakdown`, it's classified as "unattended." For active time (line 1), it's correctly counted as your work. The impact is typically 30-90 seconds — negligible compared to the away span.
+
+- **Single-turn blip absorption.** A single prompt-response exchange (e.g., a quick 1-minute check) between two long gaps gets absorbed into the surrounding away span — the time to the next prompt exceeds the threshold. Multi-turn work sessions (2+ prompts) are never absorbed because the prompt-to-prompt spans within the session are short. Active time (line 1) still counts the blip as productive work.
+
+- **Overcounting at span start.** The away span starts at the departure prompt (when you submitted the task), but you may have been present for the first few minutes watching Claude work. The overcount is bounded by the threshold (up to 15 minutes). This is inherent — we can't know exactly when you left.
 
 ### Tracking dimensions
 
@@ -356,11 +361,9 @@ Run `claude-worktime --check` to verify. No python, no node, no extra runtimes.
 
 ## Known limitations
 
-**Hook reliability (~93%).** Claude Code hooks occasionally don't fire — about 7% of events are missed. Total active time is unaffected. The Claude/You split may shift by a few percent. Long Claude turn detection (`is_long_claude`) has a safety check for missed prompts to avoid false positives.
+**Hook reliability (~93%).** Claude Code hooks occasionally don't fire — about 7% of events are missed. Total active time is unaffected. The Claude/You split may shift by a few percent. A missed prompt event merges two prompt-to-prompt spans into one, which may create a false away span or extend an existing one.
 
 **Statusline refresh.** Refreshes after each assistant response and tool use, but not while you're typing. Rate limit and context tokens require the first API round-trip before appearing.
-
-**Break splitting.** Any work between two idle gaps — regardless of how short — splits them into separate breaks. `{last_break}` shows only the most recent gap. The timeline shows the full picture.
 
 ## License
 
