@@ -79,7 +79,7 @@
 #COLOR_RATE_CRITICAL="red"
 #COLOR_TIMELINE_WORK="green"
 #COLOR_TIMELINE_BREAK="orange"
-#COLOR_RESET="dark-gray"
+#COLOR_DEFAULT="dark-gray"
 
 # ---------------------------------------------------------------------------
 # Break reminder — work streak color warning

@@ -67,7 +67,7 @@ STREAK_CRITICAL=9000   # 2.5h — work streak turns red
 COLOR_TIMELINE_WORK="green"    # color for ▮ blocks
 COLOR_TIMELINE_BREAK="orange"  # color for ▯ blocks
 TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
-COLOR_RESET="dark-gray"
+COLOR_DEFAULT="dark-gray"
 RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily  # daily, weekly, monthly
@@ -206,7 +206,7 @@ _resolve_color_v "$COLOR_RATE_WARNING"; COLOR_RATE_WARNING="$_V"
 _resolve_color_v "$COLOR_RATE_CRITICAL"; COLOR_RATE_CRITICAL="$_V"
 _resolve_color_v "$COLOR_TIMELINE_WORK"; COLOR_TIMELINE_WORK="$_V"
 _resolve_color_v "$COLOR_TIMELINE_BREAK"; COLOR_TIMELINE_BREAK="$_V"
-_resolve_color_v "${COLOR_RESET:-reset}"; COLOR_RESET="$_V"
+_resolve_color_v "${COLOR_DEFAULT:-reset}"; COLOR_DEFAULT="$_V"
 
 # Precompute derived config values (once, not per statusline call)
 # Convert RATE_7D_PROJ_MIN_DAYS (float) to seconds (integer) for bash comparison
@@ -700,7 +700,7 @@ mode_statusline() {
         streak_color="$COLOR_RATE_WARNING"
     fi
     if [ -n "$streak_color" ]; then
-        tok_since_break="${streak_color}▶$_V${COLOR_RESET}"
+        tok_since_break="${streak_color}▶$_V${COLOR_DEFAULT}"
     else
         tok_since_break="▶$_V"
     fi
@@ -831,7 +831,7 @@ mode_statusline() {
                 proj_color="$COLOR_RATE_WARNING"
             fi
             if [ -n "$proj_color" ]; then
-                _V="${proj_color}→${proj}%${COLOR_RESET}"
+                _V="${proj_color}→${proj}%${COLOR_DEFAULT}"
             else
                 _V="→${proj}%"
             fi
@@ -855,7 +855,7 @@ mode_statusline() {
                     proj_color="$COLOR_RATE_WARNING"
                 fi
                 if [ -n "$proj_color" ]; then
-                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_RESET}"
+                    tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_DEFAULT}"
                 else
                     tok_rate_7d_proj="→${proj}%"
                 fi
@@ -880,8 +880,8 @@ mode_statusline() {
     # Colorize timeline blocks if colors are configured
     # Colorize timeline blocks using actual ANSI escape bytes
     if [ -n "${tok_timeline:-}" ]; then
-        [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//▮/${COLOR_TIMELINE_WORK}▮${COLOR_RESET}}"
-        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_RESET}}"
+        [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//▮/${COLOR_TIMELINE_WORK}▮${COLOR_DEFAULT}}"
+        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//▯/${COLOR_TIMELINE_BREAK}▯${COLOR_DEFAULT}}"
     fi
 
     # Token arrays (constant per statusline refresh, shared by all groups)
@@ -947,12 +947,12 @@ mode_statusline() {
                 grp_color="${!color_var_name:-}"
                 if [ -n "$grp_color" ]; then _resolve_color_v "$grp_color"; grp_color="$_V"; fi
                 grp_color="${grp_color:-$color}"
-                # Replace bare COLOR_RESET with reset+group_color so item colors
+                # Replace bare COLOR_DEFAULT with reset+group_color so item colors
                 # (projections, timeline) restore to the group color, not default
-                rendered="${rendered//${COLOR_RESET}/${COLOR_RESET}${grp_color}}"
+                rendered="${rendered//${COLOR_DEFAULT}/${COLOR_DEFAULT}${grp_color}}"
                 rendered="${grp_color}${rendered}"
                 if [ -n "$result" ]; then
-                    result="${result}${COLOR_RESET}${divider}${rendered}"
+                    result="${result}${COLOR_DEFAULT}${divider}${rendered}"
                 else
                     result="$rendered"
                 fi
@@ -963,12 +963,12 @@ mode_statusline() {
 
     # Output (no subshells)
     _render_groups_v "$STATUSLINE_1"
-    printf '%s' "${_RENDER_RESULT}${COLOR_RESET}"
+    printf '%s' "${_RENDER_RESULT}${COLOR_DEFAULT}"
     local _sl_extra
     for _sl_extra in "${STATUSLINE_2:-}" "${STATUSLINE_3:-}"; do
         [ -z "$_sl_extra" ] && continue
         _render_groups_v "$_sl_extra"
-        [ -n "$_RENDER_RESULT" ] && printf '\n%s' "${_RENDER_RESULT}${COLOR_RESET}"
+        [ -n "$_RENDER_RESULT" ] && printf '\n%s' "${_RENDER_RESULT}${COLOR_DEFAULT}"
     done
 }
 
@@ -1464,7 +1464,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ ! -f "$LOGFILE" ]; then
-    if [ "$MODE" = "statusline" ]; then printf '%s' "${COLOR_NORMAL}⏱ --${COLOR_RESET}"
+    if [ "$MODE" = "statusline" ]; then printf '%s' "${COLOR_NORMAL}⏱ --${COLOR_DEFAULT}"
     elif $RAW; then echo '{"active":0,"wall":0,"paused":0,"started":"","project":""}';
     else echo "No session activity recorded"; fi
     exit 0

@@ -230,7 +230,7 @@ GROUP_CONTEXT_COLOR="dark-gray"
 COLOR_NORMAL="green"              # working normally
 COLOR_RATE_WARNING="yellow"       # projected rate ≥90%
 COLOR_RATE_CRITICAL="red"         # projected rate ≥100%
-COLOR_RESET="reset"               # reset to terminal default
+COLOR_DEFAULT="dark-gray"         # dividers and secondary text
 ```
 
 Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `dark-gray`, `light-gray`, `orange`, `pink`, `purple`, `bright-green`, `bright-red`, `bright-yellow`, `bright-blue`, `bright-white`, `dim`, `reset`, `none`. Raw ANSI codes also work.
