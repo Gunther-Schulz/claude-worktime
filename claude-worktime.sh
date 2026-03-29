@@ -612,14 +612,13 @@ mode_statusline() {
     _fmt_short_v "$project_total_active"; tok_project_total="$_V"
     _short_project_v "$project"; tok_project="$_V"
     tok_branch="$branch"
-    # Only show if there was an actual break (over threshold) this session
+    # since_break always shows (continuous work streak); last_break only after first break
     tok_last_break=""
-    tok_since_break=""
     local lb=${last_break:-0}
     local sb=${since_break:-0}
+    _fmt_short_v "$sb"; tok_since_break="▶$_V"
     if [ "$lb" -gt 0 ]; then
         _fmt_short_v "$lb"; tok_last_break="⏸ $_V"
-        _fmt_short_v "$sb"; tok_since_break="▶$_V"
     fi
 
 
