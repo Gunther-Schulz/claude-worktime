@@ -293,13 +293,7 @@ Prompt-to-prompt spans. If the time between two consecutive user prompts exceeds
 
 The two models agree in normal conversation and only diverge during long autonomous Claude turns. A 21-minute agent job followed by 10 minutes before the user returns is one 31-minute away span in line 2, while line 1 counts the 21 minutes of Claude work as productive.
 
-**Presence model trade-offs:**
-
-- **Return time included in away span.** When you come back from being away and read Claude's results before submitting your next prompt, that reading/typing time falls within the away span. For `--breakdown`, it's classified as "unattended." For active time (line 1), it's correctly counted as your work. The impact is typically 30-90 seconds — negligible compared to the away span.
-
-- **Single-turn blip absorption.** A single prompt-response exchange (e.g., a quick 1-minute check) between two long gaps gets absorbed into the surrounding away span — the time to the next prompt exceeds the threshold. Multi-turn work sessions (2+ prompts) are never absorbed because the prompt-to-prompt spans within the session are short. Active time (line 1) still counts the blip as productive work.
-
-- **Overcounting at span start.** The away span starts at the departure prompt (when you submitted the task), but you may have been present for the first few minutes watching Claude work. The overcount is bounded by the threshold (up to 15 minutes). This is inherent — we can't know exactly when you left.
+**Presence model notes:** The prompt-to-prompt measurement is approximate by seconds to a few minutes — return reading time, short work blips between long breaks, and the exact moment you stepped away are not precisely captured. This is fine for its purpose: the break reminder is a health nudge, not a timesheet. Active time (line 1) is always precise.
 
 ### Tracking dimensions
 
