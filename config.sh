@@ -78,7 +78,7 @@
 #COLOR_RATE_WARNING="yellow"
 #COLOR_RATE_CRITICAL="red"
 #COLOR_TIMELINE_WORK="green"
-#COLOR_TIMELINE_BREAK="orange"
+#COLOR_TIMELINE_BREAK="green"
 #COLOR_DEFAULT="dark-gray"
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@
 
 # Example: green work blocks, orange break blocks
 #COLOR_TIMELINE_WORK="green"
-#COLOR_TIMELINE_BREAK="orange"
+#COLOR_TIMELINE_BREAK="green"
 
 # ---------------------------------------------------------------------------
 # Auto-rotation — archive old log entries on session start

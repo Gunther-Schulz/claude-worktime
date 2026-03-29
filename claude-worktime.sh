@@ -65,7 +65,7 @@ COLOR_RATE_CRITICAL="red"
 STREAK_WARNING=5400    # 1.5h — work streak turns yellow
 STREAK_CRITICAL=9000   # 2.5h — work streak turns red
 COLOR_TIMELINE_WORK="green"    # color for ▮ blocks
-COLOR_TIMELINE_BREAK="orange"  # color for · blocks
+COLOR_TIMELINE_BREAK="green"   # color for · blocks
 TIMELINE_SLOT=1800  # seconds per timeline block (1800=30min, 3600=1h)
 COLOR_DEFAULT="dark-gray"
 RATE_7D_PROJ_MIN_DAYS=1
