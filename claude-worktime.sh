@@ -128,7 +128,7 @@ _resolve_color() {
         bright-blue)  printf '\033[1;34m' ;;
         bright-white) printf '\033[1;37m' ;;
         dim)          printf '\033[2m' ;;
-        dark-gray|dark-grey) printf '\033[38;5;240m' ;;
+        dark-gray|dark-grey) printf '\033[38;5;246m' ;;
         light-gray|light-grey) printf '\033[38;5;248m' ;;
         reset)        printf '\033[0m' ;;
         ""|none)      printf '' ;;
