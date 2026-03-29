@@ -50,9 +50,7 @@
 
 #GROUP_PROJECT="{project} ({git})"
 #GROUP_TODAY="{status} today {today_project}"
-#GROUP_TODAY_SPLIT="🤖{today_claude} 👤{today_you}"
 #GROUP_TOTAL="total {project_total}"
-#GROUP_TOTAL_SPLIT="🤖{total_claude} 👤{total_you}"
 #GROUP_TIMELINE="{timeline} {today_wall}"
 #GROUP_BREAKS="{since_break} {last_break}"
 #GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
@@ -139,8 +137,9 @@
 # STATUSLINE_1="COMPACT"
 # STATUSLINE_2=""
 #
-# --- Show Claude/You split on line 1 ---
-# STATUSLINE_1="PROJECT TODAY TODAY_SPLIT TOTAL TOTAL_SPLIT"
+# --- Show Claude/You split ---
+# GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
+# GROUP_TOTAL="total {project_total} 🤖{total_claude} 👤{total_you}"
 #
 # --- Custom group with session wall time ---
 # GROUP_WALL="{session}/{session_wall}"
