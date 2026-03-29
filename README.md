@@ -101,18 +101,19 @@ All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`
 ```
   Claude:     1h 39min     51%
   You:        1h 32min     48%
-  Unattended: 45min        (1)
   ─────────────────────────
   Active:     3h 13min
+  Away:       45min        (1)
   Breaks:     20min        (1)
   Downtime:   12h 15min
 ```
 
-- **Claude** — Claude's turns within threshold
-- **You** — your turns within threshold
-- **Unattended** — long Claude turns where you were probably away (still counted in Active)
-- **Breaks** — you were idle in the CLI
-- **Downtime** — you quit and came back
+- **Claude** — attended Claude work time
+- **You** — your active time (reading, thinking, typing)
+- **Active** — Claude + You (total productive time)
+- **Away** — prompt-to-prompt spans exceeding threshold (you weren't at your desk)
+- **Breaks** — idle gaps outside away spans (you were in the CLI but inactive)
+- **Downtime** — quit and came back outside away spans
 
 ### Cost analysis
 

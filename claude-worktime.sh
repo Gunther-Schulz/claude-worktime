@@ -155,11 +155,7 @@ def calc_breakdown($pause):
     | if $gap <= 0 then .
       else
         ([$away[] | select(.from_t <= $a[$i-1].t and $a[$i].t <= .to_t)] | length > 0) as $in_away
-        | if $in_away and is_idle($a; $i; $pause) and ($a[$i].e == "start") then
-            .downtime += $gap | .downtime_count += 1
-          elif $in_away and is_idle($a; $i; $pause) then
-            .breaks += $gap | .break_count += 1
-          elif $in_away and ($a[$i].e == "prompt") then
+        | if $in_away and ($a[$i].e == "prompt") then
             .unattended += $gap | .unattended_count += 1
           elif $in_away then
             .unattended += $gap
@@ -608,13 +604,13 @@ mode_statusline() {
         | (\$all | map(select(.s == \$sid)) | sort_by(.t)) as \$session
         | (\$all | map(select(.t >= \$since)) | sort_by(.t)) as \$today
         | (\$session | if length > 0 then ([.[] | .p] | last) else \"\" end) as \$proj
+        | (\$today | away_spans(\$pause)) as \$away
         | {
             session_active: (\$session | calc_active(\$pause)),
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
-            last_break: (\$today | away_spans(\$pause) | if length > 0 then last | (.to_t - .from_t) else 0 end),
-            since_break: (\$today | away_spans(\$pause) as \$spans
-                | if (\$spans | length) > 0 then .[\$spans[-1].return_idx:] | calc_active(\$pause)
-                  else calc_active(\$pause) end),
+            last_break: (\$away | if length > 0 then last | (.to_t - .from_t) else 0 end),
+            since_break: (if (\$away | length) > 0 then \$today[\$away[-1].return_idx:] | calc_active(\$pause)
+                  else \$today | calc_active(\$pause) end),
             project: \$proj,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
             today_first_t: (\$today | if length > 0 then .[0].t else 0 end),
@@ -635,8 +631,8 @@ mode_statusline() {
             timeline: (if \$width > 0 and (\$today | length) > 0 then
                 (\$today[0].t) as \$tstart
                 | ((\$now - \$tstart) / \$width + 1 | floor) as \$tblock
-                # Build break blocks from away spans (prompt-to-prompt)
-                | [\$today | away_spans(\$pause) | .[]
+                # Build break blocks from pre-computed away spans
+                | [\$away[]
                     | {from: .from_t, to: .to_t}
                     | ((.to - .from) / \$tblock | ceil | if . < 1 then 1 else . end) as \$nblocks
                     | ((.from - \$tstart) / \$tblock | floor) as \$first_block
@@ -1084,11 +1080,11 @@ mode_breakdown() {
 
         printf "  Claude:     %-12s %d%%\n" "$(_fmt $claude_time)" "$pct_claude"
         printf "  You:        %-12s %d%%\n" "$(_fmt $user_time)" "$pct_user"
-        if [ "${unattended:-0}" -gt 0 ]; then
-            printf "  Unattended: %-12s (%d)\n" "$(_fmt $unattended)" "$unattended_count"
-        fi
         echo "  ─────────────────────────"
         printf "  Active:     %s\n" "$(_fmt $active)"
+        if [ "${unattended:-0}" -gt 0 ]; then
+            printf "  Away:       %-12s (%d)\n" "$(_fmt $unattended)" "$unattended_count"
+        fi
         if [ "$breaks" -gt 0 ]; then
             printf "  Breaks:     %-12s (%d)\n" "$(_fmt $breaks)" "$break_count"
         fi
