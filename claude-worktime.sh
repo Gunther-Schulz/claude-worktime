@@ -68,7 +68,7 @@ COLOR_TIMELINE_WORK=""   # color for ▮ blocks (empty = same as line color)
 COLOR_TIMELINE_BREAK=""  # color for ▯ blocks (empty = same as line color)
 TIMELINE_WIDTH=20  # number of blocks in {timeline} (adapts to day length)
 COLOR_RESET="reset"
-RATE_7D_PROJ_MIN_DAYS=0.5
+RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily  # daily, weekly, monthly
 GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m

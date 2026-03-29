@@ -104,7 +104,7 @@
 # ---------------------------------------------------------------------------
 # Minimum days elapsed before showing 7d rate limit projection.
 # Below this threshold, the projection is hidden (not enough data).
-#RATE_7D_PROJ_MIN_DAYS=0.5  # 12 hours
+#RATE_7D_PROJ_MIN_DAYS=1  # 1 day (needs a full work/sleep cycle)
 
 # ---------------------------------------------------------------------------
 # Gap analysis (--gaps)
