@@ -145,15 +145,20 @@ def calc_split($pause):
 JQ_BREAKDOWN="${JQ_PREDICATES}"'
 def calc_breakdown($pause):
   . as $a | reduce range(1; $a|length) as $i (
-    {claude: 0, user: 0, unattended: 0, unattended_count: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
+    {claude: 0, user: 0, unattended: 0, unattended_count: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0, _claude_accum: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
-      elif is_idle($a; $i; $pause) and ($a[$i].e == "start") then .downtime += $gap | .downtime_count += 1
-      elif is_idle($a; $i; $pause) then .breaks += $gap | .break_count += 1
-      elif is_user_turn($a; $i) then .user += $gap
-      elif is_long_claude($a; $i; $pause) then .unattended += $gap | .unattended_count += 1
-      else .claude += $gap
-      end);'
+      elif is_idle($a; $i; $pause) and ($a[$i].e == "start") then
+        .claude += ._claude_accum | ._claude_accum = 0 | .downtime += $gap | .downtime_count += 1
+      elif is_idle($a; $i; $pause) then
+        .claude += ._claude_accum | ._claude_accum = 0 | .breaks += $gap | .break_count += 1
+      elif is_user_turn($a; $i) then
+        .claude += ._claude_accum | ._claude_accum = 0 | .user += $gap
+      elif is_long_claude($a; $i; $pause) then
+        .unattended += (._claude_accum + $gap) | ._claude_accum = 0 | .unattended_count += 1
+      else ._claude_accum += $gap
+      end)
+  | .claude += ._claude_accum | del(._claude_accum);'
 
 # --- Color name resolver: "red" → actual ANSI escape bytes ---
 # Variable-setting variant: sets _V instead of printing (avoids subshell)
