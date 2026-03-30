@@ -366,6 +366,8 @@ Run `claude-worktime --check` to verify. No python, no node, no extra runtimes.
 
 **Statusline refresh.** Refreshes after each assistant response and tool use, but not while you're typing. Rate limit and context tokens require the first API round-trip before appearing.
 
+**Token budget accuracy.** The `{token_budget}` display tracks tokens per 5-hour rate limit window. The first window after install will be inaccurate because tracking starts mid-window while Anthropic's percentage covers the full window. All subsequent windows are accurate (both counters reset together). If you also use the web app or API, those tokens count toward the percentage but aren't tracked — the inferred budget will be slightly low.
+
 ## License
 
 MIT
