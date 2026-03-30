@@ -1451,9 +1451,17 @@ _do_rotate() {
     echo "$old_entries" >> "$archive"
 
     # Rewrite active log: existing summaries + new summaries + current entries
-    local existing_summaries current_entries
-    existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null || true)
-    current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null || true)
+    local existing_summaries current_entries rewrite_error=""
+    existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null) || rewrite_error="summaries"
+    current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="current entries"
+
+    if [ -n "$rewrite_error" ]; then
+        # jq failed to read existing data — don't rewrite, archive already done
+        # The archived entries will be duplicated on next rotation but no data is lost
+        echo "WARNING: rotation rewrite failed reading $rewrite_error, log not rewritten" >> "${LOGDIR}/.rotation_errors" 2>/dev/null
+        ! $quiet && echo "Warning: failed to read $rewrite_error, log not rewritten (archive saved)"
+        return
+    fi
 
     # flock: serialize with log writes to prevent lost entries during rewrite
     (
