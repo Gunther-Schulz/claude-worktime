@@ -1401,7 +1401,7 @@ _do_rotate() {
     local summaries
     summaries=$(jq -sc --argjson since "$ROTATE_CUTOFF" --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
-        [.[] | select(.t < \$since)] | group_by(.p) | map(
+        [.[] | select((.type // null) == null) | select(.t < \$since)] | group_by(.p) | map(
             (sort_by(.t) | calc_split(\$pause)) as \$split
             | {
                 type: \"summary\",
