@@ -898,8 +898,8 @@ mode_statusline() {
                 echo "${t_cr:-0} ${t_cc:-0}" > "$token_prev" 2>/dev/null
                 (
                     flock -w 2 9 2>/dev/null || true
-                    printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s}\n' \
-                        "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" "${r5h:-0}" "${cst:-0}" >> "$LOGFILE"
+                    printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s,"ctx":%s}\n' \
+                        "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" "${r5h:-0}" "${cst:-0}" "${ctx:-0}" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
             fi
 
