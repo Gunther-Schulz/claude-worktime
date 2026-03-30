@@ -937,10 +937,10 @@ mode_statusline() {
 
                 local r5h_int="${r5h%%.*}"
 
-                # Budget inference: only recompute when percentage ticks
-                # At the moment percentage changes from N to N+1, the cost/tokens
-                # at that point divided by (N+1)/100 gives the most accurate reading.
-                # Between ticks, show the last computed budget (stable).
+                # Budget inference: recompute only when percentage ticks.
+                # Uses token-derived cost (weighted * $5/MTok) instead of cost log
+                # deltas — avoids off-by-one where first request's cost is missed.
+                # Token-derived cost is exact: cost/weighted ratio = 5.0 (constant).
                 local budget_state="${LOGDIR}/.budget"
                 local bs_reset=0 bs_pct=0 bs_token_budget=0 bs_cost_budget=0
                 if [ -f "$budget_state" ]; then
@@ -954,23 +954,9 @@ mode_statusline() {
                 if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ] && [ "$r5h_int" != "$bs_pct" ]; then
                     bs_pct="$r5h_int"
                     [ "$weighted" -gt 0 ] && bs_token_budget=$(( weighted * 100 / r5h_int ))
-                    # Cost-based budget: sum per-session deltas in window
-                    if [ -n "${cst:-}" ]; then
-                        local cost_delta
-                        cost_delta=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
-                            | jq -sr --argjson since "$window_start" '
-                            [.[] | select(.type == "cost" and .t >= $since)]
-                            | group_by(.s)
-                            | map(sort_by(.t) | (last.cost - first.cost))
-                            | add // 0
-                            | . * 100 | round / 100
-                        ' 2>/dev/null || echo 0)
-                        local cost_int=${cost_delta%.*}
-                        [ -z "$cost_int" ] && cost_int=0
-                        if [ "$cost_int" -gt 0 ]; then
-                            bs_cost_budget=$(awk "BEGIN { printf \"%.0f\", ${cost_delta} * 100 / ${r5h_int} }")
-                        fi
-                    fi
+                    # Cost budget derived from tokens: weighted * $5/MTok / percentage
+                    local token_cost=$(( weighted * 5 / 10000 ))  # cost in cents
+                    [ "$token_cost" -gt 0 ] && bs_cost_budget=$(( token_cost * 100 / r5h_int ))
                 fi
                 echo "${r5h_reset:-0} $bs_pct $bs_token_budget ${bs_cost_budget:-0}" > "$budget_state" 2>/dev/null
 
@@ -984,24 +970,15 @@ mode_statusline() {
                     fi
                 fi
 
-                # {cost_budget} — cost-based budget
-                # Cost is cumulative per session. Sum (last-first) per session in window.
-                if [ -n "${cst:-}" ]; then
-                    local cost_used
-                    cost_used=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
-                        | jq -sr --argjson since "$window_start" '
-                        [.[] | select(.type == "cost" and .t >= $since)]
-                        | group_by(.s)
-                        | map(sort_by(.t) | (last.cost - first.cost))
-                        | add // 0
-                        | . * 100 | round / 100
-                    ' 2>/dev/null || echo 0)
-                    local cost_used_int=${cost_used%.*}
-                    [ -z "$cost_used_int" ] && cost_used_int=0
-                    if [ "$cost_used_int" -gt 0 ] && [ "${bs_cost_budget:-0}" -gt 0 ]; then
-                        tok_cost_budget="\$${cost_used}/\$${bs_cost_budget}"
-                    elif [ "$cost_used_int" -gt 0 ]; then
-                        tok_cost_budget="\$${cost_used}"
+                # {cost_budget} — cost derived from tokens (weighted * $5/MTok)
+                if [ "$weighted" -gt 0 ]; then
+                    local cost_used_cents=$(( weighted * 5 / 10000 ))
+                    local cost_used_str="$(( cost_used_cents / 100 )).$(printf '%02d' $(( cost_used_cents % 100 )))"
+                    if [ "${bs_cost_budget:-0}" -gt 0 ]; then
+                        local cost_budget_str="$(( bs_cost_budget / 100 )).$(printf '%02d' $(( bs_cost_budget % 100 )))"
+                        tok_cost_budget="\$${cost_used_str}/\$${cost_budget_str}"
+                    elif [ "$cost_used_cents" -gt 0 ]; then
+                        tok_cost_budget="\$${cost_used_str}"
                     fi
                 fi
             fi
