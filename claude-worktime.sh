@@ -909,7 +909,14 @@ mode_statusline() {
             fi
             echo "$ts_reset $ts_total $ts_input $ts_output $ts_cr $ts_cc $ts_ui ${t_cr:-0} ${t_cc:-0}" > "$token_state" 2>/dev/null
 
-            # Format token display: ⊘142K/406K
+            # Weighted token calculation (input-equivalent tokens)
+            # Weights based on API pricing relative to input ($15/MTok):
+            #   cache_read: $1.50/MTok  = 0.10x  (×10, /100)
+            #   cache_creation: $18.75  = 1.25x  (×125, /100)
+            #   uncached input: $15.00  = 1.00x  (×100, /100)
+            #   output: $75.00          = 5.00x  (×500, /100)
+            local weighted=$(( (ts_cr * 10 + ts_cc * 125 + ts_ui * 100 + ts_output * 500) / 100 ))
+
             _fmt_tokens_v() {
                 local n=$1
                 if [ "$n" -ge 1000000 ]; then
@@ -920,12 +927,12 @@ mode_statusline() {
                     _V="$n"
                 fi
             }
-            if [ "$ts_total" -gt 0 ]; then
-                _fmt_tokens_v "$ts_total"; local t_used="$_V"
+            if [ "$weighted" -gt 0 ]; then
+                _fmt_tokens_v "$weighted"; local t_used="$_V"
                 # Infer budget from percentage
                 local r5h_int="${r5h%%.*}"
                 if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ]; then
-                    local budget=$(( ts_total * 100 / r5h_int ))
+                    local budget=$(( weighted * 100 / r5h_int ))
                     _fmt_tokens_v "$budget"; tok_token_budget="⊘${t_used}/${_V}"
                 else
                     tok_token_budget="⊘${t_used}"
