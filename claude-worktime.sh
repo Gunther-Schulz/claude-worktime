@@ -885,69 +885,65 @@ mode_statusline() {
             fi
         fi
 
-        # Token tracking: accumulate per 5h window, log per request
+        # Token tracking: log per request, compute from log for display
         if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
             local t_cc=${cache_create%.*} t_cr=${cache_read%.*} t_ui=${uncached_input%.*} t_out=${output_tokens%.*}
             [ -z "$t_ui" ] && t_ui=0
             [ -z "$t_out" ] && t_out=0
-            local t_input=$(( t_cr + t_cc + t_ui ))
-            local t_total=$(( t_input + t_out ))
 
-            # State file for 5h window accumulation
-            local token_state="${LOGDIR}/.token_usage"
-            local ts_reset=0 ts_total=0 ts_input=0 ts_output=0 ts_cr=0 ts_cc=0 ts_ui=0 ts_prev_cr=0 ts_prev_cc=0
-            if [ -f "$token_state" ]; then
-                read -r ts_reset ts_total ts_input ts_output ts_cr ts_cc ts_ui ts_prev_cr ts_prev_cc < "$token_state" 2>/dev/null || true
-            fi
-            # Reset if 5h window changed
-            if [ -n "$r5h_reset" ] && [ "$ts_reset" != "$r5h_reset" ]; then
-                ts_total=0; ts_input=0; ts_output=0; ts_cr=0; ts_cc=0; ts_ui=0; ts_prev_cr=0; ts_prev_cc=0; ts_reset="${r5h_reset:-0}"
-            fi
-            # Accumulate if values changed (new API call)
-            if [ "${t_cr:-0}" != "$ts_prev_cr" ] || [ "${t_cc:-0}" != "$ts_prev_cc" ]; then
-                ts_total=$(( ts_total + t_total ))
-                ts_input=$(( ts_input + t_input ))
-                ts_output=$(( ts_output + t_out ))
-                ts_cr=$(( ts_cr + t_cr ))
-                ts_cc=$(( ts_cc + t_cc ))
-                ts_ui=$(( ts_ui + t_ui ))
-
-                # Log token entry for CLI analysis
+            # Log token entry (dedup via small state file with prev values only)
+            local token_prev="${LOGDIR}/.token_prev"
+            local tp_cr=0 tp_cc=0
+            [ -f "$token_prev" ] && read -r tp_cr tp_cc < "$token_prev" 2>/dev/null
+            if [ "${t_cr:-0}" != "$tp_cr" ] || [ "${t_cc:-0}" != "$tp_cc" ]; then
+                echo "${t_cr:-0} ${t_cc:-0}" > "$token_prev" 2>/dev/null
                 (
                     flock -w 2 9 2>/dev/null || true
                     printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d}\n' \
                         "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
             fi
-            echo "$ts_reset $ts_total $ts_input $ts_output $ts_cr $ts_cc $ts_ui ${t_cr:-0} ${t_cc:-0}" > "$token_state" 2>/dev/null
 
-            # Weighted token calculation (input-equivalent tokens)
-            # Weights based on API pricing relative to input ($15/MTok):
-            #   cache_read: $1.50/MTok  = 0.10x  (×10, /100)
-            #   cache_creation: $18.75  = 1.25x  (×125, /100)
-            #   uncached input: $15.00  = 1.00x  (×100, /100)
-            #   output: $75.00          = 5.00x  (×500, /100)
-            local weighted=$(( (ts_cr * 10 + ts_cc * 125 + ts_ui * 100 + ts_output * 500) / 100 ))
+            # Compute weighted totals from log for current 5h window
+            # Source of truth: all token entries from all sessions in this window
+            if [ -n "$r5h_reset" ]; then
+                local window_start=$(( r5h_reset - 18000 ))
+                local token_sums
+                token_sums=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
+                    | jq -sr --argjson since "$window_start" '
+                    [.[] | select(.type == "tokens" and .t >= $since)]
+                    | { cr: (map(.cr) | add // 0), cc: (map(.cc) | add // 0),
+                        ui: (map(.ui) | add // 0), out: (map(.out) | add // 0) }
+                    | [.cr, .cc, .ui, .out] | map(tostring) | join(" ")
+                ' 2>/dev/null || true)
 
-            _fmt_tokens_v() {
-                local n=$1
-                if [ "$n" -ge 1000000 ]; then
-                    _V="$(( n / 1000000 )).$(( (n % 1000000) / 100000 ))M"
-                elif [ "$n" -ge 1000 ]; then
-                    _V="$(( n / 1000 ))K"
-                else
-                    _V="$n"
-                fi
-            }
-            if [ "$weighted" -gt 0 ]; then
-                _fmt_tokens_v "$weighted"; local t_used="$_V"
-                # Infer budget from percentage
-                local r5h_int="${r5h%%.*}"
-                if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ]; then
-                    local budget=$(( weighted * 100 / r5h_int ))
-                    _fmt_tokens_v "$budget"; tok_token_budget="⊘${t_used}/${_V}"
-                else
-                    tok_token_budget="⊘${t_used}"
+                local ts_cr=0 ts_cc=0 ts_ui=0 ts_out=0
+                [ -n "$token_sums" ] && read -r ts_cr ts_cc ts_ui ts_out <<< "$token_sums"
+
+                # Weighted token calculation (input-equivalent tokens)
+                # Weights based on API pricing ratios:
+                #   cache_read ×0.10, cache_creation ×1.25, input ×1.00, output ×5.00
+                local weighted=$(( (ts_cr * 10 + ts_cc * 125 + ts_ui * 100 + ts_out * 500) / 100 ))
+
+                _fmt_tokens_v() {
+                    local n=$1
+                    if [ "$n" -ge 1000000 ]; then
+                        _V="$(( n / 1000000 )).$(( (n % 1000000) / 100000 ))M"
+                    elif [ "$n" -ge 1000 ]; then
+                        _V="$(( n / 1000 ))K"
+                    else
+                        _V="$n"
+                    fi
+                }
+                if [ "$weighted" -gt 0 ]; then
+                    _fmt_tokens_v "$weighted"; local t_used="$_V"
+                    local r5h_int="${r5h%%.*}"
+                    if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ]; then
+                        local budget=$(( weighted * 100 / r5h_int ))
+                        _fmt_tokens_v "$budget"; tok_token_budget="⊘${t_used}/${_V}"
+                    else
+                        tok_token_budget="⊘${t_used}"
+                    fi
                 fi
             fi
         fi
