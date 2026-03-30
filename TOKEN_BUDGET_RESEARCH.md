@@ -31,13 +31,15 @@ Derive a stable 5h rate limit budget from available data. Currently the budget e
 
 ### Current logging
 
-Each token entry logs: `t`, `s`, `cr`, `cc`, `ui`, `out`, `pct`, `cst`, `ctx`, `ci`, `co`
+Each token entry logs: `t`, `s`, `cr`, `cc`, `ui`, `out`, `pct`, `cst`, `ctx`, `ci`, `co`, `w`
 
-- `pct` = rate limit percentage (integer)
+- `cr/cc/ui/out` = per-request token counts by type
+- `pct` = rate limit percentage (integer, from Anthropic)
 - `cst` = cumulative session cost (from Claude Code)
 - `ctx` = context window usage percentage
 - `ci` = cumulative uncached input tokens (session total, from `context_window.total_input_tokens`)
 - `co` = cumulative output tokens (session total, from `context_window.total_output_tokens`)
+- `w` = window reset timestamp (`r5h_reset`) — enables `group_by(.w)` for multi-window analysis
 
 ### Additional data in stdin JSON (not currently logged)
 
@@ -110,15 +112,29 @@ If `cost_per_pct = base_rate + slope * avg_cr`:
 
 ## What to check in a new session
 
-1. `claude-worktime --tokens-usage` (if implemented) or query the log:
+1. Check how many windows have data:
    ```bash
    jq -Rc 'fromjson? // empty' ~/.local/share/claude-worktime/activity.jsonl | \
-     jq -sr '[.[] | select(.type == "tokens" and .pct != null)] | group_by(.pct) | .[] | {pct: .[0].pct, entries: length, avg_cr: ((map(.cr)|add)/length|round), cost_per_pct: ((last.cst - .[0].cst) / .[0].pct | . * 100 | round / 100)}'
+     jq -sr '[.[] | select(.type == "tokens" and .w != null) | .w] | unique | map(strftime("%Y-%m-%d %H:%M"))'
    ```
 
-2. Check if multiple windows have data: look at distinct `resets_at` values in entries
+2. Analyze per-window tick data (group by window, then by pct):
+   ```bash
+   jq -Rc 'fromjson? // empty' ~/.local/share/claude-worktime/activity.jsonl | \
+     jq -sr '[.[] | select(.type == "tokens" and .w != null)] | group_by(.w) | .[] | {
+       window: (.[0].w | strftime("%Y-%m-%d %H:%M")),
+       ticks: (group_by(.pct) | map({
+         pct: .[0].pct,
+         avg_cr: ((map(.cr)|add)/length|round),
+         ci_co: (last.ci + last.co),
+         cost_delta: ((last.cst - first.cst) * 100 | round / 100)
+       }))
+     }'
+   ```
 
-3. Compare cost_per_pct at similar context sizes across different windows
+3. Compare cost_per_pct and ci_co_per_pct at similar context sizes across windows
+
+4. Test: does any weighted blend of cost and ci_co produce a stable budget?
 
 ## Observed data (2026-03-30, single window, resumed session)
 
