@@ -783,12 +783,14 @@ mode_statusline() {
             (.context_window.current_usage.cache_read_input_tokens // "_"),
             (.context_window.current_usage.input_tokens // "_"),
             (.context_window.current_usage.output_tokens // "_"),
+            (.context_window.total_input_tokens // "_"),
+            (.context_window.total_output_tokens // "_"),
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_")
         ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cst mdl
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cst mdl <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
@@ -799,6 +801,8 @@ mode_statusline() {
         [ "$cache_read" = "_" ] && cache_read=""
         [ "$uncached_input" = "_" ] && uncached_input=""
         [ "$output_tokens" = "_" ] && output_tokens=""
+        [ "$cum_input" = "_" ] && cum_input=""
+        [ "$cum_output" = "_" ] && cum_output=""
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
 
@@ -898,8 +902,8 @@ mode_statusline() {
                 echo "${t_cr:-0} ${t_cc:-0}" > "$token_prev" 2>/dev/null
                 (
                     flock -w 2 9 2>/dev/null || true
-                    printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s,"ctx":%s}\n' \
-                        "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" "${r5h:-0}" "${cst:-0}" "${ctx:-0}" >> "$LOGFILE"
+                    printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s,"ctx":%s,"ci":%s,"co":%s}\n' \
+                        "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" "${r5h:-0}" "${cst:-0}" "${ctx:-0}" "${cum_input:-0}" "${cum_output:-0}" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
             fi
 
