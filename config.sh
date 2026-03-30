@@ -56,9 +56,10 @@
 #GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 #GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 #GROUP_CONTEXT="ctx {context}"
+#GROUP_TOKENS="{token_budget}"
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
-#STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
+#STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT TOKENS"
 #STATUSLINE_3=""
 #GROUP_DIVIDER=" · "
 
@@ -66,6 +67,7 @@
 # Mute secondary info for visual hierarchy
 #GROUP_RATE_7D_COLOR="dark-gray"
 #GROUP_CONTEXT_COLOR="dark-gray"
+#GROUP_TOKENS_COLOR="dark-gray"
 
 # ---------------------------------------------------------------------------
 # Colors — use preset names or raw ANSI codes

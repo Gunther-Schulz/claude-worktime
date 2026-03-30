@@ -56,6 +56,9 @@ GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_TOKENS="{token_budget}"
+GROUP_RATE_7D_COLOR="dark-gray"
+GROUP_CONTEXT_COLOR="dark-gray"
+GROUP_TOKENS_COLOR="dark-gray"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT TOKENS"
@@ -1493,6 +1496,14 @@ Statusline token reference:
     ⟳93%           KV cache hit ratio from the last API response.
                    Drops during tool-heavy work (new content) or
                    after breaks (cache expires after inactivity).
+
+  Token budget (tracked per 5h window)
+    ⊘2.1M/5.8M    weighted tokens used / inferred budget
+                   Weights: cache_read ×0.1, cache_creation ×1.25,
+                   input ×1.0, output ×5.0 (based on API pricing).
+                   Budget = used / rate_5h_percentage. Accurate when
+                   CLI is the only client. First window after install
+                   may be inaccurate (partial tracking).
 
   Other
     main ✓         git branch + status (✓=clean ✗=dirty +=staged ?=untracked)
