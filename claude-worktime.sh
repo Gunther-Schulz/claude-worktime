@@ -55,9 +55,10 @@ GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
+GROUP_TOKENS="{token_budget}"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
+STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT TOKENS"
 STATUSLINE_3=""
 COLOR_NORMAL="green"
 COLOR_RATE_WARNING="yellow"
@@ -755,7 +756,7 @@ mode_statusline() {
     fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost="" tok_model=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_token_budget="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
@@ -768,12 +769,13 @@ mode_statusline() {
             (.context_window.current_usage.cache_creation_input_tokens // "_"),
             (.context_window.current_usage.cache_read_input_tokens // "_"),
             (.context_window.current_usage.input_tokens // "_"),
+            (.context_window.current_usage.output_tokens // "_"),
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_")
         ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input cst mdl
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input cst mdl <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cst mdl
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cst mdl <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
@@ -783,6 +785,7 @@ mode_statusline() {
         [ "$cache_create" = "_" ] && cache_create=""
         [ "$cache_read" = "_" ] && cache_read=""
         [ "$uncached_input" = "_" ] && uncached_input=""
+        [ "$output_tokens" = "_" ] && output_tokens=""
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
 
@@ -867,6 +870,66 @@ mode_statusline() {
                 fi
             fi
         fi
+
+        # Token tracking: accumulate per 5h window, log per request
+        if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
+            local t_cc=${cache_create%.*} t_cr=${cache_read%.*} t_ui=${uncached_input%.*} t_out=${output_tokens%.*}
+            [ -z "$t_ui" ] && t_ui=0
+            [ -z "$t_out" ] && t_out=0
+            local t_input=$(( t_cr + t_cc + t_ui ))
+            local t_total=$(( t_input + t_out ))
+
+            # State file for 5h window accumulation
+            local token_state="${LOGDIR}/.token_usage"
+            local ts_reset=0 ts_total=0 ts_input=0 ts_output=0 ts_cr=0 ts_cc=0 ts_ui=0 ts_prev_cr=0 ts_prev_cc=0
+            if [ -f "$token_state" ]; then
+                read -r ts_reset ts_total ts_input ts_output ts_cr ts_cc ts_ui ts_prev_cr ts_prev_cc < "$token_state" 2>/dev/null || true
+            fi
+            # Reset if 5h window changed
+            if [ -n "$r5h_reset" ] && [ "$ts_reset" != "$r5h_reset" ]; then
+                ts_total=0; ts_input=0; ts_output=0; ts_cr=0; ts_cc=0; ts_ui=0; ts_prev_cr=0; ts_prev_cc=0; ts_reset="${r5h_reset:-0}"
+            fi
+            # Accumulate if values changed (new API call)
+            if [ "${t_cr:-0}" != "$ts_prev_cr" ] || [ "${t_cc:-0}" != "$ts_prev_cc" ]; then
+                ts_total=$(( ts_total + t_total ))
+                ts_input=$(( ts_input + t_input ))
+                ts_output=$(( ts_output + t_out ))
+                ts_cr=$(( ts_cr + t_cr ))
+                ts_cc=$(( ts_cc + t_cc ))
+                ts_ui=$(( ts_ui + t_ui ))
+
+                # Log token entry for CLI analysis
+                (
+                    flock -w 2 9 2>/dev/null || true
+                    printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d}\n' \
+                        "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" >> "$LOGFILE"
+                ) 9>"${LOGFILE}.lock"
+            fi
+            echo "$ts_reset $ts_total $ts_input $ts_output $ts_cr $ts_cc $ts_ui ${t_cr:-0} ${t_cc:-0}" > "$token_state" 2>/dev/null
+
+            # Format token display: ⊘142K/406K
+            _fmt_tokens_v() {
+                local n=$1
+                if [ "$n" -ge 1000000 ]; then
+                    _V="$(( n / 1000000 )).$(( (n % 1000000) / 100000 ))M"
+                elif [ "$n" -ge 1000 ]; then
+                    _V="$(( n / 1000 ))K"
+                else
+                    _V="$n"
+                fi
+            }
+            if [ "$ts_total" -gt 0 ]; then
+                _fmt_tokens_v "$ts_total"; local t_used="$_V"
+                # Infer budget from percentage
+                local r5h_int="${r5h%%.*}"
+                if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ]; then
+                    local budget=$(( ts_total * 100 / r5h_int ))
+                    _fmt_tokens_v "$budget"; tok_token_budget="⊘${t_used}/${_V}"
+                else
+                    tok_token_budget="⊘${t_used}"
+                fi
+            fi
+        fi
     fi
 
     # Log cost snapshot if enabled and cost changed
@@ -894,8 +957,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost}' '{model}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost" "$tok_model" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{token_budget}' '{cost}' '{model}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_token_budget" "$tok_cost" "$tok_model" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
