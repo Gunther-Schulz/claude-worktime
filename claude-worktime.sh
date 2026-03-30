@@ -4,9 +4,9 @@
 # JSONL log: {"t":TS,"p":"/path","b":"branch","s":"session-id","e":"EVENT"}
 # Event types: start, prompt, tool_start, tool_end, response
 #
-# Idle rule: only a response→prompt gap exceeding PAUSE_THRESHOLD counts as idle.
-# That's the only moment the ball is in the user's court.
-# All other gaps (tool running, Claude thinking/outputting) are active work time.
+# Active time: a gap is idle when the user had the ball (prev event was response/start)
+# and the gap exceeds PAUSE_THRESHOLD. All other gaps are active work time.
+# Presence: prompt-to-prompt spans exceeding threshold = user was away.
 #
 # Known limitation: Claude Code hooks fire ~93% of the time. Missed events don't
 # affect total active time but can skew the Claude/You breakdown by a few percent.
@@ -76,7 +76,7 @@ RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily  # daily, weekly, monthly
 GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
-LOG_COST=true  # log session cost snapshots (for API/extra usage billing)
+LOG_COST=true  # log session cost snapshots
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -952,14 +952,18 @@ mode_statusline() {
     fi
 
     # Log cost snapshot if enabled and cost changed
+    # Uses state file for dedup instead of scanning the full log
     if $LOG_COST && [ -n "${cst:-}" ]; then
-        local last_cost
-        last_cost=$(jq -r '[.[] | select(.type == "cost") | .cost] | last // 0' <(jq -Rc 'fromjson? // empty' "$LOGFILE") 2>/dev/null || echo 0)
+        local cost_state="${LOGDIR}/.last_cost"
+        local last_cost=""
+        [ -f "$cost_state" ] && last_cost=$(cat "$cost_state" 2>/dev/null)
         if [ "$last_cost" != "$cst" ]; then
-            jq -nc --argjson t "$now" --arg p "$project" --arg s "$sid" \
-                --argjson cost "$cst" --arg b "${branch:-}" \
-                'if $b == "" then {type:"cost",t:$t,p:$p,s:$s,cost:$cost}
-                 else {type:"cost",t:$t,p:$p,b:$b,s:$s,cost:$cost} end' >> "$LOGFILE"
+            echo "$cst" > "$cost_state" 2>/dev/null
+            (
+                flock -w 2 9 2>/dev/null || true
+                printf '{"type":"cost","t":%d,"p":"%s","b":"%s","s":"%s","cost":%s}\n' \
+                    "$now" "$project" "${branch:-}" "$sid" "$cst" >> "$LOGFILE"
+            ) 9>"${LOGFILE}.lock"
         fi
     fi
 
