@@ -31,15 +31,42 @@ Derive a stable 5h rate limit budget from available data. Currently the budget e
 
 ### Current logging
 
-Each token entry logs: `t`, `s`, `cr`, `cc`, `ui`, `out`, `pct`, `cst`, `ctx`
+Each token entry logs: `t`, `s`, `cr`, `cc`, `ui`, `out`, `pct`, `cst`, `ctx`, `ci`, `co`
 
-This gives us paired (cost, percentage, context_size) data at every statusline refresh.
+- `pct` = rate limit percentage (integer)
+- `cst` = cumulative session cost (from Claude Code)
+- `ctx` = context window usage percentage
+- `ci` = cumulative uncached input tokens (session total, from `context_window.total_input_tokens`)
+- `co` = cumulative output tokens (session total, from `context_window.total_output_tokens`)
 
-## Hypothesis
+### Additional data in stdin JSON (not currently logged)
 
-Anthropic's rate limit metering weights cache_read tokens lower than billing does (or doesn't count them at all). As context grows, cache_read dominates our cost but not Anthropic's percentage — making our cost/percentage ratio increase.
+- `cost.total_duration_ms` — total session duration
+- `cost.total_api_duration_ms` — API time only
+- `cost.total_lines_added/removed` — code changes
+- `context_window.context_window_size` — 1M (fixed)
 
-If we find the correct weight for cache_read in rate limit terms, we can adjust our weighted sum to match Anthropic's metering and get a stable budget.
+## Hypotheses tested
+
+### Hypothesis 1: cache_read weight is wrong (REJECTED)
+Changing cache_read weight (0.10 → 0.05 → 0.00) produces the same drift percentage (-13%). The drift is proportional regardless of weight.
+
+### Hypothesis 2: rate limit tracks compute tokens only (PARTIALLY REJECTED)
+`ci+co` (cumulative uncached input + output from Claude Code) was tested. The ci_co_budget drifts **downward** while cost_budget drifts **upward**. Neither is stable alone.
+
+Data from 3 ticks with ci/co:
+| pct | cost_budget | ci_co_budget | ci_co delta |
+|-----|------------|-------------|-------------|
+| 66% | $139 | 674,815 | — |
+| 67% | $141 | 666,658 | +1,283 |
+| 68% | $141 | 657,924 | +727 |
+
+Cost and compute tokens drift in **opposite directions** — suggests rate limit uses a blend.
+
+### Hypothesis 3: rate limit is a blend of cost and compute (CURRENT)
+Neither pure billing cost nor pure compute tokens track the percentage linearly. The rate limit formula likely combines both, possibly with different weights than billing uses. This cannot be fully resolved without either:
+- Anthropic publishing the formula
+- Enough multi-window data to reverse-engineer the blend ratio
 
 ## Data collection plan
 
@@ -93,9 +120,38 @@ If `cost_per_pct = base_rate + slope * avg_cr`:
 
 3. Compare cost_per_pct at similar context sizes across different windows
 
+## Observed data (2026-03-30, single window, resumed session)
+
+Full tick history (cost_budget = token-derived cost * 100 / pct):
+
+| pct | avg_cr(K) | cost_budget | ci_co_budget | notes |
+|-----|-----------|------------|-------------|-------|
+| 62% | 723 | $126 | — | no ci/co logging yet |
+| 63% | 732 | $128 | — | |
+| 64% | 742 | $132 | — | |
+| 65% | 746 | $135 | — | |
+| 66% | 753 | $139 | 674,815 | ci/co logging started |
+| 67% | — | $141 | 666,658 | |
+| 68% | — | $139-141 | 657,924 | |
+
+- Cost budget drifts UP ($126 → $141, ~12% over 6 ticks)
+- ci_co budget drifts DOWN (675K → 658K, ~2.5% over 2 ticks)
+- Drift is not monotonic — budget can dip between ticks
+
 ## Current status
 
-- Logging in place (pct, cst, ctx fields added 2026-03-30)
-- Three ticks collected in current window (62%, 63%, 64%)
-- Drift confirmed at ~0.8% per tick, correlating with context growth
-- Need fresh window data to complete analysis
+- Full logging in place (pct, cst, ctx, ci, co added 2026-03-30)
+- 7 ticks collected in current window (62%-68%), 3 with ci/co data
+- Confirmed: neither cost nor compute tokens alone track the percentage
+- Budget uses tick-based computation (only recomputes when pct changes)
+- Display shows `⊘used/budget` with ~10-15% uncertainty over a full window
+- Need fresh window data (ideally new session, not resumed) to see full curve from low context
+
+## Implementation notes
+
+- Budget state file: `~/.local/share/claude-worktime/.budget`
+- Format: `reset_ts pct token_budget cost_budget`
+- Recomputes only on percentage tick (stable between ticks)
+- Token-derived cost used for budget (weighted * $5/MTok)
+- Token log query from LOGFILE for current window sums
+- `{token_budget}` and `{cost_budget}` are opt-in tokens (not in default statusline)
