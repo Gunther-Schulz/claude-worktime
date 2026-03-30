@@ -890,11 +890,11 @@ mode_statusline() {
             [ -z "$t_ui" ] && t_ui=0
             [ -z "$t_out" ] && t_out=0
 
-            # Log token entry (dedup via small state file with prev values only)
+            # Log token entry (skip if no valid session context)
             local token_prev="${LOGDIR}/.token_prev"
             local tp_cr=0 tp_cc=0
             [ -f "$token_prev" ] && read -r tp_cr tp_cc < "$token_prev" 2>/dev/null
-            if [ "${t_cr:-0}" != "$tp_cr" ] || [ "${t_cc:-0}" != "$tp_cc" ]; then
+            if [ -n "${sid:-}" ] && [ "${sid:-}" != "" ] && ([ "${t_cr:-0}" != "$tp_cr" ] || [ "${t_cc:-0}" != "$tp_cc" ]); then
                 echo "${t_cr:-0} ${t_cc:-0}" > "$token_prev" 2>/dev/null
                 (
                     flock -w 2 9 2>/dev/null || true
