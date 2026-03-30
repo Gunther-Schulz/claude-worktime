@@ -414,6 +414,13 @@ cmd_debug() {
     t1=$(date +%s%N)
     echo "  Statusline: $(( (t1 - t0) / 1000000 ))ms"
 
+    # Rotation errors
+    if [ -f "${LOGDIR}/.rotation_errors" ]; then
+        echo ""
+        echo "Rotation errors:"
+        cat "${LOGDIR}/.rotation_errors"
+    fi
+
     # Dependencies
     echo ""
     echo "Dependencies:"
@@ -1397,8 +1404,13 @@ _do_rotate() {
     first_event_ts=$(jq -r 'select((.type // null) == null) | .t' "$LOGFILE" 2>/dev/null | head -1 || true)
     [ -z "$first_event_ts" ] || [ "$first_event_ts" -ge "$ROTATE_CUTOFF" ] && return
 
-    # Write per-project summaries before archiving
-    local summaries
+    # Collect old event entries to archive
+    local old_entries
+    old_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t < $since)' "$LOGFILE" 2>/dev/null || true)
+    [ -z "$old_entries" ] && return
+
+    # Generate per-project summaries BEFORE archiving
+    local summaries summary_error=""
     summaries=$(jq -sc --argjson since "$ROTATE_CUTOFF" --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
         [.[] | select((.type // null) == null) | select(.t < \$since)] | group_by(.p) | map(
@@ -1412,17 +1424,33 @@ _do_rotate() {
                 period: \"$ROTATE_SUFFIX\"
             }
         ) | .[]
-    " "$LOGFILE" 2>/dev/null || true)
+    " "$LOGFILE" 2>/dev/null) || summary_error="true"
 
-    # Archive old event entries (not summaries)
-    local old_entries
-    old_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t < $since)' "$LOGFILE" 2>/dev/null || true)
-    [ -z "$old_entries" ] && return
+    # Safety: validate summaries before proceeding
+    # Count distinct projects in old entries vs summaries
+    local project_count summary_count
+    project_count=$(echo "$old_entries" | jq -r '.p' 2>/dev/null | sort -u | wc -l)
+    summary_count=$(echo "$summaries" | grep -c '"type":"summary"' 2>/dev/null || echo 0)
 
+    if [ -n "$summary_error" ] || [ -z "$summaries" ]; then
+        # Summary generation failed — do NOT archive, data stays in active log
+        echo "WARNING: rotation summary generation failed, skipping archive" >> "${LOGDIR}/.rotation_errors" 2>/dev/null
+        ! $quiet && echo "Warning: summary generation failed, rotation skipped (data preserved)"
+        return
+    fi
+
+    if [ "$summary_count" -lt "$project_count" ]; then
+        # Fewer summaries than projects — something went wrong
+        echo "WARNING: rotation produced $summary_count summaries for $project_count projects" >> "${LOGDIR}/.rotation_errors" 2>/dev/null
+        ! $quiet && echo "Warning: summary count mismatch ($summary_count/$project_count), rotation skipped"
+        return
+    fi
+
+    # Safe to proceed: archive old entries
     local archive="${LOGDIR}/activity-${ROTATE_SUFFIX}.jsonl"
     echo "$old_entries" >> "$archive"
 
-    # Keep: existing summaries + new summaries + current event entries
+    # Rewrite active log: existing summaries + new summaries + current entries
     local existing_summaries current_entries
     existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null || true)
     current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null || true)
@@ -1439,7 +1467,7 @@ _do_rotate() {
     if ! $quiet; then
         local old_count
         old_count=$(echo "$old_entries" | wc -l)
-        echo "Rotated $old_count entries to $archive"
+        echo "Rotated $old_count entries ($summary_count projects) to $archive"
     fi
 }
 
