@@ -27,7 +27,7 @@
 #   claude-worktime --session ID             # stats for a specific session
 #   claude-worktime --breakdown [--today]   # phase breakdown (Claude/You)
 #   claude-worktime --gaps [--today]        # gap distribution (tune threshold)
-#   claude-worktime --cost [--today]        # cost analysis (needs LOG_COST=true)
+#   claude-worktime --cost [--today]        # cost analysis
 #   claude-worktime --summary [--today]     # per-project breakdown
 #   claude-worktime --csv [--today]         # export as CSV
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
@@ -410,7 +410,7 @@ cmd_debug() {
     echo "Performance:"
     local t0 t1
     t0=$(date +%s%N)
-    ~/.local/bin/claude-worktime --statusline >/dev/null 2>&1
+    "$0" --statusline >/dev/null 2>&1
     t1=$(date +%s%N)
     echo "  Statusline: $(( (t1 - t0) / 1000000 ))ms"
 
@@ -1132,7 +1132,7 @@ _output_info() {
     IFS=$'\t' read -r active first_ts project branch session_id <<< "$parsed"
 
     local now=$(date +%s)
-    local wall=$(( now - first_ts ))
+    local wall=$(( now - ${first_ts:-$now} ))
     local paused=$(( wall - active ))
     local started; started=$(_date_at "$first_ts" "%H:%M" || echo "?")
     local proj_short; proj_short=$(_short_project "$project")
@@ -1153,7 +1153,7 @@ mode_breakdown() {
     local entries; entries=$(_entries "$since" "$filter" "$branch_filter" "$session_filter")
 
     if [ -z "$entries" ]; then
-        if $raw; then echo '{"claude":0,"user":0,"idle":0,"active":0}';
+        if $raw; then echo '{"claude":0,"user":0,"away":0,"away_count":0,"away_claude":0,"away_idle":0,"breaks":0,"break_count":0,"downtime":0,"downtime_count":0,"active":0}';
         else echo "No activity recorded"; fi; return; fi
 
     local result
