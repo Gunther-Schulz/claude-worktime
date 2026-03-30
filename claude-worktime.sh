@@ -678,12 +678,14 @@ mode_statusline() {
 
     # Fast path: direct read. Fallback: skip corrupt lines.
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
-        || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query")
+        || all_info=$(_safe_log "$LOGFILE" | jq -sr "${_jq_args[@]}" "$_jq_query" 2>/dev/null)
+    # If both paths failed, show minimal display
+    [ -z "$all_info" ] && { printf '%s' "${COLOR_NORMAL}⏱ --${COLOR_DEFAULT}"; return; }
 
     local session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active today_claude_active today_you_active total_claude_active total_you_active tok_timeline
     IFS=$'\x1e' read -r session_active session_first last_break since_break project branch today_first today_active today_project_active project_total_active today_claude_active today_you_active total_claude_active total_you_active tok_timeline <<< "$all_info"
 
-    local session_wall=$(( now - session_first ))
+    local session_wall=$(( now - ${session_first:-$now} ))
     local today_wall=0
     [ "${today_first:-0}" -gt 0 ] && today_wall=$(( now - today_first ))
 
@@ -961,8 +963,13 @@ mode_statusline() {
             echo "$cst" > "$cost_state" 2>/dev/null
             (
                 flock -w 2 9 2>/dev/null || true
-                printf '{"type":"cost","t":%d,"p":"%s","b":"%s","s":"%s","cost":%s}\n' \
-                    "$now" "$project" "${branch:-}" "$sid" "$cst" >> "$LOGFILE"
+                if [ -n "${branch:-}" ]; then
+                    printf '{"type":"cost","t":%d,"p":"%s","b":"%s","s":"%s","cost":%s}\n' \
+                        "$now" "$project" "$branch" "$sid" "$cst" >> "$LOGFILE"
+                else
+                    printf '{"type":"cost","t":%d,"p":"%s","s":"%s","cost":%s}\n' \
+                        "$now" "$project" "$sid" "$cst" >> "$LOGFILE"
+                fi
             ) 9>"${LOGFILE}.lock"
         fi
     fi
@@ -1230,7 +1237,7 @@ mode_cost() {
 
     if [ -z "$cost_entries" ]; then
         if $raw; then echo '{"total":0,"sessions":{}}'
-        else echo "No cost data recorded. Enable with LOG_COST=true in config."; fi
+        else echo "No cost data recorded"; fi
         return
     fi
 
@@ -1514,11 +1521,11 @@ Statusline token reference:
   Time (from activity log)
     ⏱              status icon
     today 2h32m    today's active time for this project (Claude + You)
-    ⏳55m           today's Claude work time for this project
+    🤖55m           today's Claude work time for this project
     👤1h37m         today's your active time for this project
     total 8h30m    all-time total for this project
-    🤖 total        all-time Claude work for this project
-    👤 total        all-time your work for this project
+    🤖 total       all-time Claude work for this project
+    👤 total       all-time your work for this project
     08:22 ▮▮··▮▮ 17:30  day timeline with start/end times (▮=present ·=away)
     ▶1h12m         presence streak since last break (yellow >1.5h, red >2.5h)
     ⏸ 20m          last break duration (after first break)
