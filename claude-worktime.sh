@@ -644,6 +644,8 @@ mode_statusline() {
                     | ([(\$slot_start), \$tstart] | max) as \$eff_start
                     | ([(\$slot_end), \$now] | min) as \$eff_end
                     | (\$eff_end - \$eff_start) as \$slot_len
+                    # Skip current slot until at least half has elapsed
+                    | select(\$slot_len >= (\$slot / 2) or \$slot_end <= \$now)
                     | ([\$away_intervals[]
                         | ([.from, \$eff_start] | max) as \$os
                         | ([.to, \$eff_end] | min) as \$oe
