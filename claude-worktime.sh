@@ -769,7 +769,7 @@ mode_statusline() {
     fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_token_budget="" tok_cost="" tok_model=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_token_budget="" tok_cost_budget="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
@@ -934,14 +934,39 @@ mode_statusline() {
                         _V="$n"
                     fi
                 }
+
+                local r5h_int="${r5h%%.*}"
+
+                # {token_budget} — weighted tokens used / inferred budget
                 if [ "$weighted" -gt 0 ]; then
                     _fmt_tokens_v "$weighted"; local t_used="$_V"
-                    local r5h_int="${r5h%%.*}"
                     if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ]; then
                         local budget=$(( weighted * 100 / r5h_int ))
                         _fmt_tokens_v "$budget"; tok_token_budget="⊘${t_used}/${_V}"
                     else
                         tok_token_budget="⊘${t_used}"
+                    fi
+                fi
+
+                # {cost_budget} — cost-based budget using Claude Code's reported cost
+                # More stable than token-based because cost uses Anthropic's exact weights
+                if [ -n "${cst:-}" ] && [ -n "$r5h_int" ]; then
+                    # Get cost at window start from log
+                    local window_first_cost
+                    window_first_cost=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
+                        | jq -sr --argjson since "$window_start" '
+                        [.[] | select(.type == "cost" and .t >= $since)] | if length > 0 then first.cost else 0 end
+                    ' 2>/dev/null || echo 0)
+                    local cost_delta
+                    cost_delta=$(awk "BEGIN { printf \"%.2f\", ${cst} - ${window_first_cost:-0} }")
+                    local cost_int=${cost_delta%.*}
+                    [ -z "$cost_int" ] && cost_int=0
+                    if [ "$cost_int" -gt 0 ] && [ "$r5h_int" -gt 0 ]; then
+                        local cost_budget
+                        cost_budget=$(awk "BEGIN { printf \"%.0f\", ${cost_delta} * 100 / ${r5h_int} }")
+                        tok_cost_budget="\$${cost_delta}/\$${cost_budget}"
+                    elif [ "$cost_int" -gt 0 ]; then
+                        tok_cost_budget="\$${cost_delta}"
                     fi
                 fi
             fi
@@ -982,8 +1007,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{token_budget}' '{cost}' '{model}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_token_budget" "$tok_cost" "$tok_model" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{token_budget}' '{cost_budget}' '{cost}' '{model}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_token_budget" "$tok_cost_budget" "$tok_cost" "$tok_model" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
