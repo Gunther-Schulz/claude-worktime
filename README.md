@@ -90,7 +90,7 @@ claude-worktime --breakdown --today   # Claude vs You time split
 claude-worktime --gaps --today        # gap distribution (tune threshold)
 claude-worktime --summary --today     # per-project breakdown
 claude-worktime --csv --today         # export as CSV
-claude-worktime --cost --today        # cost analysis (needs LOG_COST=true)
+claude-worktime --cost --today        # cost analysis
 claude-worktime --tokens              # statusline token legend
 ```
 
@@ -119,7 +119,7 @@ All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`
 
 ### Cost analysis
 
-`--cost` shows API-equivalent cost per project (requires `LOG_COST=true`):
+`--cost` shows API-equivalent cost per project:
 
 ```
 Cost by project:
@@ -180,7 +180,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d_proj}` | Projected 7d usage |
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
 | `{token_budget}` | Weighted token usage / inferred budget (e.g. `⊘2.1M/5.8M`) |
-| `{cost}` | Session cost (e.g. `$1.23`, needs `LOG_COST=true`) |
+| `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name (e.g. `Opus 4.6`) |
 
 Empty tokens are automatically removed along with their surrounding separators.

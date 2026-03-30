@@ -116,15 +116,6 @@
 #GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
 #TIMELINE_SLOT=1800  # seconds per timeline block (1800=30min, 3600=1h)
 
-# ---------------------------------------------------------------------------
-# Cost tracking
-# ---------------------------------------------------------------------------
-# Log API-equivalent session cost on each statusline update.
-# Shows what your session would cost at API rates ($15/$75 per MTok for Opus).
-# On subscription plans (Pro/Max), this is informational — not your actual bill.
-# Your real budget is the rate limit windows ({rate_5h}, {rate_7d}).
-#LOG_COST=false
-
 # ============================= EXAMPLES ====================================
 #
 # --- Reorder groups (just move names around) ---

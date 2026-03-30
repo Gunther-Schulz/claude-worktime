@@ -76,7 +76,6 @@ RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily  # daily, weekly, monthly
 GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
-LOG_COST=true  # log session cost snapshots
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -951,7 +950,7 @@ mode_statusline() {
 
     # Log cost snapshot if enabled and cost changed
     # Uses state file for dedup instead of scanning the full log
-    if $LOG_COST && [ -n "${cst:-}" ]; then
+    if [ -n "${cst:-}" ]; then
         local cost_state="${LOGDIR}/.last_cost"
         local last_cost=""
         [ -f "$cost_state" ] && last_cost=$(cat "$cost_state" 2>/dev/null)
@@ -1550,7 +1549,7 @@ Statusline token reference:
 
   Other
     main ✓         git branch + status (✓=clean ✗=dirty +=staged ?=untracked)
-    $1.23          session cost (needs LOG_COST=true)
+    $1.23          session cost
 
 All tokens auto-hide when data is unavailable.
 TOKENS
