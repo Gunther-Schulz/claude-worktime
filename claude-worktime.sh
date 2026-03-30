@@ -954,15 +954,17 @@ mode_statusline() {
                 if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ] && [ "$r5h_int" != "$bs_pct" ]; then
                     bs_pct="$r5h_int"
                     [ "$weighted" -gt 0 ] && bs_token_budget=$(( weighted * 100 / r5h_int ))
-                    # Cost-based budget
+                    # Cost-based budget: sum per-session deltas in window
                     if [ -n "${cst:-}" ]; then
-                        local window_first_cost
-                        window_first_cost=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
-                            | jq -sr --argjson since "$window_start" '
-                            [.[] | select(.type == "cost" and .t >= $since)] | if length > 0 then first.cost else 0 end
-                        ' 2>/dev/null || echo 0)
                         local cost_delta
-                        cost_delta=$(awk "BEGIN { printf \"%.2f\", ${cst} - ${window_first_cost:-0} }")
+                        cost_delta=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
+                            | jq -sr --argjson since "$window_start" '
+                            [.[] | select(.type == "cost" and .t >= $since)]
+                            | group_by(.s)
+                            | map(sort_by(.t) | (last.cost - first.cost))
+                            | add // 0
+                            | . * 100 | round / 100
+                        ' 2>/dev/null || echo 0)
                         local cost_int=${cost_delta%.*}
                         [ -z "$cost_int" ] && cost_int=0
                         if [ "$cost_int" -gt 0 ]; then
@@ -983,14 +985,17 @@ mode_statusline() {
                 fi
 
                 # {cost_budget} — cost-based budget
+                # Cost is cumulative per session. Sum (last-first) per session in window.
                 if [ -n "${cst:-}" ]; then
-                    local window_first_cost_2
-                    window_first_cost_2=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
-                        | jq -sr --argjson since "$window_start" '
-                        [.[] | select(.type == "cost" and .t >= $since)] | if length > 0 then first.cost else 0 end
-                    ' 2>/dev/null || echo 0)
                     local cost_used
-                    cost_used=$(awk "BEGIN { printf \"%.2f\", ${cst} - ${window_first_cost_2:-0} }")
+                    cost_used=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
+                        | jq -sr --argjson since "$window_start" '
+                        [.[] | select(.type == "cost" and .t >= $since)]
+                        | group_by(.s)
+                        | map(sort_by(.t) | (last.cost - first.cost))
+                        | add // 0
+                        | . * 100 | round / 100
+                    ' 2>/dev/null || echo 0)
                     local cost_used_int=${cost_used%.*}
                     [ -z "$cost_used_int" ] && cost_used_int=0
                     if [ "$cost_used_int" -gt 0 ] && [ "${bs_cost_budget:-0}" -gt 0 ]; then
@@ -1003,9 +1008,8 @@ mode_statusline() {
         fi
     fi
 
-    # Log cost snapshot if enabled and cost changed
-    # Uses state file for dedup instead of scanning the full log
-    if [ -n "${cst:-}" ]; then
+    # Log cost snapshot when cost changed (skip if no valid session context)
+    if [ -n "${cst:-}" ] && [ -n "${project:-}" ] && [ "${sid:-}" != "" ]; then
         local cost_state="${LOGDIR}/.last_cost"
         local last_cost=""
         [ -f "$cost_state" ] && last_cost=$(cat "$cost_state" 2>/dev/null)
