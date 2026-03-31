@@ -31,6 +31,7 @@
 #   {rate_7d}        — 7-day rate limit usage (e.g. "5%")
 #   {context}        — context window usage (e.g. "45%")
 #   {cost}           — session cost (e.g. "$1.23")
+#   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/$34.56")
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
 
 # ---------------------------------------------------------------------------

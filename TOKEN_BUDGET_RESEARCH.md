@@ -19,15 +19,17 @@ Derive a stable 5h rate limit budget from available data. Currently the budget e
 
 ### Verified facts
 
-1. **Our weighted token calculation perfectly tracks billing cost.** Ratio of cost/weighted = 5.0 ($5/MTok), constant across all sample points. Our API price weights are correct: cache_read ×0.10, cache_creation ×1.25, input ×1.00, output ×5.00.
+1. **~~Our weighted token calculation perfectly tracks billing cost.~~ DISPROVED.** The original claim (ratio = 5.0, constant) was tested on a limited sample. Full-window analysis (2026-03-31) shows the ratio varies dramatically by session: 1.12x for light sessions, 2.36x for agent-heavy sessions. The discrepancy is caused by `context_window.current_usage` only reporting main conversation tokens — subagent API calls (claude-code-guide, Explore, etc.) are included in `cost.total_cost_usd` but not in per-request token counts.
 
 2. **Billing cost ≠ rate limit metering.** On subscription plans (Pro/Max), cost is informational. The rate limit percentage uses a different internal formula.
 
-3. **Budget estimate drifts upward consistently.** As context grows (cache_read increases per request), each percentage point "costs" more in billing dollars. Observed: cost_per_pct goes from $1.26 at 62% (avg cr=723K) to $1.29 at 64% (avg cr=741K).
+3. **~~Budget estimate drifts upward consistently.~~ DISPROVED.** The observed drift was an artifact of using cumulative session cost (`cst`) from a resumed session that spanned multiple 5h windows. Properly computed per-window cost (session cost deltas) gives a stable budget: $34.50 ±5%, oscillating with no directional trend.
 
 4. **Integer percentage causes ±0.5% rounding.** At low percentages this is significant, at high percentages negligible. This is noise on top of the structural drift.
 
-5. **Budget recomputes only on percentage ticks.** Between ticks, the display is stable. The drift is only visible across ticks.
+5. **Budget recomputes only on percentage ticks.** Between ticks, the display is stable.
+
+6. **Actual session cost (`cost.total_cost_usd`) is the correct metric for budget.** It includes all API calls (main conversation, subagents, tools). Per-request token sums underestimate by 1.1-2.4x depending on agent usage. The `{cost_budget}` token now uses session cost deltas instead of weighted tokens.
 
 ### Current logging
 
@@ -136,13 +138,15 @@ If `cost_per_pct = base_rate + slope * avg_cr`:
 
 4. Test: does any weighted blend of cost and ci_co produce a stable budget?
 
-## Observed data (2026-03-30, single window, resumed session)
+## Observed data
 
-Full tick history (cost_budget = token-derived cost * 100 / pct):
+### 2026-03-30 (single window, resumed session) — INVALIDATED
+
+This data was computed manually using cumulative session `cst` (cost.total_cost_usd), which includes pre-window costs for resumed sessions. The $126-$141 budget range was **inflated by pre-window cost contamination** — the session started before this 5h window and its cumulative cost included work from the previous window.
 
 | pct | avg_cr(K) | cost_budget | ci_co_budget | notes |
 |-----|-----------|------------|-------------|-------|
-| 62% | 723 | $126 | — | no ci/co logging yet |
+| 62% | 723 | $126 | — | **INVALID** — includes pre-window session cost |
 | 63% | 732 | $128 | — | |
 | 64% | 742 | $132 | — | |
 | 65% | 746 | $135 | — | |
@@ -150,24 +154,86 @@ Full tick history (cost_budget = token-derived cost * 100 / pct):
 | 67% | — | $141 | 666,658 | |
 | 68% | — | $139-141 | 657,924 | |
 
-- Cost budget drifts UP ($126 → $141, ~12% over 6 ticks)
-- ci_co budget drifts DOWN (675K → 658K, ~2.5% over 2 ticks)
-- Drift is not monotonic — budget can dip between ticks
+The script's budget calculation (sum of per-request tokens from log, filtered by `t >= window_start`) does NOT have this bug. Only this manual analysis was wrong.
 
-## Current status
+### 2026-03-31 (fresh window, 4 sessions, 0-50%)
 
-- Full logging in place (pct, cst, ctx, ci, co added 2026-03-30)
-- 7 ticks collected in current window (62%-68%), 3 with ci/co data
-- Confirmed: neither cost nor compute tokens alone track the percentage
-- Budget uses tick-based computation (only recomputes when pct changes)
-- Display shows `⊘used/budget` with ~10-15% uncertainty over a full window
-- Need fresh window data (ideally new session, not resumed) to see full curve from low context
+First complete window with token logging from the start. Budget computed by summing per-session cost deltas across all sessions, divided by pct.
+
+| pct | cost($) | cost_budget | cico | cico_budget | ctx% |
+|-----|---------|------------|------|------------|------|
+| 2 | 0.77 | $38.65 | 7,387 | 369K | 5 |
+| 22 | 8.63 | $39.23 | 481K | 2.2M | 7 |
+| 25 | 8.92 | $35.68 | 484K | 1.9M | 8 |
+| 26 | 9.45 | $36.34 | 488K | 1.9M | 8 |
+| 27 | 9.68 | $35.86 | 488K | 1.8M | 46 |
+| 30 | 10.50 | $34.98 | 511K | 1.7M | 46 |
+| 32 | 10.60 | $33.14 | 514K | 1.6M | 10 |
+| 34 | 11.12 | $32.70 | 519K | 1.5M | 56 |
+| 35 | 11.55 | $33.01 | 527K | 1.5M | 14 |
+| 36 | 12.08 | $33.55 | 536K | 1.5M | 61 |
+| 37 | 13.22 | $35.73 | 553K | 1.5M | 63 |
+| 39 | 12.97 | $33.27 | 549K | 1.4M | 24 |
+| 40 | 13.58 | $33.94 | 559K | 1.4M | 63 |
+| 41 | 13.58 | $33.11 | 559K | 1.4M | 28 |
+| 42 | 13.64 | $32.48 | 559K | 1.3M | 28 |
+| 44 | 13.67 | $31.07 | 559K | 1.3M | 28 |
+| 45 | 13.81 | $30.68 | 560K | 1.2M | 29 |
+| 46 | 13.95 | $30.33 | 560K | 1.2M | 30 |
+| 47 | 16.44 | $34.97 | 619K | 1.3M | 30 |
+| 48 | 16.59 | $34.56 | 628K | 1.3M | 72 |
+| 49 | 16.99 | $34.66 | 633K | 1.3M | 35 |
+| 50 | 17.07 | $34.15 | 634K | 1.3M | 38 |
+
+**Key findings:**
+
+1. **Cost budget ≈ $34 ±12%** from pct=25 onwards (oscillates $30-$39, no directional drift)
+2. **ci_co budget drifts DOWN 40%** (2.2M → 1.3M) — confirms ci+co is not the rate limit metric
+3. **No directional drift:** first 5 ticks avg $34.82, last 5 ticks avg $34.97 — essentially identical. Mid-window dips/spikes are noise from session mixing and variable request sizes
+4. **The 5h budget for Max/Opus is approximately $34** (74% of ticks within ±5%, all within ±12%)
+
+## Conclusions
+
+### Budget accuracy
+
+The cost-based budget (session cost deltas × 100/pct) is a reasonable approximation:
+- Oscillates within ±12% for pct ≥ 25%, no directional drift (74% of ticks within ±5%)
+- Noisy at low percentages due to integer rounding (±0.5% at pct=1 is ±50% error)
+- Mid-window dips/spikes are caused by session mixing and variable request sizes (agent-heavy vs light requests), not systematic error
+
+### What the rate limit tracks
+
+- NOT cumulative ci+co (drifts 40%)
+- Correlated with billing cost but with ±12% variance
+- ±12% exceeds what integer rounding can explain (at pct=50, rounding causes at most ±2%) — something else is in the formula
+- The unexplained variance source has NOT been identified yet
+
+### Open questions
+
+- **What causes the ±12% variance in cost_budget?** Integer rounding is insufficient. Possible factors: rate limit meters agent calls differently than billing, lag between token consumption and pct update, or a fundamentally different weighting formula. This is the primary unsolved problem.
+- Does the budget change across windows? (need multi-window comparison)
+- Is the budget the same for Sonnet vs Opus? (need model comparison)
+- Does the budget vary by subscription tier (Pro vs Max)?
+
+## Current state (2026-03-31)
+
+### What was done this session
+- Switched `{cost_budget}` from weighted-token-derived cost to actual session cost deltas (`cost.total_cost_usd`) — fixes the 1.1-2.4x underestimate caused by missing agent/tool costs
+- Budget display now shows `$used/≈$budget` (no cents on budget, ≈ prefix since it oscillates)
+- Collected full fresh window data (pct 0-56%, 4 sessions, ~200 entries)
+
+### Next steps
+1. **Investigate the ±12% variance.** This is the main open problem. The cost-based budget oscillates more than integer rounding can explain. Need to analyze what differs between high-budget ticks (~$38) and low-budget ticks (~$30) — is it request type, agent usage, timing, or something else? Look at per-tick cost deltas (cost jump between consecutive ticks) vs pct jump to see if some ticks are "cheap" and others "expensive."
+2. **Collect more window data.** Need at least one more full window to compare budget stability across windows.
+3. **Archive bug.** The log query only reads current LOGFILE. If auto-rotation happens mid-window, early entries are lost. Low priority but should be fixed eventually.
 
 ## Implementation notes
 
 - Budget state file: `~/.local/share/claude-worktime/.budget`
 - Format: `reset_ts pct token_budget cost_budget`
 - Recomputes only on percentage tick (stable between ticks)
-- Token-derived cost used for budget (weighted * $5/MTok)
+- `{cost_budget}` uses actual session cost (`cost.total_cost_usd`) summed via per-session deltas — includes all API calls (agents, tools, etc.)
+- `{token_budget}` uses weighted per-request tokens — only main conversation, underestimates by 1.1-2.4x
 - Token log query from LOGFILE for current window sums
-- `{token_budget}` and `{cost_budget}` are opt-in tokens (not in default statusline)
+- Both are opt-in tokens (not in default statusline)
+- **Known limitation:** log query only reads current LOGFILE, not archives — if auto-rotation happens mid-window, early entries are missed

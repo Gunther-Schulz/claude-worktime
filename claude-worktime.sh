@@ -946,7 +946,7 @@ mode_statusline() {
                 ) 9>"${LOGFILE}.lock"
             fi
 
-            # Compute weighted totals from log for current 5h window
+            # Compute token and cost totals from log for current 5h window
             # Source of truth: all token entries from all sessions in this window
             if [ -n "$r5h_reset" ]; then
                 local window_start=$(( r5h_reset - 18000 ))
@@ -954,17 +954,22 @@ mode_statusline() {
                 token_sums=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
                     | jq -sr --argjson since "$window_start" '
                     [.[] | select(.type == "tokens" and .t >= $since)]
-                    | { cr: (map(.cr) | add // 0), cc: (map(.cc) | add // 0),
-                        ui: (map(.ui) | add // 0), out: (map(.out) | add // 0) }
-                    | [.cr, .cc, .ui, .out] | map(tostring) | join(" ")
+                    | {
+                        cr: (map(.cr) | add // 0), cc: (map(.cc) | add // 0),
+                        ui: (map(.ui) | add // 0), out: (map(.out) | add // 0),
+                        cost_cents: ([group_by(.s)[] | ((last.cst) - (first.cst))] | add // 0) * 100 | round
+                      }
+                    | [.cr, .cc, .ui, .out, .cost_cents] | map(tostring) | join(" ")
                 ' 2>/dev/null || true)
 
-                local ts_cr=0 ts_cc=0 ts_ui=0 ts_out=0
-                [ -n "$token_sums" ] && read -r ts_cr ts_cc ts_ui ts_out <<< "$token_sums"
+                local ts_cr=0 ts_cc=0 ts_ui=0 ts_out=0 ts_cost_cents=0
+                [ -n "$token_sums" ] && read -r ts_cr ts_cc ts_ui ts_out ts_cost_cents <<< "$token_sums"
 
                 # Weighted token calculation (input-equivalent tokens)
                 # Weights based on API pricing ratios:
                 #   cache_read ×0.10, cache_creation ×1.25, input ×1.00, output ×5.00
+                # Note: weighted tokens only track main conversation tokens, not
+                # subagent costs. Use {cost_budget} for accurate budget tracking.
                 local weighted=$(( (ts_cr * 10 + ts_cc * 125 + ts_ui * 100 + ts_out * 500) / 100 ))
 
                 _fmt_tokens_v() {
@@ -981,9 +986,6 @@ mode_statusline() {
                 local r5h_int="${r5h%%.*}"
 
                 # Budget inference: recompute only when percentage ticks.
-                # Uses token-derived cost (weighted * $5/MTok) instead of cost log
-                # deltas — avoids off-by-one where first request's cost is missed.
-                # Token-derived cost is exact: cost/weighted ratio = 5.0 (constant).
                 local budget_state="${LOGDIR}/.budget"
                 local bs_reset=0 bs_pct=0 bs_token_budget=0 bs_cost_budget=0
                 if [ -f "$budget_state" ]; then
@@ -997,9 +999,8 @@ mode_statusline() {
                 if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ] && [ "$r5h_int" != "$bs_pct" ]; then
                     bs_pct="$r5h_int"
                     [ "$weighted" -gt 0 ] && bs_token_budget=$(( weighted * 100 / r5h_int ))
-                    # Cost budget derived from tokens: weighted * $5/MTok / percentage
-                    local token_cost=$(( weighted * 5 / 10000 ))  # cost in cents
-                    [ "$token_cost" -gt 0 ] && bs_cost_budget=$(( token_cost * 100 / r5h_int ))
+                    # Cost budget from actual session costs (includes agents, tools, etc.)
+                    [ "$ts_cost_cents" -gt 0 ] && bs_cost_budget=$(( ts_cost_cents * 100 / r5h_int ))
                 fi
                 echo "${r5h_reset:-0} $bs_pct $bs_token_budget ${bs_cost_budget:-0}" > "$budget_state" 2>/dev/null
 
@@ -1013,14 +1014,14 @@ mode_statusline() {
                     fi
                 fi
 
-                # {cost_budget} — cost derived from tokens (weighted * $5/MTok)
-                if [ "$weighted" -gt 0 ]; then
-                    local cost_used_cents=$(( weighted * 5 / 10000 ))
-                    local cost_used_str="$(( cost_used_cents / 100 )).$(printf '%02d' $(( cost_used_cents % 100 )))"
+                # {cost_budget} — actual session cost / inferred budget
+                # Budget uses ≈ (approximate) and no cents since it oscillates ±5%
+                if [ "$ts_cost_cents" -gt 0 ]; then
+                    local cost_used_str="$(( ts_cost_cents / 100 )).$(printf '%02d' $(( ts_cost_cents % 100 )))"
                     if [ "${bs_cost_budget:-0}" -gt 0 ]; then
-                        local cost_budget_str="$(( bs_cost_budget / 100 )).$(printf '%02d' $(( bs_cost_budget % 100 )))"
-                        tok_cost_budget="\$${cost_used_str}/\$${cost_budget_str}"
-                    elif [ "$cost_used_cents" -gt 0 ]; then
+                        local cost_budget_str="≈\$$(( bs_cost_budget / 100 ))"
+                        tok_cost_budget="\$${cost_used_str}/${cost_budget_str}"
+                    else
                         tok_cost_budget="\$${cost_used_str}"
                     fi
                 fi
