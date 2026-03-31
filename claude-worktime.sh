@@ -792,11 +792,12 @@ mode_statusline() {
             (.context_window.total_input_tokens // "_"),
             (.context_window.total_output_tokens // "_"),
             (.cost.total_cost_usd // "_"),
-            (.model.display_name // "_")
+            (.model.display_name // "_"),
+            (.model.id // "_")
         ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
@@ -811,6 +812,7 @@ mode_statusline() {
         [ "$cum_output" = "_" ] && cum_output=""
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
+        [ "$mdl_id" = "_" ] && mdl_id=""
 
         # Merge cache hit rate into context token: "77% ⟳99%"
         # Instantaneous ratio from the most recent API response — no state file needed.
@@ -847,18 +849,11 @@ mode_statusline() {
         # tok_context already set above (with cache merge)
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         if [ -n "$mdl" ]; then
-            # Infer model source by checking settings files in priority order
-            # Normalize display_name to family — handles all known formats:
-            #   "Opus 4.6"        → "opus"
-            #   "Claude Opus 4.6" → strip "claude " → "opus"
-            #   "claude-opus-4-6" → strip "claude-" → "opus"
+            # Infer model source by checking settings files in priority order.
+            # Uses model.id (e.g. "claude-opus-4-6") for matching against settings
+            # values which may be short ("opus") or full IDs ("claude-opus-4-6").
             local _model_source="default"
-            local _mdl_family="${mdl,,}"
-            _mdl_family="${_mdl_family#claude }"
-            _mdl_family="${_mdl_family#claude-}"
-            _mdl_family="${_mdl_family%% *}"
-            _mdl_family="${_mdl_family%%-*}"
-            local _ms_file _ms_raw _ms_val _ms_src _ms_norm
+            local _ms_file _ms_raw _ms_val _ms_src
             for _ms_file in \
                 "${HOOK_CWD:-.}/.claude/settings.local.json" \
                 "${HOOK_CWD:-.}/.claude/settings.json" \
@@ -872,16 +867,14 @@ mode_statusline() {
                 fi
                 [ "$_ms_val" = "$_ms_raw" ] && continue
                 _ms_val="${_ms_val%%\"*}"
-                # Normalize to family: "claude-opus-4-6" → "opus", "opus" → "opus"
-                _ms_norm="${_ms_val,,}"
-                _ms_norm="${_ms_norm#claude-}"
-                _ms_norm="${_ms_norm%%-*}"
                 case "$_ms_file" in
                     *settings.local.json) _ms_src="local" ;;
                     */.claude/settings.json) _ms_src="project" ;;
                     *) _ms_src="global" ;;
                 esac
-                if [ "$_mdl_family" = "$_ms_norm" ]; then
+                # Check if settings value matches model.id (substring match)
+                # e.g. "opus" matches "claude-opus-4-6", "claude-opus-4-6" matches exactly
+                if [ -n "$mdl_id" ] && [[ "${mdl_id,,}" == *"${_ms_val,,}"* ]]; then
                     _model_source="$_ms_src"
                 else
                     _model_source="session"
