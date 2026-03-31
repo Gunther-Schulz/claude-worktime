@@ -115,15 +115,20 @@ def is_idle($a; $i; $pause):
   is_user_turn($a; $i) and ($a[$i].t - $a[$i-1].t) > $pause;'
 
 # --- Presence: away span computation (line 2) ---
-# Computes prompt-to-prompt spans exceeding threshold.
+# Computes response→prompt (or start→prompt) spans exceeding threshold.
+# Matches is_idle semantics: Claude response time is excluded from the gap,
+# so a long Claude turn + short user idle does not falsely trigger an away span.
 # Returns array of {from_t, to_t, return_idx} objects.
 # Input: event array (sorted by time). $pause: threshold.
 JQ_AWAY='def away_spans($pause):
-  [to_entries[] | select(.value.e == "prompt") | {idx: .key, t: .value.t}] as $prompts
-  | if ($prompts | length) < 2 then []
-    else [range(1; $prompts|length)
-      | select($prompts[.].t - $prompts[.-1].t > $pause)
-      | {from_t: $prompts[.-1].t, to_t: $prompts[.].t, return_idx: $prompts[.].idx}]
+  [to_entries[] | select(.value.e == "response" or .value.e == "start" or .value.e == "prompt")
+   | {orig_idx: .key, e: .value.e, t: .value.t}] as $events
+  | if ($events | length) < 2 then []
+    else [range(1; $events | length)
+      | select($events[.].e == "prompt"
+               and ($events[.-1].e == "response" or $events[.-1].e == "start")
+               and ($events[.].t - $events[.-1].t > $pause))
+      | {from_t: $events[.-1].t, to_t: $events[.].t, return_idx: $events[.].orig_idx}]
     end;'
 
 # Compute active seconds: total time minus idle gaps
