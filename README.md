@@ -4,7 +4,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
-08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93% · ⊘2.1M/5.8M
+08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93% · τ2.1M/5.8M
 ```
 
 Two lines, two perspectives on the same data:
@@ -62,7 +62,7 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 2 — Your day** (cross-session):
 ```
-08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93% · ⊘2.1M/5.8M · ⊘2.1M/5.8M
+08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93% · τ2.1M/5.8M · τ2.1M/5.8M
 ```
 
 | Element | Meaning |
@@ -75,7 +75,7 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 | `◑30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
 | `⑦5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77% ⟳93%` | Context window fullness + KV cache hit ratio |
-| `⊘2.1M/5.8M` | Weighted tokens used / inferred budget (5h window) |
+| `τ2.1M/5.8M` | Weighted tokens used / inferred budget (5h window) |
 
 One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution.
 
@@ -179,7 +179,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
 | `{rate_7d_proj}` | Projected 7d usage |
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
-| `{token_budget}` | Weighted token usage / inferred budget (e.g. `⊘2.1M/5.8M`) — main conversation only |
+| `{token_budget}` | Weighted token usage / inferred budget (e.g. `τ2.1M/5.8M`) — main conversation only |
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source (e.g. `Opus 4.6 (local)`) |

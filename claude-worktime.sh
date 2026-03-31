@@ -1080,9 +1080,9 @@ mode_statusline() {
                 if [ "$weighted" -gt 0 ]; then
                     _fmt_tokens_v "$weighted"; local t_used="$_V"
                     if [ "$bs_token_budget" -gt 0 ]; then
-                        _fmt_tokens_v "$bs_token_budget"; tok_token_budget="⊘${t_used}/${_V}"
+                        _fmt_tokens_v "$bs_token_budget"; tok_token_budget="τ${t_used}/${_V}"
                     else
-                        tok_token_budget="⊘${t_used}"
+                        tok_token_budget="τ${t_used}"
                     fi
                 fi
 
@@ -1710,7 +1710,7 @@ Statusline token reference:
                    after breaks (cache expires after inactivity).
 
   Token budget (tracked per 5h window)
-    ⊘2.1M/5.8M    weighted tokens used / inferred budget
+    τ2.1M/5.8M    weighted tokens used / inferred budget
                    Weights: cache_read ×0.1, cache_creation ×1.25,
                    input ×1.0, output ×5.0 (based on API pricing).
                    Only tracks main conversation tokens.
