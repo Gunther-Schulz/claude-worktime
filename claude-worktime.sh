@@ -1019,8 +1019,12 @@ mode_statusline() {
                 fi
                 # Recompute if percentage ticked and in stable zone
                 if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ] && [ "$r5h_int" != "$bs_pct" ]; then
+                    local prev_pct="$bs_pct"
                     bs_pct="$r5h_int"
-                    if [ "$r5h_int" -ge "$stable_pct" ]; then
+                    # Zone 2: skip on first tick after window reset (prev_pct=0) because
+                    # ts_cost_cents may only capture a fraction of actual window cost so far,
+                    # causing EMA to drag the budget down from the prior. Next tick is fine.
+                    if [ "$r5h_int" -ge "$stable_pct" ] && [ "${prev_pct:-0}" -gt 0 ]; then
                         # Zone 2: update via EMA — estimates now reliable
                         if [ "$weighted" -gt 0 ]; then
                             local new_token_budget=$(( weighted * 100 / r5h_int ))
@@ -1040,7 +1044,7 @@ mode_statusline() {
                             fi
                         fi
                     fi
-                    # Zone 1 (pct < stable_pct): prior unchanged, nothing to update
+                    # Zone 1 (pct < stable_pct) or first tick after reset: prior unchanged
                 fi
                 echo "${r5h_reset:-0} $bs_pct $bs_token_budget ${bs_cost_budget:-0}" > "$budget_state" 2>/dev/null
 
