@@ -848,8 +848,16 @@ mode_statusline() {
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
         if [ -n "$mdl" ]; then
             # Infer model source by checking settings files in priority order
-            local _model_source="default" _mdl_family="${mdl%% *}"
-            _mdl_family="${_mdl_family,,}"
+            # Normalize display_name to family — handles all known formats:
+            #   "Opus 4.6"        → "opus"
+            #   "Claude Opus 4.6" → strip "claude " → "opus"
+            #   "claude-opus-4-6" → strip "claude-" → "opus"
+            local _model_source="default"
+            local _mdl_family="${mdl,,}"
+            _mdl_family="${_mdl_family#claude }"
+            _mdl_family="${_mdl_family#claude-}"
+            _mdl_family="${_mdl_family%% *}"
+            _mdl_family="${_mdl_family%%-*}"
             local _ms_file _ms_raw _ms_val _ms_src _ms_norm
             for _ms_file in \
                 "${HOOK_CWD:-.}/.claude/settings.local.json" \
@@ -880,11 +888,7 @@ mode_statusline() {
                 fi
                 break
             done
-            if [ "$_model_source" = "global" ]; then
-                tok_model="$mdl"
-            else
-                tok_model="$mdl ($_model_source)"
-            fi
+            tok_model="$mdl ($_model_source)"
         fi
 
         # Projected rate limit usage at window reset (pure bash integer math)
@@ -1685,6 +1689,12 @@ Statusline token reference:
   Other
     main ✓         git branch + status (✓=clean ✗=dirty +=staged ?=untracked)
     $1.23          session cost
+    Opus 4.6 (local)  active model + config source:
+                      local  = .claude/settings.local.json
+                      project = .claude/settings.json
+                      global = ~/.claude/settings.json
+                      session = /model override or --model flag
+                      default = no model configured anywhere
 
 All tokens auto-hide when data is unavailable.
 TOKENS
