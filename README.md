@@ -180,7 +180,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d_proj}` | Projected 7d usage |
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
 | `{token_budget}` | Weighted token usage / inferred budget (e.g. `⊘2.1M/5.8M`) — main conversation only |
-| `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs |
+| `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source (e.g. `Opus 4.6 (local)`) |
 
@@ -373,6 +373,8 @@ Run `claude-worktime --check` to verify. No python, no node, no extra runtimes.
 **Statusline refresh.** Refreshes after each assistant response and tool use, but not while you're typing. Rate limit and context tokens require the first API round-trip before appearing.
 
 **Token budget accuracy.** The `{token_budget}` display tracks tokens per 5-hour rate limit window. The first window after install will be inaccurate because tracking starts mid-window while Anthropic's percentage covers the full window. All subsequent windows are accurate (both counters reset together). If you also use the web app or API, those tokens count toward the percentage but aren't tracked — the inferred budget will be slightly low.
+
+**Budget estimate (`≈` value).** The budget is inferred by extrapolating current cost against rate-limit usage: if you've spent $4 at 10% of the window, that implies a ~$40 budget. However, early in a window (below ~65% usage) the reported cost lags behind actual usage — in-flight agent calls register against the rate limit before their cost is reported — making raw extrapolation unreliable. To keep the display stable, the estimate uses a two-phase approach: below 65% it holds the prior window's final estimate unchanged; above 65% it gradually blends new evidence in (weighted 30% new, 70% prior). The final converged value at the end of each window becomes the starting estimate for the next, so the display is immediately meaningful after a reset and only adjusts toward real values from mid-window onward.
 
 ## License
 
