@@ -4,12 +4,14 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
-08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93% · τ2.1M/5.8M
+08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m
+Opus 4.6 (local) · ◑30% ↻3h21m →51% · τ2.1M/5.8M · ⑦5% ↻Sat · ctx 77% ⟳93%
 ```
 
-Two lines, two perspectives on the same data:
+Three lines, three perspectives on the same data:
 - **Line 1** — work done: project time with Claude/You split
-- **Line 2** — your day: presence timeline, break rhythm, rate limits
+- **Line 2** — your day: presence timeline, break rhythm
+- **Line 3** — model, rate limits, token budget, context
 
 ## Install
 
@@ -62,7 +64,7 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 2 — Your day** (cross-session):
 ```
-08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93% · τ2.1M/5.8M · τ2.1M/5.8M
+08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m
 ```
 
 | Element | Meaning |
@@ -72,10 +74,19 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 | `17:30` | Current time |
 | `▶1h12m` | Presence streak since last break (yellow >1.5h, red >2.5h) |
 | `⏸ 20m` | Duration of most recent break |
+
+**Line 3 — Model & limits**:
+```
+Opus 4.6 (local) · ◑30% ↻3h21m →51% · τ2.1M/5.8M · ⑦5% ↻Sat · ctx 77% ⟳93%
+```
+
+| Element | Meaning |
+|---------|---------|
+| `Opus 4.6 (local)` | Active model + config source (local/project/global/session/default) |
 | `◑30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
+| `τ2.1M/5.8M` | Weighted tokens used / inferred budget (5h window) |
 | `⑦5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77% ⟳93%` | Context window fullness + KV cache hit ratio |
-| `τ2.1M/5.8M` | Weighted tokens used / inferred budget (5h window) |
 
 One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution.
 
@@ -195,33 +206,29 @@ Define named groups, then compose lines by listing group names. The divider (`GR
 ```bash
 # Groups
 GROUP_PROJECT="{project} ({git})"
-GROUP_TODAY="{status} today {today_project}"
+GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 GROUP_TOTAL="total {project_total}"
 GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
+GROUP_MODEL="{model}"
+GROUP_TOKENS="{token_budget}"
 
 # Lines (space-separated group names)
 STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
+STATUSLINE_2="TIMELINE BREAKS"
+STATUSLINE_3="MODEL RATE_5H TOKENS RATE_7D CONTEXT"
 GROUP_DIVIDER=" · "
 ```
 
 **Examples:**
 
 ```bash
-# Add Claude/You split to today
-GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
-
-# Add model and cost as a third line
-GROUP_MODEL="{model} · {cost}"
-STATUSLINE_3="MODEL"
-
-# Add token/cost budget (opt-in — niche, stabilises after ~65% window usage)
+# Add cost budget alongside token budget
 GROUP_BUDGET="{token_budget} {cost_budget}"
-STATUSLINE_2="TIMELINE BREAKS RATE_5H BUDGET RATE_7D CONTEXT"
+STATUSLINE_3="MODEL RATE_5H BUDGET RATE_7D CONTEXT"
 
 # Compact single line
 GROUP_COMPACT="{project} · {status} {session} ({today}) · {rate_5h}"
