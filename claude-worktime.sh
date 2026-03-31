@@ -951,6 +951,8 @@ mode_statusline() {
             if [ -n "$r5h_reset" ]; then
                 local window_start=$(( r5h_reset - 18000 ))
                 local token_sums
+                # NOTE: reads only current LOGFILE — if auto-rotation happens mid-window,
+                # entries rotated to archive are missed and totals undercount.
                 token_sums=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
                     | jq -sr --argjson since "$window_start" '
                     [.[] | select(.type == "tokens" and .t >= $since)]
