@@ -58,10 +58,12 @@ GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_MODEL="{model}"
-GROUP_TOKENS="{token_budget}"
+# token_budget removed: weighted tokens only tracked main conversation,
+# missing subagent costs (1.1-2.4x underestimate). Use {cost_budget} instead.
+GROUP_TOKENS=""
 GROUP_RATE_7D_COLOR="dark-gray"
 GROUP_CONTEXT_COLOR="dark-gray"
-GROUP_TOKENS_COLOR="dark-gray"
+GROUP_BUDGET_COLOR="dark-gray"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
@@ -810,7 +812,7 @@ mode_statusline() {
     fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_token_budget="" tok_cost_budget="" tok_cost="" tok_model=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost_budget="" tok_cost="" tok_model=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
@@ -1005,23 +1007,10 @@ mode_statusline() {
                 local ts_cr=0 ts_cc=0 ts_ui=0 ts_out=0 ts_cost_cents=0
                 [ -n "$token_sums" ] && read -r ts_cr ts_cc ts_ui ts_out ts_cost_cents <<< "$token_sums"
 
-                # Weighted token calculation (input-equivalent tokens)
-                # Weights based on API pricing ratios:
-                #   cache_read ×0.10, cache_creation ×1.25, input ×1.00, output ×5.00
-                # Note: weighted tokens only track main conversation tokens, not
-                # subagent costs. Use {cost_budget} for accurate budget tracking.
-                local weighted=$(( (ts_cr * 10 + ts_cc * 125 + ts_ui * 100 + ts_out * 500) / 100 ))
-
-                _fmt_tokens_v() {
-                    local n=$1
-                    if [ "$n" -ge 1000000 ]; then
-                        _V="$(( n / 1000000 )).$(( (n % 1000000) / 100000 ))M"
-                    elif [ "$n" -ge 1000 ]; then
-                        _V="$(( n / 1000 ))K"
-                    else
-                        _V="$n"
-                    fi
-                }
+                # token_budget removed: weighted tokens (input-equivalent via API pricing
+                # ratios) only tracked main conversation, missing subagent/tool costs
+                # (1.1-2.4x underestimate). {cost_budget} uses cost.total_cost_usd which
+                # includes everything. Weighted computation and _fmt_tokens_v removed.
 
                 local r5h_int="${r5h%%.*}"
 
@@ -1036,14 +1025,13 @@ mode_statusline() {
                 # cost.total_cost_usd is API-equivalent pricing (~$40 per 5h window on Max/Opus).
                 local stable_pct=65  # below this, raw estimates are unreliable (cost lag)
                 local budget_state="${LOGDIR}/.budget"
-                local bs_reset=0 bs_pct=0 bs_token_budget=0 bs_cost_budget=0
+                local bs_reset=0 bs_pct=0 bs_cost_budget=0
                 if [ -f "$budget_state" ]; then
-                    read -r bs_reset bs_pct bs_token_budget bs_cost_budget < "$budget_state" 2>/dev/null || true
+                    read -r bs_reset bs_pct bs_cost_budget < "$budget_state" 2>/dev/null || true
                 fi
-                # Window changed: reset pct counter but carry budget estimates as prior
+                # Window changed: reset pct counter but carry cost budget as prior
                 if [ "${bs_reset:-0}" != "${r5h_reset:-0}" ]; then
                     bs_pct=0
-                    # bs_cost_budget and bs_token_budget intentionally kept as prior
                 fi
                 # Recompute if percentage ticked and in stable zone
                 if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ] && [ "$r5h_int" != "$bs_pct" ]; then
@@ -1054,14 +1042,6 @@ mode_statusline() {
                     # causing EMA to drag the budget down from the prior. Next tick is fine.
                     if [ "$r5h_int" -ge "$stable_pct" ] && [ "${prev_pct:-0}" -gt 0 ]; then
                         # Zone 2: update via EMA — estimates now reliable
-                        if [ "$weighted" -gt 0 ]; then
-                            local new_token_budget=$(( weighted * 100 / r5h_int ))
-                            if [ "${bs_token_budget:-0}" -gt 0 ]; then
-                                bs_token_budget=$(( (new_token_budget * 30 + bs_token_budget * 70) / 100 ))
-                            else
-                                bs_token_budget=$new_token_budget
-                            fi
-                        fi
                         if [ "$ts_cost_cents" -gt 0 ]; then
                             local new_cost_budget=$(( ts_cost_cents * 100 / r5h_int ))
                             if [ "${bs_cost_budget:-0}" -gt 0 ]; then
@@ -1074,17 +1054,7 @@ mode_statusline() {
                     fi
                     # Zone 1 (pct < stable_pct) or first tick after reset: prior unchanged
                 fi
-                echo "${r5h_reset:-0} $bs_pct $bs_token_budget ${bs_cost_budget:-0}" > "$budget_state" 2>/dev/null
-
-                # {token_budget} — weighted tokens used / inferred budget
-                if [ "$weighted" -gt 0 ]; then
-                    _fmt_tokens_v "$weighted"; local t_used="$_V"
-                    if [ "$bs_token_budget" -gt 0 ]; then
-                        _fmt_tokens_v "$bs_token_budget"; tok_token_budget="τ${t_used}/${_V}"
-                    else
-                        tok_token_budget="τ${t_used}"
-                    fi
-                fi
+                echo "${r5h_reset:-0} $bs_pct ${bs_cost_budget:-0}" > "$budget_state" 2>/dev/null
 
                 # {cost_budget} — actual session cost / inferred budget
                 # Budget: prior from last window until pct >= stable_pct, then EMA(α=0.3)
@@ -1134,8 +1104,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{token_budget}' '{cost_budget}' '{cost}' '{model}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_token_budget" "$tok_cost_budget" "$tok_cost" "$tok_model" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost_budget}' '{cost}' '{model}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost_budget" "$tok_cost" "$tok_model" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
@@ -1616,7 +1586,7 @@ _do_rotate() {
     local budget_state="${LOGDIR}/.budget"
     if [ -f "$budget_state" ]; then
         local bs_reset
-        read -r bs_reset _ _ _ < "$budget_state" 2>/dev/null || true
+        read -r bs_reset _ _ < "$budget_state" 2>/dev/null || true
         if [ "${bs_reset:-0}" -gt 0 ]; then
             local ws=$(( bs_reset - 18000 ))
             [ "$ws" -lt "$token_cutoff" ] && token_cutoff=$ws
@@ -1709,11 +1679,7 @@ Statusline token reference:
                    Drops during tool-heavy work (new content) or
                    after breaks (cache expires after inactivity).
 
-  Token budget (tracked per 5h window)
-    τ2.1M/5.8M    weighted tokens used / inferred budget
-                   Weights: cache_read ×0.1, cache_creation ×1.25,
-                   input ×1.0, output ×5.0 (based on API pricing).
-                   Only tracks main conversation tokens.
+  Cost budget (tracked per 5h window)
     $12.34/≈$40   cost used / inferred budget (cost_budget)
                    Uses actual API-equivalent session costs (includes
                    agents, tools). Two-zone: prior from last window

@@ -61,7 +61,7 @@
 #GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 #GROUP_CONTEXT="ctx {context}"
 #GROUP_MODEL="{model}"
-#GROUP_TOKENS="{token_budget}"
+# GROUP_TOKENS removed — weighted tokens missed subagent costs; use {cost_budget} instead
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
 #STATUSLINE_2="TIMELINE BREAKS"
@@ -72,7 +72,7 @@
 # Mute secondary info for visual hierarchy
 #GROUP_RATE_7D_COLOR="dark-gray"
 #GROUP_CONTEXT_COLOR="dark-gray"
-#GROUP_TOKENS_COLOR="dark-gray"
+#GROUP_BUDGET_COLOR="dark-gray"
 
 # ---------------------------------------------------------------------------
 # Colors — use preset names or raw ANSI codes
@@ -126,10 +126,8 @@
 # --- Reorder groups (just move names around) ---
 # STATUSLINE_2="TIMELINE BREAKS CONTEXT RATE_5H RATE_7D"
 #
-# --- Add token/cost budget to line 3 (stabilises after ~65% window usage) ---
-# STATUSLINE_3="MODEL RATE_5H TOKENS RATE_7D CONTEXT"
-# # Or with cost budget:
-# GROUP_BUDGET="{token_budget} {cost_budget}"
+# --- Add cost budget to line 3 (stabilises after ~65% window usage) ---
+# GROUP_BUDGET="{cost_budget}"
 # STATUSLINE_3="MODEL RATE_5H BUDGET RATE_7D CONTEXT"
 #
 # --- Single-line compact ---
