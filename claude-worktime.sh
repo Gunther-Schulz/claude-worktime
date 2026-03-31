@@ -951,8 +951,8 @@ mode_statusline() {
             if [ -n "$r5h_reset" ]; then
                 local window_start=$(( r5h_reset - 18000 ))
                 local token_sums
-                # NOTE: reads only current LOGFILE — if auto-rotation happens mid-window,
-                # entries rotated to archive are missed and totals undercount.
+                # Reads only current LOGFILE. Rotation preserves token entries from
+                # the current 5h window (including cross-midnight windows via budget state).
                 token_sums=$(jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null \
                     | jq -sr --argjson since "$window_start" '
                     [.[] | select(.type == "tokens" and .t >= $since)]
@@ -1566,10 +1566,25 @@ _do_rotate() {
     local archive="${LOGDIR}/activity-${ROTATE_SUFFIX}.jsonl"
     echo "$old_entries" >> "$archive"
 
-    # Rewrite active log: existing summaries + new summaries + current entries
-    local existing_summaries current_entries rewrite_error=""
+    # Token entry cutoff: normally ROTATE_CUTOFF (midnight), but if the current 5h
+    # window started before midnight we must keep those earlier entries too.
+    local token_cutoff=$ROTATE_CUTOFF
+    local budget_state="${LOGDIR}/.budget"
+    if [ -f "$budget_state" ]; then
+        local bs_reset
+        read -r bs_reset _ _ _ < "$budget_state" 2>/dev/null || true
+        if [ "${bs_reset:-0}" -gt 0 ]; then
+            local ws=$(( bs_reset - 18000 ))
+            [ "$ws" -lt "$token_cutoff" ] && token_cutoff=$ws
+        fi
+    fi
+
+    # Rewrite active log: existing summaries + new summaries + current entries + token entries
+    # Token entries are not archived (budget state carries the cross-window prior instead).
+    local existing_summaries current_entries token_entries rewrite_error=""
     existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null) || rewrite_error="summaries"
     current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="current entries"
+    token_entries=$(jq -c --argjson since "$token_cutoff" 'select(.type == "tokens" and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="token entries"
 
     if [ -n "$rewrite_error" ]; then
         # jq failed to read existing data — don't rewrite, archive already done
@@ -1585,6 +1600,7 @@ _do_rotate() {
         { [ -n "$existing_summaries" ] && echo "$existing_summaries"
           [ -n "$summaries" ] && echo "$summaries"
           [ -n "$current_entries" ] && echo "$current_entries"
+          [ -n "$token_entries" ] && echo "$token_entries"
         } > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
     ) 9>"${LOGFILE}.lock"
 
