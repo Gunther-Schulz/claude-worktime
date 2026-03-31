@@ -126,9 +126,11 @@
 # --- Reorder groups (just move names around) ---
 # STATUSLINE_2="TIMELINE BREAKS CONTEXT RATE_5H RATE_7D"
 #
-# --- Add model and cost as a third line ---
-# GROUP_MODEL="{model} · {cost}"
-# STATUSLINE_3="MODEL"
+# --- Add token/cost budget to line 3 (stabilises after ~65% window usage) ---
+# STATUSLINE_3="MODEL RATE_5H TOKENS RATE_7D CONTEXT"
+# # Or with cost budget:
+# GROUP_BUDGET="{token_budget} {cost_budget}"
+# STATUSLINE_3="MODEL RATE_5H BUDGET RATE_7D CONTEXT"
 #
 # --- Single-line compact ---
 # GROUP_COMPACT="{project} · {status} {session} ({today}) · {rate_5h}"
