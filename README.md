@@ -77,7 +77,7 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 | `ctx 77% ⟳93%` | Context window fullness + KV cache hit ratio |
 | `⊘2.1M/5.8M` | Weighted tokens used / inferred budget (5h window) |
 
-One character per time slot (`TIMELINE_SLOT`, default: 1800 seconds / 30 minutes). Set to `3600` for hourly or `900` for 15-minute resolution.
+One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution.
 
 ### CLI queries
 

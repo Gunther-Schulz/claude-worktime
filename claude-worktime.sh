@@ -48,21 +48,22 @@ DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-wor
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
 GROUP_PROJECT="{project} ({git})"
-GROUP_TODAY="{status} today {today_project}"
+GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 GROUP_TOTAL="total {project_total}"
 GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
+GROUP_MODEL="{model}"
 GROUP_TOKENS="{token_budget}"
 GROUP_RATE_7D_COLOR="dark-gray"
 GROUP_CONTEXT_COLOR="dark-gray"
 GROUP_TOKENS_COLOR="dark-gray"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
-STATUSLINE_3=""
+STATUSLINE_2="TIMELINE BREAKS"
+STATUSLINE_3="MODEL RATE_5H RATE_7D CONTEXT"
 COLOR_NORMAL="green"
 COLOR_RATE_WARNING="yellow"
 COLOR_RATE_CRITICAL="red"
@@ -70,7 +71,7 @@ STREAK_WARNING=5400    # 1.5h — work streak turns yellow
 STREAK_CRITICAL=9000   # 2.5h — work streak turns red
 COLOR_TIMELINE_WORK="green"    # color for ▮ blocks
 COLOR_TIMELINE_BREAK="green"   # color for · blocks
-TIMELINE_SLOT=1800  # seconds per timeline block (1800=30min, 3600=1h)
+TIMELINE_SLOT=1200  # seconds per timeline block (1200=20min, 1800=30min, 3600=1h)
 COLOR_DEFAULT="dark-gray"
 RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true

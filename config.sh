@@ -50,18 +50,19 @@
 # Empty groups (all tokens unavailable) are hidden automatically.
 
 #GROUP_PROJECT="{project} ({git})"
-#GROUP_TODAY="{status} today {today_project}"
+#GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 #GROUP_TOTAL="total {project_total}"
 #GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 #GROUP_BREAKS="{since_break} {last_break}"
 #GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 #GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 #GROUP_CONTEXT="ctx {context}"
+#GROUP_MODEL="{model}"
 #GROUP_TOKENS="{token_budget}"
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
-#STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
-#STATUSLINE_3=""
+#STATUSLINE_2="TIMELINE BREAKS"
+#STATUSLINE_3="MODEL RATE_5H RATE_7D CONTEXT"
 #GROUP_DIVIDER=" · "
 
 # Per-group colors (optional, falls back to COLOR_NORMAL)
@@ -115,7 +116,7 @@
 # Bucket boundaries in seconds for response→prompt gap distribution.
 # Helps you tune PAUSE_THRESHOLD by seeing where your gaps cluster.
 #GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
-#TIMELINE_SLOT=1800  # seconds per timeline block (1800=30min, 3600=1h)
+#TIMELINE_SLOT=1200  # seconds per timeline block (1200=20min, 1800=30min, 3600=1h)
 
 # ============================= EXAMPLES ====================================
 #
