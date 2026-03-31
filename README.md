@@ -202,11 +202,10 @@ GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
-GROUP_TOKENS="{token_budget}"
 
 # Lines (space-separated group names)
 STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT TOKENS"
+STATUSLINE_2="TIMELINE BREAKS RATE_5H RATE_7D CONTEXT"
 GROUP_DIVIDER=" · "
 ```
 
@@ -219,6 +218,10 @@ GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 # Add model and cost as a third line
 GROUP_MODEL="{model} · {cost}"
 STATUSLINE_3="MODEL"
+
+# Add token/cost budget (opt-in — niche, stabilises after ~65% window usage)
+GROUP_BUDGET="{token_budget} {cost_budget}"
+STATUSLINE_2="TIMELINE BREAKS RATE_5H BUDGET RATE_7D CONTEXT"
 
 # Compact single line
 GROUP_COMPACT="{project} · {status} {session} ({today}) · {rate_5h}"
