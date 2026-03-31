@@ -985,22 +985,50 @@ mode_statusline() {
 
                 local r5h_int="${r5h%%.*}"
 
-                # Budget inference: recompute only when percentage ticks.
+                # Budget inference: two-zone approach for stable display.
+                # Raw estimate (window_cost/pct) is a structural lower bound — server-side
+                # pct advances ahead of client-visible cost (in-flight agent calls not yet
+                # reported). Estimates only become reliable around pct=65.
+                # Zone 1 (pct < STABLE_PCT): show prior from last window unchanged.
+                # Zone 2 (pct >= STABLE_PCT): EMA(α=0.3) anchored to prior, converges to
+                # actual budget. Prior carried across window resets (not zeroed) so the
+                # display is immediately meaningful at the start of each new window.
+                # cost.total_cost_usd is API-equivalent pricing (~$40 per 5h window on Max/Opus).
+                local stable_pct=65  # below this, raw estimates are unreliable (cost lag)
                 local budget_state="${LOGDIR}/.budget"
                 local bs_reset=0 bs_pct=0 bs_token_budget=0 bs_cost_budget=0
                 if [ -f "$budget_state" ]; then
                     read -r bs_reset bs_pct bs_token_budget bs_cost_budget < "$budget_state" 2>/dev/null || true
                 fi
-                # Reset if window changed
+                # Window changed: reset pct counter but carry budget estimates as prior
                 if [ "${bs_reset:-0}" != "${r5h_reset:-0}" ]; then
-                    bs_pct=0; bs_token_budget=0; bs_cost_budget=0
+                    bs_pct=0
+                    # bs_cost_budget and bs_token_budget intentionally kept as prior
                 fi
-                # Recompute if percentage ticked
+                # Recompute if percentage ticked and in stable zone
                 if [ -n "$r5h_int" ] && [ "$r5h_int" -gt 0 ] && [ "$r5h_int" != "$bs_pct" ]; then
                     bs_pct="$r5h_int"
-                    [ "$weighted" -gt 0 ] && bs_token_budget=$(( weighted * 100 / r5h_int ))
-                    # Cost budget from actual session costs (includes agents, tools, etc.)
-                    [ "$ts_cost_cents" -gt 0 ] && bs_cost_budget=$(( ts_cost_cents * 100 / r5h_int ))
+                    if [ "$r5h_int" -ge "$stable_pct" ]; then
+                        # Zone 2: update via EMA — estimates now reliable
+                        if [ "$weighted" -gt 0 ]; then
+                            local new_token_budget=$(( weighted * 100 / r5h_int ))
+                            if [ "${bs_token_budget:-0}" -gt 0 ]; then
+                                bs_token_budget=$(( (new_token_budget * 30 + bs_token_budget * 70) / 100 ))
+                            else
+                                bs_token_budget=$new_token_budget
+                            fi
+                        fi
+                        if [ "$ts_cost_cents" -gt 0 ]; then
+                            local new_cost_budget=$(( ts_cost_cents * 100 / r5h_int ))
+                            if [ "${bs_cost_budget:-0}" -gt 0 ]; then
+                                # EMA: 30% new + 70% prior
+                                bs_cost_budget=$(( (new_cost_budget * 30 + bs_cost_budget * 70) / 100 ))
+                            else
+                                bs_cost_budget=$new_cost_budget
+                            fi
+                        fi
+                    fi
+                    # Zone 1 (pct < stable_pct): prior unchanged, nothing to update
                 fi
                 echo "${r5h_reset:-0} $bs_pct $bs_token_budget ${bs_cost_budget:-0}" > "$budget_state" 2>/dev/null
 
@@ -1015,7 +1043,7 @@ mode_statusline() {
                 fi
 
                 # {cost_budget} — actual session cost / inferred budget
-                # Budget uses ≈ (approximate) and no cents since it oscillates ±5%
+                # Budget: prior from last window until pct >= stable_pct, then EMA(α=0.3)
                 if [ "$ts_cost_cents" -gt 0 ]; then
                     local cost_used_str="$(( ts_cost_cents / 100 )).$(printf '%02d' $(( ts_cost_cents % 100 )))"
                     if [ "${bs_cost_budget:-0}" -gt 0 ]; then
@@ -1623,9 +1651,12 @@ Statusline token reference:
     ⊘2.1M/5.8M    weighted tokens used / inferred budget
                    Weights: cache_read ×0.1, cache_creation ×1.25,
                    input ×1.0, output ×5.0 (based on API pricing).
-                   Budget = used / rate_5h_percentage. Accurate when
-                   CLI is the only client. First window after install
-                   may be inaccurate (partial tracking).
+                   Only tracks main conversation tokens.
+    $12.34/≈$40   cost used / inferred budget (cost_budget)
+                   Uses actual API-equivalent session costs (includes
+                   agents, tools). Two-zone: prior from last window
+                   until pct=65%, then EMA(α=0.3) converges to actual.
+                   Max/Opus ≈ $40 per 5h window.
 
   Other
     main ✓         git branch + status (✓=clean ✗=dirty +=staged ?=untracked)

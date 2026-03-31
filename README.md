@@ -180,7 +180,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d_proj}` | Projected 7d usage |
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
 | `{token_budget}` | Weighted token usage / inferred budget (e.g. `⊘2.1M/5.8M`) — main conversation only |
-| `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/$34.56`) — includes agent costs |
+| `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source (e.g. `Opus 4.6 (local)`) |
 
