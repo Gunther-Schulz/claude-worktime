@@ -41,6 +41,9 @@
 # user hasn't sent the next prompt within this threshold. All other gaps
 # (tool execution, Claude thinking) are always counted as active work.
 #PAUSE_THRESHOLD=900  # 15 minutes
+#CLAUDE_CREDIT=0      # 0 = auto (PAUSE_THRESHOLD / 3, ~5min at default)
+                      # How long to assume you'd watch Claude work before
+                      # stepping away. Beyond this, time counts toward absence.
 
 # ---------------------------------------------------------------------------
 # Statusline format — group-based

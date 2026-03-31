@@ -47,6 +47,8 @@ DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-wor
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
+CLAUDE_CREDIT=0          # seconds of Claude response time credited as "user watching"
+                         # 0 = auto (PAUSE_THRESHOLD / 3, ~5min at default 15min threshold)
 GROUP_PROJECT="{project} ({git})"
 GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 GROUP_TOTAL="total {project_total}"
@@ -95,8 +97,11 @@ LOGFILE="${LOGDIR}/activity.jsonl"
 #
 #   PRESENCE (line 2 — "was the user at their desk?")
 #     Prompt-to-prompt spans with capped Claude credit. Claude response time
-#     up to $pause is subtracted ("user might be watching"). Beyond that, excess
-#     counts toward absence — a 3h overnight autonomous task shows as a break.
+#     up to pause/3 is subtracted ("user might be watching"). Beyond that,
+#     excess counts toward absence — a 3h overnight autonomous task shows as
+#     a break. Credit is a fraction of pause, not equal, because the threshold
+#     answers "how long without interaction = away?" while the credit answers
+#     "how long would you realistically watch Claude output?" (~5min at 15min).
 #     Uses: away_spans
 #
 # Both share the same events, same threshold, same log. They agree in normal
@@ -117,12 +122,12 @@ def is_idle($a; $i; $pause):
 
 # --- Presence: away span computation (line 2) ---
 # Prompt-to-prompt gaps with capped Claude credit.
-# Claude response time (up to $pause) is subtracted from the gap before the
-# threshold check. This avoids false breaks during normal Claude turns while
-# detecting genuine absence during long autonomous tasks (overnight runs etc).
+# Claude response time (up to pause/3) is subtracted from the gap before the
+# threshold check — "how long would you plausibly watch Claude output?"
+# With a 15min threshold, credit ≈ 5min, breaks trigger at ~20min of Claude work.
 # Returns array of {from_t, to_t, return_idx} objects.
 # Input: event array (sorted by time). $pause: threshold.
-JQ_AWAY='def away_spans($pause):
+JQ_AWAY='def away_spans($pause; $credit):
   [to_entries[] | select(.value.e == "response" or .value.e == "start" or .value.e == "prompt")
    | {orig_idx: .key, e: .value.e, t: .value.t}] as $events
   | if ($events | length) < 2 then []
@@ -133,7 +138,7 @@ JQ_AWAY='def away_spans($pause):
           ($events[$i].t - .last_prompt_t) as $total
           | (if .last_response_t != null and .last_response_t > .last_prompt_t
              then .last_response_t - .last_prompt_t else 0 end) as $claude
-          | ($total - ([$claude, $pause] | min)) as $adjusted
+          | ($total - ([$claude, $credit] | min)) as $adjusted
           | if $adjusted > $pause then
               .spans += [{from_t: .last_prompt_t, to_t: $events[$i].t, return_idx: $events[$i].orig_idx}]
             else . end
@@ -147,7 +152,7 @@ JQ_AWAY='def away_spans($pause):
           ($events[$i].t - .last_prompt_t) as $total
           | (if .last_response_t != null and .last_response_t > .last_prompt_t
              then .last_response_t - .last_prompt_t else 0 end) as $claude
-          | ($total - ([$claude, $pause] | min)) as $adjusted
+          | ($total - ([$claude, $credit] | min)) as $adjusted
           | if $adjusted > $pause then
               .spans += [{from_t: .last_prompt_t, to_t: $events[$i].t, return_idx: $events[$i].orig_idx}]
             else . end
@@ -181,8 +186,8 @@ def calc_split($pause):
 # Pre-computes away spans, then classifies each gap by whether it falls
 # within an away span or not.
 JQ_BREAKDOWN="${JQ_PREDICATES}${JQ_AWAY}"'
-def calc_breakdown($pause):
-  away_spans($pause) as $away
+def calc_breakdown($pause; $credit):
+  away_spans($pause; $credit) as $away
   | . as $a | reduce range(1; $a|length) as $i (
     {claude: 0, user: 0, away: 0, away_count: 0, away_claude: 0, away_idle: 0, breaks: 0, break_count: 0, downtime: 0, downtime_count: 0};
     ($a[$i].t - $a[$i-1].t) as $gap
@@ -397,7 +402,10 @@ cmd_debug() {
 
     # Config
     echo "Config:"
+    local _eff_credit="${CLAUDE_CREDIT:-0}"
+    [ "$_eff_credit" -le 0 ] 2>/dev/null && _eff_credit=$(( PAUSE_THRESHOLD / 3 ))
     echo "  PAUSE_THRESHOLD:    ${PAUSE_THRESHOLD}s ($((PAUSE_THRESHOLD / 60))min)"
+    echo "  CLAUDE_CREDIT:      ${_eff_credit}s ($((${_eff_credit} / 60))min) — $([ "${CLAUDE_CREDIT:-0}" -gt 0 ] 2>/dev/null && echo "configured" || echo "auto: threshold/3")"
     echo "  AUTO_ROTATE:        $AUTO_ROTATE"
     echo "  ROTATE_INTERVAL:    $ROTATE_INTERVAL"
     echo "  RATE_7D_PROJ_MIN:   ${RATE_7D_PROJ_MIN_DAYS} days"
@@ -647,7 +655,7 @@ mode_statusline() {
         | (\$all | map(select(.s == \$sid)) | sort_by(.t)) as \$session
         | (\$all | map(select(.t >= \$since)) | sort_by(.t)) as \$today
         | (\$session | if length > 0 then ([.[] | .p] | last) else \"\" end) as \$proj
-        | (\$today | away_spans(\$pause)) as \$away
+        | (\$today | away_spans(\$pause; \$credit)) as \$away
         | {
             session_active: (\$session | calc_active(\$pause)),
             first_t: (\$session | if length > 0 then .[0].t else 0 end),
@@ -704,7 +712,9 @@ mode_statusline() {
         _gvar="GROUP_${_gname}"
         all_formats="${all_formats}${!_gvar:-}"
     done
-    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson slot "${TIMELINE_SLOT:-1800}")
+    local _credit="${CLAUDE_CREDIT:-0}"
+    [ "$_credit" -le 0 ] 2>/dev/null && _credit=$(( PAUSE_THRESHOLD / 3 ))
+    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson credit "$_credit" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson slot "${TIMELINE_SLOT:-1800}")
 
     # Fast path: direct read. Fallback: skip corrupt lines.
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
@@ -1294,11 +1304,13 @@ mode_breakdown() {
         else echo "No activity recorded"; fi; return; fi
 
     local result
-    result=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
+    local _credit="${CLAUDE_CREDIT:-0}"
+    [ "$_credit" -le 0 ] 2>/dev/null && _credit=$(( PAUSE_THRESHOLD / 3 ))
+    result=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" --argjson credit "$_credit" "
         ${JQ_CALC}
         ${JQ_BREAKDOWN}
         sort_by(.t) | {
-            breakdown: calc_breakdown(\$pause),
+            breakdown: calc_breakdown(\$pause; \$credit),
             active: calc_active(\$pause)
         }
     ")

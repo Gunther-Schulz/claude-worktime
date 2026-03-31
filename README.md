@@ -254,7 +254,7 @@ Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, 
 - **Yellow** at `STREAK_WARNING` (default: 1.5 hours)
 - **Red** at `STREAK_CRITICAL` (default: 2.5 hours)
 
-A "break" is any period exceeding `PAUSE_THRESHOLD` (default: 15 minutes) since your last prompt — whether you were idle, quit and came back, or Claude was running a long autonomous job. Set thresholds to `0` to disable.
+A "break" is any period where you weren't actively engaged — whether idle, quit and came back, or Claude was running a long autonomous job. Short Claude turns (up to ~5 minutes at the default 15-minute threshold) are credited as "user might be watching," but longer autonomous runs count toward absence. Set thresholds to `0` to disable.
 
 ### Auto-rotation
 
@@ -302,11 +302,11 @@ Two models, one fork point — same events, same threshold, same log:
 Gap-by-gap classification. Each gap between consecutive events is either productive or idle. A user turn (`response → prompt`) exceeding the threshold is idle. All Claude turns count as productive regardless of duration.
 
 **Presence** (line 2 — "was the user at their desk?"):
-Prompt-to-prompt spans. If the time between two consecutive user prompts exceeds the threshold, the user was away for that entire period — regardless of what happened in between (Claude working, tools running, idle time). This naturally handles long agent jobs and post-response gaps as one continuous absence.
+Prompt-to-prompt spans with capped Claude credit. Claude response time up to threshold/3 (~5 minutes at the default 15-minute threshold) is subtracted — "the user might be watching." Beyond that, excess counts toward absence. This means normal Claude turns don't produce false break dots, while long autonomous runs (overnight jobs etc.) correctly show as breaks for well-being tracking.
 
-The two models agree in normal conversation and only diverge during long autonomous Claude turns. A 21-minute agent job followed by 10 minutes before the user returns is one 31-minute away span in line 2, while line 1 counts the 21 minutes of Claude work as productive.
+The two models agree in normal conversation and only diverge during long autonomous Claude turns. A 25-minute agent job where the user returns immediately shows as a break in line 2 (25 - 5 credit = 20 > 15 threshold), while line 1 counts all 25 minutes as productive Claude work.
 
-**Presence model notes:** The prompt-to-prompt measurement is approximate by seconds to a few minutes — return reading time, short work blips between long breaks, and the exact moment you stepped away are not precisely captured. This is fine for its purpose: the break reminder is a health nudge, not a timesheet. Active time (line 1) is always precise.
+**Presence model notes:** The prompt-to-prompt measurement is approximate — return reading time, short work blips between long breaks, and the exact moment you stepped away are not precisely captured. This is fine for its purpose: the break reminder is a health nudge, not a timesheet. Active time (line 1) is always precise.
 
 ### Tracking dimensions
 
