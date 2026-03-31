@@ -181,9 +181,11 @@ A commented-out template with all options is created on install.
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
 | `{token_budget}` | Weighted token usage / inferred budget (e.g. `⊘2.1M/5.8M`) |
 | `{cost}` | Session cost (e.g. `$1.23`) |
-| `{model}` | Model name (e.g. `Opus 4.6`) |
+| `{model}` | Model name + source (e.g. `Opus 4.6 (local)`) |
 
 Empty tokens are automatically removed along with their surrounding separators.
+
+**Model source detection:** The `{model}` token shows where the active model setting comes from: `local` (`.claude/settings.local.json`), `project` (`.claude/settings.json`), `global` (`~/.claude/settings.json`), `session` (`/model` or `--model` override), or `default` (no setting found). The source is inferred by comparing the running model against settings files — it may be inaccurate if settings files are changed mid-session without restarting Claude Code.
 
 ### Groups and layout
 

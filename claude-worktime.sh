@@ -840,7 +840,46 @@ mode_statusline() {
         fi
         # tok_context already set above (with cache merge)
         [ -n "$cst" ] && tok_cost=$(printf "$%.2f" "$cst")
-        [ -n "$mdl" ] && tok_model="$mdl"
+        if [ -n "$mdl" ]; then
+            # Infer model source by checking settings files in priority order
+            local _model_source="default" _mdl_family="${mdl%% *}"
+            _mdl_family="${_mdl_family,,}"
+            local _ms_file _ms_raw _ms_val _ms_src _ms_norm
+            for _ms_file in \
+                "${HOOK_CWD:-.}/.claude/settings.local.json" \
+                "${HOOK_CWD:-.}/.claude/settings.json" \
+                "$HOME/.claude/settings.json"; do
+                [ -f "$_ms_file" ] || continue
+                _ms_raw=$(<"$_ms_file")
+                # Match "model": "val" or "model":"val"
+                _ms_val="${_ms_raw#*\"model\": \"}"
+                if [ "$_ms_val" = "$_ms_raw" ]; then
+                    _ms_val="${_ms_raw#*\"model\":\"}"
+                fi
+                [ "$_ms_val" = "$_ms_raw" ] && continue
+                _ms_val="${_ms_val%%\"*}"
+                # Normalize to family: "claude-opus-4-6" → "opus", "opus" → "opus"
+                _ms_norm="${_ms_val,,}"
+                _ms_norm="${_ms_norm#claude-}"
+                _ms_norm="${_ms_norm%%-*}"
+                case "$_ms_file" in
+                    *settings.local.json) _ms_src="local" ;;
+                    */.claude/settings.json) _ms_src="project" ;;
+                    *) _ms_src="global" ;;
+                esac
+                if [ "$_mdl_family" = "$_ms_norm" ]; then
+                    _model_source="$_ms_src"
+                else
+                    _model_source="session"
+                fi
+                break
+            done
+            if [ "$_model_source" = "global" ]; then
+                tok_model="$mdl"
+            else
+                tok_model="$mdl ($_model_source)"
+            fi
+        fi
 
         # Projected rate limit usage at window reset (pure bash integer math)
         # proj = used% * window / elapsed  (equivalent to used + burn_rate * remaining)

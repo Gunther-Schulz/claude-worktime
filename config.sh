@@ -31,7 +31,7 @@
 #   {rate_7d}        — 7-day rate limit usage (e.g. "5%")
 #   {context}        — context window usage (e.g. "45%")
 #   {cost}           — session cost (e.g. "$1.23")
-#   {model}          — model display name (e.g. "Opus 4.6")
+#   {model}          — model name + source (e.g. "Opus 4.6 (local)")
 
 # ---------------------------------------------------------------------------
 # Idle detection
