@@ -94,9 +94,9 @@ LOGFILE="${LOGDIR}/activity.jsonl"
 #     Uses: is_idle
 #
 #   PRESENCE (line 2 — "was the user at their desk?")
-#     Prompt-to-prompt spans. If the time between two consecutive prompts exceeds
-#     the threshold, the user was away for that entire period — regardless of what
-#     happened in between (Claude working, tools running, idle time).
+#     Prompt-to-prompt spans with capped Claude credit. Claude response time
+#     up to $pause is subtracted ("user might be watching"). Beyond that, excess
+#     counts toward absence — a 3h overnight autonomous task shows as a break.
 #     Uses: away_spans
 #
 # Both share the same events, same threshold, same log. They agree in normal
@@ -116,20 +116,45 @@ def is_idle($a; $i; $pause):
   is_user_turn($a; $i) and ($a[$i].t - $a[$i-1].t) > $pause;'
 
 # --- Presence: away span computation (line 2) ---
-# Computes response→prompt (or start→prompt) spans exceeding threshold.
-# Matches is_idle semantics: Claude response time is excluded from the gap,
-# so a long Claude turn + short user idle does not falsely trigger an away span.
+# Prompt-to-prompt gaps with capped Claude credit.
+# Claude response time (up to $pause) is subtracted from the gap before the
+# threshold check. This avoids false breaks during normal Claude turns while
+# detecting genuine absence during long autonomous tasks (overnight runs etc).
 # Returns array of {from_t, to_t, return_idx} objects.
 # Input: event array (sorted by time). $pause: threshold.
 JQ_AWAY='def away_spans($pause):
   [to_entries[] | select(.value.e == "response" or .value.e == "start" or .value.e == "prompt")
    | {orig_idx: .key, e: .value.e, t: .value.t}] as $events
   | if ($events | length) < 2 then []
-    else [range(1; $events | length)
-      | select($events[.].e == "prompt"
-               and ($events[.-1].e == "response" or $events[.-1].e == "start")
-               and ($events[.].t - $events[.-1].t > $pause))
-      | {from_t: $events[.-1].t, to_t: $events[.].t, return_idx: $events[.].orig_idx}]
+    else reduce range(0; $events | length) as $i (
+      {last_prompt_t: null, last_response_t: null, spans: []};
+      if $events[$i].e == "prompt" then
+        if .last_prompt_t != null then
+          ($events[$i].t - .last_prompt_t) as $total
+          | (if .last_response_t != null and .last_response_t > .last_prompt_t
+             then .last_response_t - .last_prompt_t else 0 end) as $claude
+          | ($total - ([$claude, $pause] | min)) as $adjusted
+          | if $adjusted > $pause then
+              .spans += [{from_t: .last_prompt_t, to_t: $events[$i].t, return_idx: $events[$i].orig_idx}]
+            else . end
+        else . end
+        | .last_prompt_t = $events[$i].t | .last_response_t = null
+      elif $events[$i].e == "response" then
+        .last_response_t = $events[$i].t
+      elif $events[$i].e == "start" then
+        # Session start: check gap from last prompt, then reset like a prompt
+        if .last_prompt_t != null then
+          ($events[$i].t - .last_prompt_t) as $total
+          | (if .last_response_t != null and .last_response_t > .last_prompt_t
+             then .last_response_t - .last_prompt_t else 0 end) as $claude
+          | ($total - ([$claude, $pause] | min)) as $adjusted
+          | if $adjusted > $pause then
+              .spans += [{from_t: .last_prompt_t, to_t: $events[$i].t, return_idx: $events[$i].orig_idx}]
+            else . end
+        else . end
+        | .last_prompt_t = $events[$i].t | .last_response_t = null
+      else . end
+    ) | .spans
     end;'
 
 # Compute active seconds: total time minus idle gaps
