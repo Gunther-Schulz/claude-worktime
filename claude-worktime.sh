@@ -471,6 +471,7 @@ cmd_debug() {
 _read_hook_stdin() {
     HOOK_SESSION_ID=""
     HOOK_CWD=""
+    HOOK_COST=""
     _STDIN_JSON=""
     if read -t 0.1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
         # Fast bash parsing — avoid jq on the hot path
@@ -481,6 +482,10 @@ _read_hook_stdin() {
         tmp="${_STDIN_JSON#*\"cwd\":\"}"
         HOOK_CWD="${tmp%%\"*}"
         [ "$HOOK_CWD" = "$_STDIN_JSON" ] && HOOK_CWD=""
+        # Extract cost.total_cost_usd (numeric, no quotes)
+        tmp="${_STDIN_JSON#*\"total_cost_usd\":}"
+        HOOK_COST="${tmp%%[,\}]*}"
+        [ "$HOOK_COST" = "$_STDIN_JSON" ] && HOOK_COST=""
     fi
 }
 
@@ -559,13 +564,19 @@ cmd_log() {
     local jp="${path//\\/\\\\}"; jp="${jp//\"/\\\"}"
     local jb="${branch//\\/\\\\}"; jb="${jb//\"/\\\"}"
     local js="${session_id//\\/\\\\}"; js="${js//\"/\\\"}"
+    # Cost suffix for prompt/response events (cumulative session cost)
+    local cost_field=""
+    if [ -n "$HOOK_COST" ] && { [ "$event" = "prompt" ] || [ "$event" = "response" ]; }; then
+        cost_field=",\"cst\":$HOOK_COST"
+    fi
+
     # flock: serialize log writes with rotation to prevent lost entries
     (
         flock -w 2 9 2>/dev/null || true  # best-effort lock — don't block hooks
         if [ -n "$branch" ]; then
-            printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$jb" "$js" "$event" >> "$LOGFILE"
+            printf '{"t":%d,"p":"%s","b":"%s","s":"%s","e":"%s"%s}\n' "$ts" "$jp" "$jb" "$js" "$event" "$cost_field" >> "$LOGFILE"
         else
-            printf '{"t":%d,"p":"%s","s":"%s","e":"%s"}\n' "$ts" "$jp" "$js" "$event" >> "$LOGFILE"
+            printf '{"t":%d,"p":"%s","s":"%s","e":"%s"%s}\n' "$ts" "$jp" "$js" "$event" "$cost_field" >> "$LOGFILE"
         fi
     ) 9>"${LOGFILE}.lock"
 
