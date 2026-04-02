@@ -18,6 +18,7 @@ SETTINGS="${CLAUDE_DIR}/settings.json"
 SCRIPT_NAME="claude-worktime"
 SCRIPT_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/claude-worktime.sh"
 CONFIG_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/config.sh"
+COMMAND_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/commands/worktime.md"
 
 # XDG paths
 CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
@@ -65,6 +66,15 @@ else
     echo "  Config already exists at $CONFIGDIR/config.sh (kept)"
 fi
 
+# Install command file (slash command for Claude Code)
+mkdir -p "${CLAUDE_DIR}/commands"
+if [ -f "commands/worktime.md" ]; then
+    cp "commands/worktime.md" "${CLAUDE_DIR}/commands/worktime.md"
+else
+    curl -fsSL "$COMMAND_URL" -o "${CLAUDE_DIR}/commands/worktime.md"
+fi
+echo "  Installed /worktime command"
+
 # Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "$BIN_DIR"; then
     echo "  Note: $BIN_DIR is not on your PATH."
@@ -74,26 +84,44 @@ fi
 # Create settings.json if it doesn't exist
 [ ! -f "$SETTINGS" ] && echo '{}' > "$SETTINGS"
 
-# Check if hooks already exist
-if jq -e '.hooks.SessionStart' "$SETTINGS" &>/dev/null && ! $FORCE; then
-    echo "  Warning: Hooks already exist. Use --force to overwrite."
-    echo "Done (script updated, hooks skipped)."
-    exit 0
+# Remove old CLAUDE.md section (replaced by /worktime command)
+CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
+MARKER_START="<!-- claude-worktime:start -->"
+MARKER_END="<!-- claude-worktime:end -->"
+if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
+    awk -v start="$MARKER_START" '
+        $0 == start { skip=1; next }
+        skip && /^<!-- claude-worktime:end -->/ { skip=0; next }
+        !skip { print }
+    ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
+    # Remove trailing blank lines left behind
+    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
+    echo "  Removed old claude-worktime section from CLAUDE.md (replaced by /worktime command)"
 fi
 
 # Hook commands
 CW="${BIN_DIR}/${SCRIPT_NAME}"
 
-jq --arg cw "$CW" \
-   '.hooks = (.hooks // {})
-    | .hooks.SessionStart = [{"hooks": [{"type": "command", "command": ($cw + " log --start"), "timeout": 5}]}]
-    | .hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": ($cw + " log --prompt"), "timeout": 2}]}]
-    | .hooks.PreToolUse = [{"hooks": [{"type": "command", "command": ($cw + " log --tool-start"), "timeout": 2}]}]
-    | .hooks.PostToolUse = [{"hooks": [{"type": "command", "command": ($cw + " log --tool-end"), "timeout": 2}]}]
-    | .hooks.Stop = [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}]
-    | .hooks.StopFailure = [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}]' \
-   "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
-echo "  Added hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure)"
+# Append hooks — remove any existing worktime hooks first, then add fresh ones.
+# This preserves hooks from other tools (unlike the old approach that overwrote entire events).
+if $FORCE || ! jq -e '.hooks.SessionStart[]? | select(.hooks[0].command | contains("claude-worktime"))' "$SETTINGS" &>/dev/null; then
+    jq --arg cw "$CW" '
+      # Remove existing worktime hooks from all events
+      (.hooks // {}) |= with_entries(
+        .value |= map(select((.hooks[0].command // "") | contains("claude-worktime") | not))
+      ) |
+      # Append fresh worktime hooks
+      .hooks.SessionStart += [{"hooks": [{"type": "command", "command": ($cw + " log --start"), "timeout": 5}]}] |
+      .hooks.UserPromptSubmit += [{"hooks": [{"type": "command", "command": ($cw + " log --prompt"), "timeout": 2}]}] |
+      .hooks.PreToolUse += [{"hooks": [{"type": "command", "command": ($cw + " log --tool-start"), "timeout": 2}]}] |
+      .hooks.PostToolUse += [{"hooks": [{"type": "command", "command": ($cw + " log --tool-end"), "timeout": 2}]}] |
+      .hooks.Stop += [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}] |
+      .hooks.StopFailure += [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}]
+    ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+    echo "  Added hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure)"
+else
+    echo "  Hooks already exist (use --force to overwrite)"
+fi
 
 # Statusline
 if $ENABLE_STATUSLINE; then
@@ -101,37 +129,6 @@ if $ENABLE_STATUSLINE; then
         '.statusLine = {"type": "command", "command": $cmd}' \
         "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
     echo "  Enabled statusline"
-fi
-
-# Add/update global CLAUDE.md so Claude knows about the tool in every session
-CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
-MARKER_START="<!-- claude-worktime:start -->"
-MARKER_END="<!-- claude-worktime:end -->"
-CLAUDE_BLOCK="$MARKER_START
-## claude-worktime
-\`claude-worktime\` is installed. Statusline shows time tracking, rate limits, and cache ratio.
-- \`claude-worktime\` — current session stats
-- \`claude-worktime --today\` — today's total across all sessions
-- \`claude-worktime --breakdown --today\` — Claude vs You time split
-- \`claude-worktime --summary\` — per-project breakdown
-If the user asks about session time, worktime, or how long we've been working, run \`claude-worktime\`.
-For statusline token explanations, run \`claude-worktime --tokens\`.
-$MARKER_END"
-
-[ ! -f "$CLAUDE_MD" ] && touch "$CLAUDE_MD"
-if grep -q "$MARKER_START" "$CLAUDE_MD"; then
-    # Replace existing fenced block
-    awk -v start="$MARKER_START" -v block="$CLAUDE_BLOCK" '
-        $0 == start { print block; skip=1; next }
-        skip && /^<!-- claude-worktime:end -->/ { skip=0; next }
-        !skip { print }
-    ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
-    echo "  Updated claude-worktime section in $CLAUDE_MD"
-elif grep -q "claude-worktime" "$CLAUDE_MD"; then
-    echo "  CLAUDE.md mentions claude-worktime but has no markers — please update manually"
-else
-    printf '\n%s\n' "$CLAUDE_BLOCK" >> "$CLAUDE_MD"
-    echo "  Added claude-worktime section to $CLAUDE_MD"
 fi
 
 # Verify dependencies
@@ -146,8 +143,8 @@ echo ""
 echo "Usage:"
 echo "  claude-worktime              # current session"
 echo "  claude-worktime --today      # today's total"
-echo "  claude-worktime --summary    # per-project"
-echo "  claude-worktime --csv        # export CSV"
+echo "  /worktime                    # slash command in Claude Code"
+echo "  /worktime --summary          # per-project breakdown"
 if ! $ENABLE_STATUSLINE; then
     echo ""
     echo "Tip: Re-run with --statusline to show time in the status bar"

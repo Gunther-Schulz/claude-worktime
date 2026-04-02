@@ -14,25 +14,29 @@ if [ -f "$BIN_DIR/claude-worktime" ]; then
     echo "  Removed $BIN_DIR/claude-worktime"
 fi
 
+# Remove command file
+if [ -f "${CLAUDE_DIR}/commands/worktime.md" ]; then
+    rm "${CLAUDE_DIR}/commands/worktime.md"
+    echo "  Removed /worktime command"
+fi
+
 # Remove hooks and statusline from settings.json
 if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
-    changed=false
-    for hook in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop StopFailure; do
-        if jq -e ".hooks.$hook" "$SETTINGS" &>/dev/null; then
-            jq "del(.hooks.$hook)" "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
-            changed=true
-        fi
-    done
-    # Clean up empty hooks object
-    if jq -e '.hooks == {}' "$SETTINGS" &>/dev/null; then
-        jq 'del(.hooks)' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
-    fi
+    # Remove only worktime hooks, preserve other tools' hooks
+    jq '
+      (.hooks // {}) |= with_entries(
+        .value |= map(select((.hooks[0].command // "") | contains("claude-worktime") | not))
+      ) |
+      # Clean up empty arrays and empty hooks object
+      (.hooks // {}) |= with_entries(select(.value | length > 0)) |
+      if .hooks == {} then del(.hooks) else . end
+    ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
     # Remove statusline if it's ours
     if jq -e '.statusLine.command' "$SETTINGS" 2>/dev/null | grep -q 'claude-worktime'; then
         jq 'del(.statusLine)' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
         echo "  Removed statusline"
     fi
-    $changed && echo "  Removed hooks from settings.json"
+    echo "  Removed worktime hooks from settings.json"
 fi
 
 # Remove fenced section from CLAUDE.md

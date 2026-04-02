@@ -540,6 +540,7 @@ _short_project_v() {
 # Subcommand: log — append a JSONL entry (called by hooks)
 # ============================================================
 cmd_log() {
+    exec 2>/dev/null  # Claude Code treats any stderr as hook error (#34859)
     set +e  # hooks must not fail — a missed entry is better than blocking Claude Code
 
     # Skip logging when set by subprocesses (e.g. claude -p calls from hooks)
