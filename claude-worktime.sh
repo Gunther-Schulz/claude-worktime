@@ -538,7 +538,7 @@ cmd_log() {
     set +e  # hooks must not fail — a missed entry is better than blocking Claude Code
 
     # Skip classifier subprocess sessions (they inflate Claude time)
-    [ "${CLAUDE_SKILL_CLASSIFYING:-}" = "1" ] && return 0
+    [ "${CLAUDE_AUTO_SKILLS_CLASSIFYING:-}" = "1" ] && return 0
 
     mkdir -p "$LOGDIR"
 
