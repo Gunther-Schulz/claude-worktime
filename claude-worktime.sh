@@ -1160,10 +1160,13 @@ mode_statusline() {
             if [ "$_SUBST_NONEMPTY" = "1" ] && [ -n "$_SUBST_RESULT" ]; then
                 rendered="$_SUBST_RESULT"
                 # Per-group color: GROUP_<NAME>_COLOR, falls back to line color
+                # "none" = no wrapping (for groups with inline ANSI codes)
                 color_var_name="GROUP_${name}_COLOR"
-                grp_color="${!color_var_name:-}"
-                if [ -n "$grp_color" ]; then _resolve_color_v "$grp_color"; grp_color="$_V"; fi
-                grp_color="${grp_color:-$color}"
+                if [ -n "${!color_var_name+set}" ]; then
+                    _resolve_color_v "${!color_var_name}"; grp_color="$_V"
+                else
+                    grp_color="$color"
+                fi
                 # Replace bare COLOR_DEFAULT with reset+group_color so item colors
                 # (projections, timeline) restore to the group color, not default
                 rendered="${rendered//${COLOR_DEFAULT}/${COLOR_DEFAULT}${grp_color}}"
