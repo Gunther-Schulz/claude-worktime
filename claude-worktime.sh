@@ -866,15 +866,16 @@ mode_statusline() {
         if [ -n "$ctx" ]; then
             local ctx_int="${ctx%%.*}"
             local ctx_color=""
-            # Smooth color ramp: green → yellow → orange → red (11-step ANSI 256)
-            # 46(green) 82 118 154 190 226(yellow) 220 214 208(orange) 202 196(red)
+            # Smooth color ramp: green → yellow → orange → red (8-step ANSI 256)
+            # Compressed green range so 50% is clearly yellow, not green
+            # 46(green) 118 190 226(yellow) 214(orange) 208 202 196(red)
             if [ -n "${CTX_RAMP_START:-}" ] && [ "$ctx_int" -ge "${CTX_RAMP_START}" ]; then
-                local -a _ctx_ramp=(46 82 118 154 190 226 220 214 208 202 196)
+                local -a _ctx_ramp=(46 118 190 226 214 208 202 196)
                 local ramp_range=$(( ${CTX_RAMP_END:-90} - CTX_RAMP_START ))
                 local ramp_pos=$(( ctx_int - CTX_RAMP_START ))
                 [ "$ramp_pos" -gt "$ramp_range" ] && ramp_pos=$ramp_range
-                local idx=$(( ramp_pos * 10 / ramp_range ))
-                [ "$idx" -gt 10 ] && idx=10
+                local idx=$(( ramp_pos * 7 / ramp_range ))
+                [ "$idx" -gt 7 ] && idx=7
                 ctx_color=$'\033[38;5;'"${_ctx_ramp[$idx]}m"
             fi
             local ctx_str="${ctx_int}%"
