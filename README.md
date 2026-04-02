@@ -36,8 +36,9 @@ Options: `--statusline` enables the status bar, `--force` overwrites existing ho
 
 - Copies the script to `~/.local/bin/claude-worktime`
 - Creates default config at `~/.config/claude-worktime/config.sh` (preserved on reinstall)
-- Adds event hooks to `~/.claude/settings.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure)
-- Adds a fenced section to `~/.claude/CLAUDE.md` so Claude knows about the tool (auto-updated on reinstall)
+- Appends event hooks to `~/.claude/settings.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure) — preserves hooks from other tools
+- Installs `/worktime` slash command to `~/.claude/commands/worktime.md`
+- Removes old CLAUDE.md section if present (replaced by the slash command)
 - Verifies dependencies
 
 </details>
@@ -48,7 +49,7 @@ Options: `--statusline` enables the status bar, `--force` overwrites existing ho
 ./uninstall.sh
 ```
 
-Removes hooks, statusline config, the script, and the CLAUDE.md section. Logs and config are preserved.
+Removes hooks, statusline config, the `/worktime` command, and the script. Logs and config are preserved.
 
 ## What you see
 
