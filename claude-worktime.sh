@@ -73,8 +73,11 @@ COLOR_RATE_WARNING="yellow"
 COLOR_RATE_CRITICAL="red"
 STREAK_WARNING=5400    # 1.5h — work streak turns yellow
 STREAK_CRITICAL=9000   # 2.5h — work streak turns red
-CTX_WARNING=60         # context % — turns yellow
-CTX_CRITICAL=80        # context % — turns red (compaction imminent)
+# Context % color ramp: smooth gradient from green → yellow → orange → red
+# Starts shifting at CTX_RAMP_START%, fully red at CTX_RAMP_END%
+# Below start: default color. Set to "" to disable ramp.
+CTX_RAMP_START=20      # start shifting color from green
+CTX_RAMP_END=90        # fully red at this %
 COLOR_TIMELINE_WORK="green"    # color for ▮ blocks
 COLOR_TIMELINE_BREAK="green"   # color for · blocks
 TIMELINE_SLOT=1200  # seconds per timeline block (1200=20min, 1800=30min, 3600=1h)
@@ -863,10 +866,16 @@ mode_statusline() {
         if [ -n "$ctx" ]; then
             local ctx_int="${ctx%%.*}"
             local ctx_color=""
-            if [ "$ctx_int" -ge "${CTX_CRITICAL:-80}" ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
-                ctx_color="$COLOR_RATE_CRITICAL"
-            elif [ "$ctx_int" -ge "${CTX_WARNING:-60}" ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
-                ctx_color="$COLOR_RATE_WARNING"
+            # Smooth color ramp: green → yellow → orange → red (11-step ANSI 256)
+            # 46(green) 82 118 154 190 226(yellow) 220 214 208(orange) 202 196(red)
+            if [ -n "${CTX_RAMP_START:-}" ] && [ "$ctx_int" -ge "${CTX_RAMP_START}" ]; then
+                local -a _ctx_ramp=(46 82 118 154 190 226 220 214 208 202 196)
+                local ramp_range=$(( ${CTX_RAMP_END:-90} - CTX_RAMP_START ))
+                local ramp_pos=$(( ctx_int - CTX_RAMP_START ))
+                [ "$ramp_pos" -gt "$ramp_range" ] && ramp_pos=$ramp_range
+                local idx=$(( ramp_pos * 10 / ramp_range ))
+                [ "$idx" -gt 10 ] && idx=10
+                ctx_color=$'\033[38;5;'"${_ctx_ramp[$idx]}m"
             fi
             local ctx_str="${ctx_int}%"
             [ -n "$ctx_color" ] && ctx_str="${ctx_color}${ctx_int}%${COLOR_DEFAULT}"
