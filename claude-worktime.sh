@@ -73,6 +73,8 @@ COLOR_RATE_WARNING="yellow"
 COLOR_RATE_CRITICAL="red"
 STREAK_WARNING=5400    # 1.5h — work streak turns yellow
 STREAK_CRITICAL=9000   # 2.5h — work streak turns red
+CTX_WARNING=60         # context % — turns yellow
+CTX_CRITICAL=80        # context % — turns red (compaction imminent)
 COLOR_TIMELINE_WORK="green"    # color for ▮ blocks
 COLOR_TIMELINE_BREAK="green"   # color for · blocks
 TIMELINE_SLOT=1200  # seconds per timeline block (1200=20min, 1800=30min, 3600=1h)
@@ -858,18 +860,30 @@ mode_statusline() {
 
         # Merge cache hit rate into context token: "77% ⟳99%"
         # Instantaneous ratio from the most recent API response — no state file needed.
-        if [ -n "$ctx" ] && [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
-            local cc=${cache_create%.*} cr=${cache_read%.*} ui=${uncached_input%.*}
-            [ -z "$ui" ] && ui=0
-            local total=$(( cc + cr + ui ))
-            if [ "$total" -gt 0 ]; then
-                local cache_pct=$(( cr * 100 / total ))
-                tok_context="${ctx%%.*}% ⟳${cache_pct}%"
-            else
-                tok_context="${ctx%%.*}%"
+        if [ -n "$ctx" ]; then
+            local ctx_int="${ctx%%.*}"
+            local ctx_color=""
+            if [ "$ctx_int" -ge "${CTX_CRITICAL:-80}" ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+                ctx_color="$COLOR_RATE_CRITICAL"
+            elif [ "$ctx_int" -ge "${CTX_WARNING:-60}" ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+                ctx_color="$COLOR_RATE_WARNING"
             fi
-        elif [ -n "$ctx" ]; then
-            tok_context="${ctx%%.*}%"
+            local ctx_str="${ctx_int}%"
+            [ -n "$ctx_color" ] && ctx_str="${ctx_color}${ctx_int}%${COLOR_DEFAULT}"
+
+            if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
+                local cc=${cache_create%.*} cr=${cache_read%.*} ui=${uncached_input%.*}
+                [ -z "$ui" ] && ui=0
+                local total=$(( cc + cr + ui ))
+                if [ "$total" -gt 0 ]; then
+                    local cache_pct=$(( cr * 100 / total ))
+                    tok_context="${ctx_str} ⟳${cache_pct}%"
+                else
+                    tok_context="${ctx_str}"
+                fi
+            else
+                tok_context="${ctx_str}"
+            fi
         fi
 
         if [ -n "$r5h" ]; then
