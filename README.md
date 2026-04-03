@@ -380,6 +380,8 @@ Run `claude-worktime --check` to verify. No python, no node, no extra runtimes.
 
 **Exit display glitch.** When exiting Claude Code, the "Resume this session with..." message and the statusline's final refresh can race and overlap, producing garbled output. This is a Claude Code rendering issue — the statusline has no way to detect an imminent exit.
 
+**Directory changes mid-session.** If Claude changes the working directory during a session (e.g. `cd` into a subproject or different repo), subsequent hook events are still logged but attributed to the original project path from session start. Time spent in the new directory won't appear under that project's totals. This is a known gap — not yet addressed.
+
 **Cost budget estimate (`≈` value).** The budget is inferred by extrapolating current session cost (`cost.total_cost_usd`, which includes agents and tools) against rate-limit usage: if you've spent $4 at 10% of the window, that implies a ~$40 budget. However, early in a window (below ~65% usage) the reported cost lags behind actual usage — in-flight agent calls register against the rate limit before their cost is reported — making raw extrapolation unreliable. To keep the display stable, the estimate uses a two-phase approach: below 65% it holds the prior window's final estimate unchanged; above 65% it gradually blends new evidence in (weighted 30% new, 70% prior). The final converged value at the end of each window becomes the starting estimate for the next, so the display is immediately meaningful after a reset and only adjusts toward real values from mid-window onward.
 
 ## License
