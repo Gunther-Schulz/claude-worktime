@@ -193,11 +193,11 @@ A commented-out template with all options is created on install.
 | `{cost_budget}` | Session cost / inferred budget (e.g. `$12.34/≈$40`) — includes agents, tools |
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
-| `{model}` | Model name + source (e.g. `Opus 4.6 (local)`) |
+| `{model}` | Model name + source when overridden (e.g. `Opus 4.6 (local)`) |
 
 Empty tokens are automatically removed along with their surrounding separators.
 
-**Model source detection:** The `{model}` token shows where the active model setting comes from: `local` (`.claude/settings.local.json`), `project` (`.claude/settings.json`), `global` (`~/.claude/settings.json`), `session` (`/model` or `--model` override), or `default` (no setting found). The source is inferred by comparing the running model against settings files — it may be inaccurate if settings files are changed mid-session without restarting Claude Code.
+**Model source detection:** The `{model}` token shows where the active model setting comes from. The source label is only shown when the model is overridden: `local` (`.claude/settings.local.json`), `project` (`.claude/settings.json`), or `session` (`/model` or `--model` override). When the model comes from the global default (`~/.claude/settings.json`) or no setting is found, just the model name is shown without a label. The source is inferred by comparing the running model against settings files — it may be inaccurate if settings files are changed mid-session without restarting Claude Code.
 
 ### Groups and layout
 

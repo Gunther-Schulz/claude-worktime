@@ -948,7 +948,11 @@ mode_statusline() {
                 fi
                 break
             done
-            tok_model="$mdl ($_model_source)"
+            if [ "$_model_source" = "default" ] || [ "$_model_source" = "global" ]; then
+                tok_model="$mdl"
+            else
+                tok_model="$mdl ($_model_source)"
+            fi
         fi
 
         # Projected rate limit usage at window reset (pure bash integer math)
