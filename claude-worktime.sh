@@ -753,6 +753,8 @@ mode_statusline() {
     local tok_today_start="" tok_today_now=""
     [ "${today_first:-0}" -gt 0 ] && tok_today_start=$(date -d "@$today_first" +%H:%M 2>/dev/null || date -r "$today_first" +%H:%M 2>/dev/null)
     tok_today_now=$(date +%H:%M)
+    # Hide start/now times when timeline is empty — prevents "16:16  16:16" display
+    if [ -z "$tok_timeline" ]; then tok_today_start=""; tok_today_now=""; fi
     _fmt_short_v "$today_project_active"; tok_today_project="$_V"
     _fmt_short_v "${today_claude_active:-0}"; tok_today_claude="$_V"
     _fmt_short_v "${today_you_active:-0}"; tok_today_you="$_V"
@@ -1224,6 +1226,7 @@ mode_statusline() {
         _render_groups_v "$_sl_extra"
         [ -n "$_RENDER_RESULT" ] && printf '\n%s' "${_RENDER_RESULT}${COLOR_DEFAULT}"
     done
+    return 0
 }
 
 # ============================================================
