@@ -751,7 +751,21 @@ mode_statusline() {
     _fmt_short_v "$today_active"; tok_today="$_V"
     _fmt_short_v "$today_wall"; tok_today_wall="$_V"
     local tok_today_start="" tok_today_now=""
-    [ "${today_first:-0}" -gt 0 ] && tok_today_start=$(date -d "@$today_first" +%H:%M 2>/dev/null || date -r "$today_first" +%H:%M 2>/dev/null)
+    # Trim leading away-slots from timeline and adjust start time
+    if [ -n "$tok_timeline" ]; then
+        local trimmed="${tok_timeline#"${tok_timeline%%▮*}"}"
+        if [ -n "$trimmed" ]; then
+            local trimmed_count=$(( ${#tok_timeline} - ${#trimmed} ))
+            local slot_secs="${TIMELINE_SLOT:-1800}"
+            local adjusted_start=$(( today_first + trimmed_count * slot_secs ))
+            tok_timeline="$trimmed"
+            tok_today_start=$(date -d "@$adjusted_start" +%H:%M 2>/dev/null || date -r "$adjusted_start" +%H:%M 2>/dev/null)
+        else
+            [ "${today_first:-0}" -gt 0 ] && tok_today_start=$(date -d "@$today_first" +%H:%M 2>/dev/null || date -r "$today_first" +%H:%M 2>/dev/null)
+        fi
+    else
+        [ "${today_first:-0}" -gt 0 ] && tok_today_start=$(date -d "@$today_first" +%H:%M 2>/dev/null || date -r "$today_first" +%H:%M 2>/dev/null)
+    fi
     tok_today_now=$(date +%H:%M)
     _fmt_short_v "$today_project_active"; tok_today_project="$_V"
     _fmt_short_v "${today_claude_active:-0}"; tok_today_claude="$_V"
