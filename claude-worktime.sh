@@ -639,7 +639,7 @@ _current_session_id() {
         [ "$tmp" = "$line" ] && continue  # no "s" field
         sid="${tmp%%\"*}"
         [ -n "$sid" ] && { echo "$sid"; return; }
-    done < <(tail -50 "$LOGFILE" 2>/dev/null | tac || true)
+    done < <(tail -50 "$LOGFILE" 2>/dev/null | tail -r 2>/dev/null || tac 2>/dev/null || true)
 }
 
 # ============================================================
@@ -753,6 +753,8 @@ mode_statusline() {
     local tok_today_start="" tok_today_now=""
     [ "${today_first:-0}" -gt 0 ] && tok_today_start=$(date -d "@$today_first" +%H:%M 2>/dev/null || date -r "$today_first" +%H:%M 2>/dev/null)
     tok_today_now=$(date +%H:%M)
+    # Hide start/now times when timeline is empty — prevents "16:16  16:16" display
+    if [ -z "$tok_timeline" ]; then tok_today_start=""; tok_today_now=""; fi
     _fmt_short_v "$today_project_active"; tok_today_project="$_V"
     _fmt_short_v "${today_claude_active:-0}"; tok_today_claude="$_V"
     _fmt_short_v "${today_you_active:-0}"; tok_today_you="$_V"
@@ -761,22 +763,25 @@ mode_statusline() {
     _fmt_short_v "${total_you_active:-0}"; local tok_total_you="$_V"
     _short_project_v "$project"; tok_project="$_V"
     tok_branch="$branch"
-    # since_break always shows (continuous work streak); last_break only after first break
+    # since_break: continuous work streak — only show after meaningful activity
     # Streak color warning: yellow at STREAK_WARNING, red at STREAK_CRITICAL
     tok_last_break=""
+    tok_since_break=""
     local lb=${last_break:-0}
     local sb=${since_break:-0}
-    _fmt_short_v "$sb"
-    local streak_color=""
-    if [ "$sb" -ge "${STREAK_CRITICAL:-9000}" ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
-        streak_color="$COLOR_RATE_CRITICAL"
-    elif [ "$sb" -ge "${STREAK_WARNING:-5400}" ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
-        streak_color="$COLOR_RATE_WARNING"
-    fi
-    if [ -n "$streak_color" ]; then
-        tok_since_break="${streak_color}▶$_V${COLOR_DEFAULT}"
-    else
-        tok_since_break="▶$_V"
+    if [ "$sb" -gt 0 ]; then
+        _fmt_short_v "$sb"
+        local streak_color=""
+        if [ "$sb" -ge "${STREAK_CRITICAL:-9000}" ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+            streak_color="$COLOR_RATE_CRITICAL"
+        elif [ "$sb" -ge "${STREAK_WARNING:-5400}" ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+            streak_color="$COLOR_RATE_WARNING"
+        fi
+        if [ -n "$streak_color" ]; then
+            tok_since_break="${streak_color}▶$_V${COLOR_DEFAULT}"
+        else
+            tok_since_break="▶$_V"
+        fi
     fi
     if [ "$lb" -gt 0 ]; then
         _fmt_short_v "$lb"; tok_last_break="⏸ $_V"
@@ -1224,6 +1229,7 @@ mode_statusline() {
         _render_groups_v "$_sl_extra"
         [ -n "$_RENDER_RESULT" ] && printf '\n%s' "${_RENDER_RESULT}${COLOR_DEFAULT}"
     done
+    return 0
 }
 
 # ============================================================
@@ -1681,7 +1687,7 @@ mode_rotate() {
 case "${1:-}" in
     log)  shift; cmd_log "$@"; exit 0 ;;
     -h|--help|help)
-        sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
+        sed -n '2,/^$/{ s/^# //; s/^#//; p; }' "$0"
         exit 0
         ;;
     --check) cmd_check; exit $? ;;
