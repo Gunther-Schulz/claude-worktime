@@ -52,6 +52,22 @@ else
     curl -fsSL "$SCRIPT_URL" -o "$BIN_DIR/$SCRIPT_NAME"
 fi
 chmod +x "$BIN_DIR/$SCRIPT_NAME"
+
+# macOS ships bash 3.2 — script needs ≥4.0 (mapfile, read -t fractional).
+# Patch the shebang to use homebrew bash if /bin/bash is too old.
+if [[ "$(uname)" == "Darwin" ]]; then
+    local_bash_ver=$(/bin/bash -c 'echo "${BASH_VERSINFO[0]}"')
+    if [ "${local_bash_ver:-3}" -lt 4 ]; then
+        brew_bash="$(brew --prefix 2>/dev/null)/bin/bash"
+        if [ -x "$brew_bash" ]; then
+            sed -i '' "1s|#!/bin/bash|#!${brew_bash}|" "$BIN_DIR/$SCRIPT_NAME"
+            echo "  Patched shebang to $brew_bash (macOS /bin/bash is too old)"
+        else
+            echo "  Warning: /bin/bash is v${local_bash_ver} (need ≥4.0). Install modern bash: brew install bash"
+        fi
+    fi
+fi
+
 echo "  Installed $BIN_DIR/$SCRIPT_NAME"
 
 # Install default config (don't overwrite existing)
@@ -95,7 +111,10 @@ if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
         !skip { print }
     ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
     # Remove trailing blank lines left behind
-    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
+    # Remove trailing blank lines (portable: works on both GNU and BSD sed)
+    while [ -s "$CLAUDE_MD" ] && [ -z "$(tail -1 "$CLAUDE_MD")" ]; do
+        sed '$d' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
+    done
     echo "  Removed old claude-worktime section from CLAUDE.md (replaced by /worktime command)"
 fi
 
