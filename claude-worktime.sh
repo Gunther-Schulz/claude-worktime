@@ -639,7 +639,7 @@ _current_session_id() {
         [ "$tmp" = "$line" ] && continue  # no "s" field
         sid="${tmp%%\"*}"
         [ -n "$sid" ] && { echo "$sid"; return; }
-    done < <(tail -50 "$LOGFILE" 2>/dev/null | tac || true)
+    done < <(tail -50 "$LOGFILE" 2>/dev/null | tail -r 2>/dev/null || tac 2>/dev/null || true)
 }
 
 # ============================================================
