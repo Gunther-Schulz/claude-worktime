@@ -13,6 +13,8 @@ Three lines, three perspectives on the same data:
 - **Line 2** — your day: presence timeline, break rhythm
 - **Line 3** — model, rate limits, token budget, context
 
+**Note:** Only tested on Linux. May not work on macOS or Windows.
+
 ## Install
 
 ```bash
@@ -188,7 +190,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d}` | 7-day rate limit usage |
 | `{rate_7d_reset}` | Time until 7d window resets |
 | `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
-| `{rate_7d_proj}` | Projected 7d usage |
+| `{rate_7d_proj}` | Projected 7d usage (`→…` while insufficient data) |
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
 | `{cost_budget}` | Session cost / inferred budget (e.g. `$12.34/≈$40`) — includes agents, tools |
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |

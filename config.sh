@@ -110,7 +110,7 @@
 # Projections
 # ---------------------------------------------------------------------------
 # Minimum days elapsed before showing 7d rate limit projection.
-# Below this threshold, the projection is hidden (not enough data).
+# Below this threshold, →… is shown instead of a projected value.
 #RATE_7D_PROJ_MIN_DAYS=1  # 1 day (needs a full work/sleep cycle)
 
 # ---------------------------------------------------------------------------
