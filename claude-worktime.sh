@@ -999,6 +999,8 @@ mode_statusline() {
             local proj=""
             if [ "$elapsed_s" -ge "$RATE_7D_PROJ_MIN_SECONDS" ]; then
                 proj=$(( ${r7d%%.*} * 7 * 86400 / elapsed_s ))
+            else
+                tok_rate_7d_proj="→…"
             fi
             if [ -n "$proj" ]; then
                 local proj_color=""
@@ -1723,6 +1725,7 @@ Statusline token reference:
     →51%           projected 5h usage at reset (yellow ≥90%, red ≥100%)
     ⑦5%            7-day rate limit usage
     ↻Sat           7-day reset weekday
+    →12%           projected 7d usage at reset (→… while insufficient data)
 
   Context (from Claude Code)
     ctx 77%        context window fullness (auto-compacts at ~95%)
