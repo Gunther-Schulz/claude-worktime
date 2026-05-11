@@ -33,6 +33,8 @@
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
+#   {effort}         — reasoning effort level: low / medium / high / xhigh / max
+#                      (hidden when active model doesn't support effort)
 
 # ---------------------------------------------------------------------------
 # Idle detection
@@ -61,6 +63,7 @@
 #GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 #GROUP_CONTEXT="ctx {context}"
 #GROUP_MODEL="{model}"
+#GROUP_EFFORT="{effort}"
 # GROUP_TOKENS removed — weighted tokens missed subagent costs; use {cost_budget} instead
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
@@ -129,6 +132,9 @@
 # --- Add cost budget to line 3 (stabilises after ~65% window usage) ---
 # GROUP_BUDGET="{cost_budget}"
 # STATUSLINE_3="MODEL RATE_5H BUDGET RATE_7D CONTEXT"
+#
+# --- Show reasoning effort next to the model ---
+# STATUSLINE_3="MODEL EFFORT RATE_5H RATE_7D CONTEXT"
 #
 # --- Single-line compact ---
 # GROUP_COMPACT="{project} · {status} {session} ({today}) · {rate_5h}"

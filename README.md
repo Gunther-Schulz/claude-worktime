@@ -196,6 +196,7 @@ A commented-out template with all options is created on install.
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source when overridden (e.g. `Opus 4.6 (local)`) |
+| `{effort}` | Reasoning effort level (`low` / `medium` / `high` / `xhigh` / `max`). Hidden when the active model doesn't support effort. |
 
 Empty tokens are automatically removed along with their surrounding separators.
 
@@ -216,6 +217,7 @@ GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_MODEL="{model}"
+GROUP_EFFORT="{effort}"
 
 # Lines (space-separated group names)
 STATUSLINE_1="PROJECT TODAY TOTAL"
@@ -230,6 +232,9 @@ GROUP_DIVIDER=" · "
 # Add cost budget to line 3 (opt-in — stabilises after ~65% window usage)
 GROUP_BUDGET="{cost_budget}"
 STATUSLINE_3="MODEL RATE_5H BUDGET RATE_7D CONTEXT"
+
+# Show reasoning effort next to the model
+STATUSLINE_3="MODEL EFFORT RATE_5H RATE_7D CONTEXT"
 
 # Compact single line
 GROUP_COMPACT="{project} · {status} {session} ({today}) · {rate_5h}"

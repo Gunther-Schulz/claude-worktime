@@ -58,6 +58,7 @@ GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_MODEL="{model}"
+GROUP_EFFORT="{effort}"
 # token_budget removed: weighted tokens only tracked main conversation,
 # missing subagent costs (1.1-2.4x underestimate). Use {cost_budget} instead.
 GROUP_TOKENS=""
@@ -836,8 +837,8 @@ mode_statusline() {
         fi
     fi
 
-    # Tokens from Claude Code stdin JSON (rate limits, context, cost, model)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost_budget="" tok_cost="" tok_model=""
+    # Tokens from Claude Code stdin JSON (rate limits, context, cost, model, effort)
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost_budget="" tok_cost="" tok_model="" tok_effort=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
@@ -855,11 +856,12 @@ mode_statusline() {
             (.context_window.total_output_tokens // "_"),
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_"),
-            (.model.id // "_")
+            (.model.id // "_"),
+            (.effort.level // "_")
         ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
@@ -875,6 +877,8 @@ mode_statusline() {
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
         [ "$mdl_id" = "_" ] && mdl_id=""
+        [ "$eff" = "_" ] && eff=""
+        [ -n "$eff" ] && tok_effort="$eff"
 
         # Merge cache hit rate into context token: "77% ⟳99%"
         # Instantaneous ratio from the most recent API response — no state file needed.
@@ -1154,8 +1158,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost_budget}' '{cost}' '{model}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost_budget" "$tok_cost" "$tok_model" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost_budget}' '{cost}' '{model}' '{effort}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
@@ -1749,6 +1753,9 @@ Statusline token reference:
                       global = ~/.claude/settings.json
                       session = /model override or --model flag
                       default = no model configured anywhere
+    high              reasoning effort level (low/medium/high/xhigh/max).
+                      Reflects live session value, including /effort changes.
+                      Hidden when the active model doesn't support effort.
 
 All tokens auto-hide when data is unavailable.
 TOKENS
