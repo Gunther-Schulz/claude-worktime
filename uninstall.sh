@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/opt/homebrew/bin/bash
 # Uninstall claude-worktime hooks, statusline, and script
 set -euo pipefail
 
@@ -49,7 +49,7 @@ if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
         !skip { print }
     ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
     # Remove trailing blank lines left behind
-    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD"
+    sed -i '' -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD"
     echo "  Removed claude-worktime section from CLAUDE.md"
 fi
 

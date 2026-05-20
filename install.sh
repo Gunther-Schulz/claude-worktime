@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/opt/homebrew/bin/bash
 # Install claude-worktime hooks and script for Claude Code
 #
 # Usage:
@@ -95,7 +95,7 @@ if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
         !skip { print }
     ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
     # Remove trailing blank lines left behind
-    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
+    sed -i '' -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
     echo "  Removed old claude-worktime section from CLAUDE.md (replaced by /worktime command)"
 fi
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/opt/homebrew/bin/bash
 # claude-worktime — track active working time in Claude Code sessions
 #
 # JSONL log: {"t":TS,"p":"/path","b":"branch","s":"session-id","e":"EVENT"}
@@ -455,10 +455,10 @@ cmd_debug() {
     # Performance
     echo "Performance:"
     local t0 t1
-    t0=$(date +%s%N)
+    t0=$(python3 -c "import time; print(int(time.time() * 1000))")
     "$0" --statusline >/dev/null 2>&1
-    t1=$(date +%s%N)
-    echo "  Statusline: $(( (t1 - t0) / 1000000 ))ms"
+    t1=$(python3 -c "import time; print(int(time.time() * 1000))")
+    echo "  Statusline: $(( t1 - t0 ))ms"
 
     # Rotation errors
     if [ -f "${LOGDIR}/.rotation_errors" ]; then
