@@ -106,8 +106,10 @@ CW="${BIN_DIR}/${SCRIPT_NAME}"
 # This preserves hooks from other tools (unlike the old approach that overwrote entire events).
 if $FORCE || ! jq -e '.hooks.SessionStart[]? | select(.hooks[0].command | contains("claude-worktime"))' "$SETTINGS" &>/dev/null; then
     jq --arg cw "$CW" '
+      # Ensure .hooks exists before trying to update it
+      .hooks //= {} |
       # Remove existing worktime hooks from all events
-      (.hooks // {}) |= with_entries(
+      .hooks |= with_entries(
         .value |= map(select((.hooks[0].command // "") | contains("claude-worktime") | not))
       ) |
       # Append fresh worktime hooks
