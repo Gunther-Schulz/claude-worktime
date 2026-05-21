@@ -877,6 +877,9 @@ mode_statusline() {
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
         [ "$mdl_id" = "_" ] && mdl_id=""
+        # Strip the context-window suffix (e.g. " (1M context)") from the
+        # display name — redundant in the statusline.
+        [[ "$mdl" == *" ("*"context)" ]] && mdl="${mdl% (*context)}"
         [ "$eff" = "_" ] && eff=""
         [ -n "$eff" ] && tok_effort="$eff"
 
