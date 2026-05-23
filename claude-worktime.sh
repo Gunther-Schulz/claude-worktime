@@ -758,7 +758,7 @@ mode_statusline() {
         if [ -n "$trimmed" ]; then
             local trimmed_count=$(( ${#tok_timeline} - ${#trimmed} ))
             local slot_secs="${TIMELINE_SLOT:-1800}"
-            local adjusted_start=$(( today_first + trimmed_count * slot_secs ))
+            local adjusted_start=$(( (today_first / slot_secs + trimmed_count) * slot_secs ))
             tok_timeline="$trimmed"
             tok_today_start=$(date -d "@$adjusted_start" +%H:%M 2>/dev/null || date -r "$adjusted_start" +%H:%M 2>/dev/null)
         else
