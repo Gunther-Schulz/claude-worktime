@@ -1,6 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Uninstall claude-worktime hooks, statusline, and script
+#
+# Platform: Linux primary; macOS supported with vanilla system bash 3.2.
 set -euo pipefail
+
+# Portability: GNU `sed -i` takes no arg, BSD requires ''.
+if [[ ${OSTYPE:-} == darwin* ]]; then
+    _sedi() { sed -i '' "$@"; }
+else
+    _sedi() { sed -i "$@"; }
+fi
 
 BIN_DIR="${HOME}/.local/bin"
 CLAUDE_DIR="${HOME}/.claude"
@@ -24,11 +33,13 @@ fi
 if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
     # Remove only worktime hooks, preserve other tools' hooks
     jq '
-      (.hooks // {}) |= with_entries(
+      .hooks //= {} |
+      # Remove only worktime hooks, preserve other tools'\'' hooks
+      .hooks |= with_entries(
         .value |= map(select((.hooks[0].command // "") | contains("claude-worktime") | not))
       ) |
       # Clean up empty arrays and empty hooks object
-      (.hooks // {}) |= with_entries(select(.value | length > 0)) |
+      .hooks |= with_entries(select(.value | length > 0)) |
       if .hooks == {} then del(.hooks) else . end
     ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
     # Remove statusline if it's ours
@@ -49,7 +60,7 @@ if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
         !skip { print }
     ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
     # Remove trailing blank lines left behind
-    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD"
+    _sedi -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD"
     echo "  Removed claude-worktime section from CLAUDE.md"
 fi
 

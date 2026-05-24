@@ -1,5 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # claude-worktime — track active working time in Claude Code sessions
+#
+# Platform support: Linux is the primary target (GNU coreutils, bash 4+).
+# macOS is supported as a second-class target with vanilla system bash 3.2;
+# bash 4+ idioms (mapfile, ${var,,}) are polyfilled in the macOS compat
+# layer below. All OS-conditional code lives there; the rest of the file
+# is pure Linux bash 4.
 #
 # JSONL log: {"t":TS,"p":"/path","b":"branch","s":"session-id","e":"EVENT"}
 # Event types: start, prompt, tool_start, tool_end, response
@@ -40,6 +46,89 @@
 set -euo pipefail
 export LC_ALL=C
 
+# ============================================================
+# macOS compatibility layer — Linux is the canonical target.
+#
+# The rest of this file is pure Linux code: bash 4+ syntax,
+# GNU coreutils, no OS branches. Linux runtime path never
+# touches the macOS conditionals — the check fires once at
+# load time and locks the function bodies.
+#
+# macOS default target: vanilla system bash 3.2 + BSD utilities.
+# All compatibility work for macOS lives in this section only.
+# Anywhere else in the file, write canonical Linux bash 4.
+# ============================================================
+if [[ ${OSTYPE:-} == darwin* ]]; then
+    _CW_IS_DARWIN=1
+
+    # In-place sed: GNU takes no arg, BSD requires an explicit ''.
+    _sedi() { sed -i '' "$@"; }
+
+    # Reverse line order: GNU has tac; BSD ships tail -r.
+    _tac() { tail -r; }
+
+    # Lowercase: bash 4's ${var,,} doesn't exist in 3.2; tr fallback.
+    _lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+    # Millisecond epoch: BSD date lacks %N. Use python3 if present,
+    # else seconds-resolution. Only used for --debug perf timer.
+    if command -v python3 &>/dev/null; then
+        _epoch_ms() { python3 -c 'import time; print(int(time.time()*1000))'; }
+    else
+        _epoch_ms() { echo $(( $(date +%s) * 1000 )); }
+    fi
+
+    # bash 3.2 polyfill for `mapfile -t VAR < <(cmd)`. Defined as a
+    # function literally named `mapfile` so call sites stay literal;
+    # bash resolves functions before built-ins. On Linux this function
+    # is not defined and the bash 4 built-in is used directly — zero
+    # cost to the Linux path.
+    if ! type -t mapfile &>/dev/null; then
+        mapfile() {
+            local _name _line _arr=()
+            # Consume flags; we only need to honor -t (strip trailing newline,
+            # which `read -r` already does). Accept and ignore other -X flags.
+            while [[ ${1:-} == -* ]]; do
+                case $1 in
+                    --) shift; break ;;
+                    *) shift ;;
+                esac
+            done
+            _name=${1:?mapfile: variable name required}
+            # `|| [ -n "$_line" ]` catches the final line when input lacks a
+            # trailing newline (read returns non-zero but $_line is set).
+            while IFS= read -r _line || [ -n "$_line" ]; do _arr+=("$_line"); done
+            eval "$_name=(\"\${_arr[@]}\")"
+        }
+    fi
+
+    # Glyph: U+2466 ⑦ renders as tofu in several common macOS monospace
+    # fonts; U+2790 ➐ is the cleanest portable alternative. The leading
+    # space prevents it from visually crowding the following digit.
+    _CW_GLYPH_7D="➐ "
+else
+    _CW_IS_DARWIN=0
+    _sedi() { sed -i "$@"; }
+    _tac() { tac; }
+    # `eval` defers parsing of bash 4's ${v,,} so bash 3.2 (macOS) never
+    # encounters it at script-load time — even though only the Darwin
+    # branch executes there.
+    eval '_lower() { local v=$1; printf "%s" "${v,,}"; }'
+
+    # bash 5 has $EPOCHREALTIME (seconds.microseconds, no fork).
+    # Older bash 4 falls back to GNU date +%s%N.
+    if [[ ${EPOCHREALTIME:-} == *.* ]]; then
+        _epoch_ms() { local r=${EPOCHREALTIME%.*}${EPOCHREALTIME#*.}; echo "${r:0:13}"; }
+    else
+        _epoch_ms() { echo $(( $(date +%s%N) / 1000000 )); }
+    fi
+
+    _CW_GLYPH_7D="⑦"
+fi
+# ============================================================
+# End of macOS compatibility layer.
+# ============================================================
+
 # Paths: env vars > XDG spec > defaults
 CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
 CONFIGFILE="${CONFIGDIR}/config.sh"
@@ -55,7 +144,7 @@ GROUP_TOTAL="total {project_total}"
 GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
-GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+GROUP_RATE_7D="${_CW_GLYPH_7D}{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
@@ -261,13 +350,16 @@ RATE_7D_PROJ_MIN_SECONDS=$(awk "BEGIN { printf \"%d\", ${RATE_7D_PROJ_MIN_DAYS:-
 
 # --- Date helpers (GNU coreutils, BSD fallback) ---
 _date_at() { date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null; }
-_today_start() { date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null; }
+# BSD `date -j -f "%Y-%m-%d" "$d"` inherits current time-of-day for unspecified
+# fields, so parsing a date alone returns ~now rather than midnight. We force
+# midnight with an explicit 00:00:00 in both format and value on the BSD branch.
+_today_start() { date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-%d) 00:00:00" +%s 2>/dev/null; }
 _week_start() {
     local dow; dow=$(date +%u)
     if [ "$dow" = "1" ]; then _today_start
-    else date -d "last monday" +%s 2>/dev/null || date -j -v-monday +%s 2>/dev/null; fi
+    else date -d "last monday" +%s 2>/dev/null || date -j -v-monday -v0H -v0M -v0S +%s 2>/dev/null; fi
 }
-_date_parse() { date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2>/dev/null || echo 0; }
+_date_parse() { date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S" "$1 00:00:00" +%s 2>/dev/null || echo 0; }
 
 # --- Dependency check ---
 _require_jq() { command -v jq &>/dev/null || { echo "Error: jq is required." >&2; exit 1; }; }
@@ -278,16 +370,22 @@ _safe_log() {
     jq -Rc 'fromjson? // empty' "$file" 2>/dev/null
 }
 
-# Minimum versions: bash 4.0, jq 1.6, git 2.22
+# Minimum versions: bash 3.2 (macOS vanilla) / 4.0 preferred, jq 1.6, git 2.22
 cmd_check() {
     local ok=true
 
-    # bash
+    # bash — Linux uses bash 4 idioms directly; macOS uses polyfills on bash 3.2
     local bash_ver="${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"
     if [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
-        printf "  bash %s  ✓  (need ≥4.0)\n" "$bash_ver"
+        printf "  bash %s  ✓\n" "$bash_ver"
+    elif [ "${BASH_VERSINFO[0]}" -eq 3 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; then
+        if (( _CW_IS_DARWIN )); then
+            printf "  bash %s  ✓  (macOS, polyfills active)\n" "$bash_ver"
+        else
+            printf "  bash %s  ⚠  (works via polyfills; bash 4+ preferred on Linux)\n" "$bash_ver"
+        fi
     else
-        printf "  bash %s  ✗  (need ≥4.0 — mapfile, read -t fractional)\n" "$bash_ver"
+        printf "  bash %s  ✗  (need ≥3.2)\n" "$bash_ver"
         ok=false
     fi
 
@@ -455,10 +553,10 @@ cmd_debug() {
     # Performance
     echo "Performance:"
     local t0 t1
-    t0=$(date +%s%N)
+    t0=$(_epoch_ms)
     "$0" --statusline >/dev/null 2>&1
-    t1=$(date +%s%N)
-    echo "  Statusline: $(( (t1 - t0) / 1000000 ))ms"
+    t1=$(_epoch_ms)
+    echo "  Statusline: $(( t1 - t0 ))ms"
 
     # Rotation errors
     if [ -f "${LOGDIR}/.rotation_errors" ]; then
@@ -474,11 +572,17 @@ cmd_debug() {
 }
 
 # --- Read hook stdin JSON ---
+# Uses [ -t 0 ] to skip immediately when invoked without a pipe (the common
+# direct-CLI case). When a pipe is present, `read -t 1` is enough: hook
+# stdin is buffered before the hook runs, so the read returns instantly on
+# real data — the timeout only kicks in for the empty-pipe edge case.
+# Integer timeout keeps this compatible with bash 3.2 (vanilla macOS).
 _read_hook_stdin() {
     HOOK_SESSION_ID=""
     HOOK_CWD=""
     _STDIN_JSON=""
-    if read -t 0.1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
+    [ -t 0 ] && return
+    if read -t 1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
         # Fast bash parsing — avoid jq on the hot path
         # Extract "session_id":"VALUE" and "cwd":"VALUE" with parameter expansion
         local tmp="${_STDIN_JSON#*\"session_id\":\"}"
@@ -640,7 +744,7 @@ _current_session_id() {
         [ "$tmp" = "$line" ] && continue  # no "s" field
         sid="${tmp%%\"*}"
         [ -n "$sid" ] && { echo "$sid"; return; }
-    done < <(tail -50 "$LOGFILE" 2>/dev/null | tac || true)
+    done < <(tail -50 "$LOGFILE" 2>/dev/null | _tac || true)
 }
 
 # ============================================================
@@ -962,7 +1066,7 @@ mode_statusline() {
                 esac
                 # Check if settings value matches model.id (substring match)
                 # e.g. "opus" matches "claude-opus-4-6", "claude-opus-4-6" matches exactly
-                if [ -n "$mdl_id" ] && [[ "${mdl_id,,}" == *"${_ms_val,,}"* ]]; then
+                if [ -n "$mdl_id" ] && [[ "$(_lower "$mdl_id")" == *"$(_lower "$_ms_val")"* ]]; then
                     _model_source="$_ms_src"
                 else
                     _model_source="session"
@@ -1564,20 +1668,20 @@ mode_gaps() {
 _rotate_boundaries() {
     case "$ROTATE_INTERVAL" in
         daily)
-            ROTATE_CUTOFF=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
+            ROTATE_CUTOFF=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-%d) 00:00:00" +%s 2>/dev/null)
             ROTATE_SUFFIX=$(date -d "yesterday" +%Y-%m-%d 2>/dev/null || date -j -v-1d +%Y-%m-%d 2>/dev/null)
             ;;
         weekly)
             local dow; dow=$(date +%u)
             if [ "$dow" = "1" ]; then
-                ROTATE_CUTOFF=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s 2>/dev/null)
+                ROTATE_CUTOFF=$(date -d "today 00:00" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-%d) 00:00:00" +%s 2>/dev/null)
             else
-                ROTATE_CUTOFF=$(date -d "last monday" +%s 2>/dev/null || date -j -v-monday +%s 2>/dev/null)
+                ROTATE_CUTOFF=$(date -d "last monday" +%s 2>/dev/null || date -j -v-monday -v0H -v0M -v0S +%s 2>/dev/null)
             fi
             ROTATE_SUFFIX=$(date -d "@$((ROTATE_CUTOFF - 1))" +%Y-W%V 2>/dev/null || date -r "$((ROTATE_CUTOFF - 1))" +%Y-W%V 2>/dev/null)
             ;;
         monthly|*)
-            ROTATE_CUTOFF=$(date -d "$(date +%Y-%m-01)" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$(date +%Y-%m-01)" +%s 2>/dev/null)
+            ROTATE_CUTOFF=$(date -d "$(date +%Y-%m-01)" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-01) 00:00:00" +%s 2>/dev/null)
             ROTATE_SUFFIX=$(date -d "last month" +%Y-%m 2>/dev/null || date -j -v-1m +%Y-%m 2>/dev/null)
             ;;
     esac

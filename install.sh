@@ -1,5 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Install claude-worktime hooks and script for Claude Code
+#
+# Platform: Linux primary; macOS supported with vanilla system bash 3.2.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/install.sh | bash
@@ -11,6 +13,13 @@
 #   --statusline    Enable statusline display
 
 set -euo pipefail
+
+# Portability: GNU `sed -i` takes no arg, BSD requires ''.
+if [[ ${OSTYPE:-} == darwin* ]]; then
+    _sedi() { sed -i '' "$@"; }
+else
+    _sedi() { sed -i "$@"; }
+fi
 
 BIN_DIR="${HOME}/.local/bin"
 CLAUDE_DIR="${HOME}/.claude"
@@ -95,7 +104,7 @@ if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
         !skip { print }
     ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
     # Remove trailing blank lines left behind
-    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
+    _sedi -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
     echo "  Removed old claude-worktime section from CLAUDE.md (replaced by /worktime command)"
 fi
 
@@ -106,8 +115,10 @@ CW="${BIN_DIR}/${SCRIPT_NAME}"
 # This preserves hooks from other tools (unlike the old approach that overwrote entire events).
 if $FORCE || ! jq -e '.hooks.SessionStart[]? | select(.hooks[0].command | contains("claude-worktime"))' "$SETTINGS" &>/dev/null; then
     jq --arg cw "$CW" '
+      # Ensure .hooks exists so the |= update below has something to walk
+      .hooks //= {} |
       # Remove existing worktime hooks from all events
-      (.hooks // {}) |= with_entries(
+      .hooks |= with_entries(
         .value |= map(select((.hooks[0].command // "") | contains("claude-worktime") | not))
       ) |
       # Append fresh worktime hooks

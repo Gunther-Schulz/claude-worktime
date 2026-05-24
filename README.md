@@ -13,7 +13,7 @@ Three lines, three perspectives on the same data:
 - **Line 2** — your day: presence timeline, break rhythm
 - **Line 3** — model, rate limits, token budget, context
 
-**Note:** Only tested on Linux. May not work on macOS or Windows.
+**Platform:** Linux is the primary target (developed and tested on it). macOS is supported as a second-class target with vanilla system bash 3.2 — no Homebrew bash or coreutils required, just `jq`. Windows is not supported.
 
 ## Install
 
@@ -372,12 +372,14 @@ JSONL at `~/.local/share/claude-worktime/activity.jsonl`:
 
 | Tool | Min version | Required | Used for |
 |------|-------------|----------|----------|
-| **bash** | 4.0 | yes | `mapfile`, `read -t 0.1`, arrays |
+| **bash** | 4.0 Linux / 3.2 macOS | yes | `mapfile`, `read -t`, arrays (macOS uses polyfills for bash 3.2) |
 | **jq** | 1.6 | yes | JSONL parsing, aggregation |
 | **git** | 2.22 | no | `{git}` status token, branch logging |
 | **date** | GNU coreutils or BSD | yes | timestamp conversion |
 
 Run `claude-worktime --check` to verify. No python, no node, no extra runtimes.
+
+**Platform notes.** Linux uses GNU coreutils and bash 4+ directly; this is the canonical code path. macOS runs against vanilla system bash 3.2 and BSD utilities via a thin compatibility layer in `claude-worktime.sh` (bracketed near the top of the file). No `brew install bash` or `brew install coreutils` required — just `brew install jq`. The 7-day rate-limit glyph is `⑦` on Linux and `➐` on macOS (the latter renders cleanly in common macOS monospace fonts where `⑦` does not).
 
 ## Known limitations
 
