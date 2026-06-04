@@ -860,7 +860,11 @@ mode_statusline() {
     if [ -n "$tok_timeline" ]; then
         local trimmed="${tok_timeline#"${tok_timeline%%▮*}"}"
         if [ -n "$trimmed" ]; then
-            local trimmed_count=$(( ${#tok_timeline} - ${#trimmed} ))
+            # Count leading away-slots as GLYPHS, not bytes. LC_ALL=C is forced
+            # (see top of file), so ${#…} counts bytes and · is 2 bytes — a byte
+            # delta would double the count and push today_start hours forward.
+            local _away="${tok_timeline%%▮*}" trimmed_count=0
+            while [ -n "$_away" ]; do _away="${_away#·}"; trimmed_count=$(( trimmed_count + 1 )); done
             local slot_secs="${TIMELINE_SLOT:-1800}"
             local adjusted_start=$(( (today_first / slot_secs + trimmed_count) * slot_secs ))
             tok_timeline="$trimmed"
