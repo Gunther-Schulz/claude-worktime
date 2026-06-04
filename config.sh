@@ -48,6 +48,14 @@
                       # stepping away. Beyond this, time counts toward absence.
 
 # ---------------------------------------------------------------------------
+# Project label ({project})
+# ---------------------------------------------------------------------------
+#HOME_ORG=""              # drop a leading "org/" from {project} (e.g. your code-host
+                          # user dir, where it's redundant); empty = keep full label
+#PROJECT_GIT_ANCHOR=false # anchor {project} to the git repo root, so subdirs and
+                          # worktrees show the repo name instead of the cwd's folder
+
+# ---------------------------------------------------------------------------
 # Statusline format — group-based
 # ---------------------------------------------------------------------------
 # Define named groups, then compose lines by listing group names.

@@ -138,6 +138,8 @@ DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-wor
 PAUSE_THRESHOLD=900
 CLAUDE_CREDIT=0          # seconds of Claude response time credited as "user watching"
                          # 0 = auto (PAUSE_THRESHOLD / 3, ~5min at default 15min threshold)
+HOME_ORG=""              # drop this leading "org/" from {project} (e.g. your code-host user dir); empty = keep full label
+PROJECT_GIT_ANCHOR=false # anchor {project} to the git repo root so subdirs/worktrees show the repo
 GROUP_PROJECT="{project} ({git})"
 GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 GROUP_TOTAL="total {project_total}"
@@ -622,11 +624,14 @@ _short_project() {
     local last="${p##*/}"
     local rest="${p%/*}"
     local second="${rest##*/}"
+    local label
     if [ -n "$second" ] && [ "$second" != "$last" ]; then
-        echo "$second/$last"
+        label="$second/$last"
     else
-        echo "$last"
+        label="$last"
     fi
+    [ -n "$HOME_ORG" ] && label="${label#"$HOME_ORG"/}"
+    echo "$label"
 }
 # Variable-setting variant
 _short_project_v() {
@@ -639,6 +644,17 @@ _short_project_v() {
     else
         _V="$last"
     fi
+    [ -n "$HOME_ORG" ] && _V="${_V#"$HOME_ORG"/}"
+}
+# Statusline project label: optionally anchor to the git repo root (so subdirs and
+# worktrees show the repo), then shorten + drop HOME_ORG. Sets _V.
+_project_label_v() {
+    local path="$1"
+    if [ -n "$path" ] && [ "${PROJECT_GIT_ANCHOR:-false}" = true ] && command -v git &>/dev/null; then
+        local top; top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)
+        [ -n "$top" ] && path="$top"
+    fi
+    _short_project_v "$path"
 }
 
 # ============================================================
@@ -882,7 +898,7 @@ mode_statusline() {
     _fmt_short_v "$project_total_active"; tok_project_total="$_V"
     _fmt_short_v "${total_claude_active:-0}"; local tok_total_claude="$_V"
     _fmt_short_v "${total_you_active:-0}"; local tok_total_you="$_V"
-    _short_project_v "$project"; tok_project="$_V"
+    _project_label_v "$project"; tok_project="$_V"
     tok_branch="$branch"
     # since_break always shows (continuous work streak); last_break only after first break
     # Streak color warning: yellow at STREAK_WARNING, red at STREAK_CRITICAL
