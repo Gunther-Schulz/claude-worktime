@@ -29,6 +29,11 @@
 #   Claude Code tokens (from statusline stdin JSON):
 #   {rate_5h}        — 5-hour rate limit usage (e.g. "23%")
 #   {rate_7d}        — 7-day rate limit usage (e.g. "5%")
+#   {rate_7d_scoped}      — model-scoped weekly limit usage (e.g. Fable on
+#                           Max plans: "36%"); fetched from the usage API
+#                           in the background (see USAGE_FETCH_INTERVAL)
+#   {rate_7d_scoped_name} — name of the scoped model (e.g. "Fable")
+#   {rate_7d_scoped_proj} — projected scoped usage at week's end
 #   {context}        — context window usage (e.g. "45%")
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
@@ -69,6 +74,7 @@
 #GROUP_BREAKS="{since_break} {last_break}"
 #GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 #GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+#GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 #GROUP_CONTEXT="ctx {context}"
 #GROUP_MODEL="{model}"
 #GROUP_EFFORT="{effort}"
@@ -76,14 +82,36 @@
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
 #STATUSLINE_2="TIMELINE BREAKS"
-#STATUSLINE_3="MODEL RATE_5H RATE_7D CONTEXT"
+#STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT"
 #GROUP_DIVIDER=" · "
 
 # Per-group colors (optional, falls back to COLOR_NORMAL)
 # Mute secondary info for visual hierarchy
 #GROUP_RATE_7D_COLOR="dark-gray"
+#GROUP_RATE_SCOPED_COLOR="dark-gray"
 #GROUP_CONTEXT_COLOR="dark-gray"
 #GROUP_BUDGET_COLOR="dark-gray"
+
+# ---------------------------------------------------------------------------
+# Model-scoped weekly limit (e.g. Fable on Max plans)
+# ---------------------------------------------------------------------------
+# Claude Code's statusline stdin only carries the all-models 5h/7d buckets.
+# The per-model weekly bucket shown at claude.ai (e.g. "Fable — 36% used")
+# is fetched from api.anthropic.com/api/oauth/usage using the OAuth token
+# Claude Code already stores, cached on disk, and refreshed in the
+# background — the statusline never waits on the network.
+#USAGE_FETCH_INTERVAL=300  # seconds between fetches; 0 disables the fetch
+                           # (and the {rate_7d_scoped*} tokens stay empty)
+
+# ---------------------------------------------------------------------------
+# Per-model colors for {model}
+# ---------------------------------------------------------------------------
+# Comma-separated "substring=color" pairs, matched case-insensitively
+# against the model id and display name. First match wins; models that
+# match nothing keep the group color. Any preset or raw ANSI color works.
+#MODEL_COLORS="fable=pink"
+# All families pinned:
+#MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"
 
 # ---------------------------------------------------------------------------
 # Colors — use preset names or raw ANSI codes

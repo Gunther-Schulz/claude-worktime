@@ -191,6 +191,9 @@ A commented-out template with all options is created on install.
 | `{rate_7d_reset}` | Time until 7d window resets |
 | `{rate_7d_day}` | Reset weekday (e.g. `Sat`) |
 | `{rate_7d_proj}` | Projected 7d usage (`→…` while insufficient data) |
+| `{rate_7d_scoped}` | Model-scoped weekly limit (e.g. the Fable bucket on Max plans) |
+| `{rate_7d_scoped_name}` | Name of the scoped model (e.g. `Fable`) |
+| `{rate_7d_scoped_proj}` | Projected scoped usage at week's end |
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
 | `{cost_budget}` | Session cost / inferred budget (e.g. `$12.34/≈$40`) — includes agents, tools |
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
@@ -200,7 +203,11 @@ A commented-out template with all options is created on install.
 
 Empty tokens are automatically removed along with their surrounding separators.
 
-**Model source detection:** The `{model}` token shows where the active model setting comes from. The source label is only shown when the model is overridden: `local` (`.claude/settings.local.json`), `project` (`.claude/settings.json`), or `session` (`/model` or `--model` override). When the model comes from the global default (`~/.claude/settings.json`) or no setting is found, just the model name is shown without a label. The source is inferred by comparing the running model against settings files — it may be inaccurate if settings files are changed mid-session without restarting Claude Code. The context-window suffix Claude Code adds to some model names (e.g. `Opus 4.7 (1M context)`) is stripped — only `Opus 4.7` is shown.
+**Model source detection:** The `{model}` token shows where the active model setting comes from. The source label is only shown when the model is overridden: `local` (`.claude/settings.local.json`), `project` (`.claude/settings.json`), or `session` (`/model` or `--model` override). When the model comes from the global default (`~/.claude/settings.json`) or no setting is found, just the model name is shown without a label. The source is inferred by comparing the running model against settings files — it may be inaccurate if settings files are changed mid-session without restarting Claude Code. Context-window suffixes are stripped on both sides: `Opus 4.7 (1M context)` displays as `Opus 4.7`, and a settings value like `claude-fable-5[1m]` still matches the running `claude-fable-5`.
+
+**Per-model colors:** `MODEL_COLORS` colors the `{model}` token by model — a comma-separated list of `substring=color` pairs matched case-insensitively against the model id and display name; first match wins, unmatched models keep the group color. Default: `fable=pink`. Example pinning all families: `MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"`.
+
+**Model-scoped weekly limit:** Claude Code's statusline stdin only carries the all-models 5h and 7d buckets. The per-model weekly bucket shown at claude.ai (e.g. "Fable — 36% used" on Max plans, where Fable is capped separately from the overall weekly limit) is fetched from `api.anthropic.com/api/oauth/usage` using the OAuth token Claude Code already stores (`~/.claude/.credentials.json`, or the Keychain on macOS), cached in the data dir, and refreshed in the background every `USAGE_FETCH_INTERVAL` seconds (default 300, `0` disables). The statusline never waits on the network — it renders the cached value. If the account has no scoped limit, the tokens stay empty and the group is hidden.
 
 ### Groups and layout
 
@@ -215,6 +222,7 @@ GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
@@ -222,7 +230,7 @@ GROUP_EFFORT="{effort}"
 # Lines (space-separated group names)
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
-STATUSLINE_3="MODEL RATE_5H RATE_7D CONTEXT"
+STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT"
 GROUP_DIVIDER=" · "
 ```
 

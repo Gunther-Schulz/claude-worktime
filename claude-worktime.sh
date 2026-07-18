@@ -69,6 +69,10 @@ if [[ ${OSTYPE:-} == darwin* ]]; then
 
     # Lowercase: bash 4's ${var,,} doesn't exist in 3.2; tr fallback.
     _lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+    _lower_v() { _V=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]'); }
+
+    # File mtime as epoch seconds: BSD stat syntax.
+    _mtime_v() { _V=$(stat -f %m "$1" 2>/dev/null || echo 0); }
 
     # Millisecond epoch: BSD date lacks %N. Use python3 if present,
     # else seconds-resolution. Only used for --debug perf timer.
@@ -114,6 +118,11 @@ else
     # encounters it at script-load time — even though only the Darwin
     # branch executes there.
     eval '_lower() { local v=$1; printf "%s" "${v,,}"; }'
+    # Variable-setting lowercase — no subshell on the statusline hot path.
+    eval '_lower_v() { _V=${1,,}; }'
+
+    # File mtime as epoch seconds (GNU stat).
+    _mtime_v() { _V=$(stat -c %Y "$1" 2>/dev/null || echo 0); }
 
     # bash 5 has $EPOCHREALTIME (seconds.microseconds, no fork).
     # Older bash 4 falls back to GNU date +%s%N.
@@ -147,6 +156,7 @@ GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
 GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="${_CW_GLYPH_7D}{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
@@ -154,12 +164,21 @@ GROUP_EFFORT="{effort}"
 # missing subagent costs (1.1-2.4x underestimate). Use {cost_budget} instead.
 GROUP_TOKENS=""
 GROUP_RATE_7D_COLOR="dark-gray"
+GROUP_RATE_SCOPED_COLOR="dark-gray"
 GROUP_CONTEXT_COLOR="dark-gray"
 GROUP_BUDGET_COLOR="dark-gray"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
-STATUSLINE_3="MODEL RATE_5H RATE_7D CONTEXT"
+STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT"
+# Per-model colors for {model}: comma list of "substring=color" pairs,
+# matched case-insensitively against the model id and display name.
+# First match wins; unmatched models keep the group color.
+MODEL_COLORS="fable=pink"
+# Model-scoped weekly limit (e.g. Fable on Max plans) is NOT in the
+# statusline stdin — it's fetched from the OAuth usage endpoint in the
+# background and cached. Seconds between fetches; 0 disables entirely.
+USAGE_FETCH_INTERVAL=300
 COLOR_NORMAL="green"
 COLOR_RATE_WARNING="yellow"
 COLOR_RATE_CRITICAL="red"
@@ -407,6 +426,13 @@ cmd_check() {
         ok=false
     fi
 
+    # curl (optional — model-scoped weekly limit fetch)
+    if command -v curl &>/dev/null; then
+        printf "  curl  ✓  (optional, for {rate_7d_scoped} tokens)\n"
+    else
+        printf "  curl  —  (not installed, {rate_7d_scoped} tokens unavailable)\n"
+    fi
+
     # git (optional)
     if command -v git &>/dev/null; then
         local git_ver; git_ver=$(git --version | sed 's/git version //')
@@ -517,6 +543,8 @@ cmd_debug() {
     echo "  AUTO_ROTATE:        $AUTO_ROTATE"
     echo "  ROTATE_INTERVAL:    $ROTATE_INTERVAL"
     echo "  RATE_7D_PROJ_MIN:   ${RATE_7D_PROJ_MIN_DAYS} days"
+    echo "  USAGE_FETCH_INTERVAL: ${USAGE_FETCH_INTERVAL}s"
+    echo "  MODEL_COLORS:       ${MODEL_COLORS:-none}"
     echo "  STATUSLINE_1:       $STATUSLINE_1"
     [ -n "${STATUSLINE_2:-}" ] && echo "  STATUSLINE_2:       $STATUSLINE_2"
     [ -n "${STATUSLINE_3:-}" ] && echo "  STATUSLINE_3:       $STATUSLINE_3"
@@ -963,6 +991,7 @@ mode_statusline() {
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model, effort)
     local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost_budget="" tok_cost="" tok_model="" tok_effort=""
+    local tok_rate_7d_scoped="" tok_rate_7d_scoped_name="" tok_rate_7d_scoped_proj=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
         local stdin_parsed
@@ -1080,13 +1109,30 @@ mode_statusline() {
                 [ "$_ms_val" = "$_ms_raw" ] && continue
                 _ms_val="${_ms_val%%\"*}"
                 case "$_ms_file" in
+                    "$HOME/.claude/settings.json") _ms_src="global" ;;
                     *settings.local.json) _ms_src="local" ;;
-                    */.claude/settings.json) _ms_src="project" ;;
-                    *) _ms_src="global" ;;
+                    *) _ms_src="project" ;;
                 esac
+                # Normalize before matching: settings values may carry a
+                # context-window suffix ("claude-fable-5[1m]") that model.id
+                # never has — strip any trailing [..] from both sides.
+                _ms_val="${_ms_val%%\[*}"
+                local _id_lc _val_lc
+                _lower_v "${mdl_id%%\[*}"; _id_lc="$_V"
+                _lower_v "$_ms_val"; _val_lc="$_V"
                 # Check if settings value matches model.id (substring match)
                 # e.g. "opus" matches "claude-opus-4-6", "claude-opus-4-6" matches exactly
-                if [ -n "$mdl_id" ] && [[ "$(_lower "$mdl_id")" == *"$(_lower "$_ms_val")"* ]]; then
+                if [ "$_val_lc" = "default" ]; then
+                    # Explicit "default" = account default, not a session override
+                    _model_source="$_ms_src"
+                elif [ "$_val_lc" = "opusplan" ]; then
+                    # opusplan runs Opus for planning, Sonnet otherwise —
+                    # both are the configured model, not a session override
+                    case "$_id_lc" in
+                        *opus*|*sonnet*) _model_source="$_ms_src" ;;
+                        *) _model_source="session" ;;
+                    esac
+                elif [ -n "$_id_lc" ] && [[ "$_id_lc" == *"$_val_lc"* ]]; then
                     _model_source="$_ms_src"
                 else
                     _model_source="session"
@@ -1097,6 +1143,27 @@ mode_statusline() {
                 tok_model="$mdl"
             else
                 tok_model="$mdl ($_model_source)"
+            fi
+
+            # Per-model color: first matching "substring=color" pair wins.
+            # COLOR_DEFAULT is rewritten to the group color at render time,
+            # so the rest of the group keeps its own color.
+            if [ -n "${MODEL_COLORS:-}" ]; then
+                local _mc_pair _mc_pat _mc_col _mc_hay _saveIFS
+                _lower_v "$mdl_id $mdl"; _mc_hay="$_V"
+                _saveIFS="$IFS"; IFS=','
+                for _mc_pair in $MODEL_COLORS; do
+                    _mc_pat="${_mc_pair%%=*}"
+                    _mc_col="${_mc_pair#*=}"
+                    [ -z "$_mc_pat" ] || [ "$_mc_pat" = "$_mc_pair" ] && continue
+                    _lower_v "$_mc_pat"
+                    if [[ "$_mc_hay" == *"$_V"* ]]; then
+                        _resolve_color_v "$_mc_col"
+                        [ -n "$_V" ] && tok_model="${_V}${tok_model}${COLOR_DEFAULT}"
+                        break
+                    fi
+                done
+                IFS="$_saveIFS"
             fi
         fi
 
@@ -1144,6 +1211,79 @@ mode_statusline() {
                     tok_rate_7d_proj="${proj_color}→${proj}%${COLOR_DEFAULT}"
                 else
                     tok_rate_7d_proj="→${proj}%"
+                fi
+            fi
+        fi
+
+        # Model-scoped weekly limit (e.g. the Fable bucket on Max plans) —
+        # Claude Code does NOT include it in the statusline stdin, only the
+        # all-models 5h/7d buckets. It lives in the `limits` array of
+        # GET /api/oauth/usage as kind="weekly_scoped" with a model scope.
+        # Fetched in the background and cached; the statusline never blocks
+        # on the network — it renders the cache and kicks off a refresh
+        # when the cache is older than USAGE_FETCH_INTERVAL.
+        if [[ "$all_formats" == *"{rate_7d_scoped"* ]] && [ "${USAGE_FETCH_INTERVAL:-0}" -gt 0 ] 2>/dev/null; then
+            local usage_cache="${LOGDIR}/.usage_cache"
+            local _uc_mtime; _mtime_v "$usage_cache"; _uc_mtime="$_V"
+            if [ $(( now - _uc_mtime )) -ge "$USAGE_FETCH_INTERVAL" ]; then
+                # Touch first: acts as a lock so overlapping statusline runs
+                # don't stack up fetches while this one is in flight.
+                touch "$usage_cache" 2>/dev/null
+                (
+                    _tok=$(jq -r '.claudeAiOauth.accessToken // empty' \
+                        "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json" 2>/dev/null)
+                    # macOS stores credentials in the Keychain, not a file
+                    [ -z "$_tok" ] && command -v security &>/dev/null && \
+                        _tok=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+                            | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+                    if [ -n "$_tok" ]; then
+                        _resp=$(curl -sf --max-time 10 "https://api.anthropic.com/api/oauth/usage" \
+                            -H "Authorization: Bearer $_tok" \
+                            -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
+                        # Only overwrite the cache with a well-formed response
+                        [ -n "$_resp" ] && jq -e '.limits' <<< "$_resp" >/dev/null 2>&1 \
+                            && printf '%s\n' "$_resp" > "$usage_cache" 2>/dev/null
+                    fi
+                ) >/dev/null 2>&1 </dev/null &
+            fi
+            if [ -s "$usage_cache" ]; then
+                local scoped_parsed
+                scoped_parsed=$(jq -r '
+                    [.limits[]? | select(.kind == "weekly_scoped" and .scope.model != null)][0] // empty
+                    | [
+                        (.scope.model.display_name // "model"),
+                        ((.percent // "_") | tostring),
+                        (((.resets_at // "" | sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z")) | try fromdateiso8601 catch "_") | tostring)
+                      ] | join("\t")
+                ' "$usage_cache" 2>/dev/null || true)
+                if [ -n "$scoped_parsed" ]; then
+                    local sc_name sc_pct sc_reset
+                    IFS=$'\t' read -r sc_name sc_pct sc_reset <<< "$scoped_parsed"
+                    if [ -n "$sc_pct" ] && [ "$sc_pct" != "_" ]; then
+                        tok_rate_7d_scoped_name="$sc_name"
+                        tok_rate_7d_scoped="${sc_pct%%.*}%"
+                        # Projection at week's end — same math and coloring as {rate_7d_proj}
+                        if [ "$sc_reset" != "_" ] && [ "$sc_reset" -gt "$now" ] 2>/dev/null; then
+                            local sc_elapsed=$(( 7 * 86400 - (sc_reset - now) ))
+                            [ "$sc_elapsed" -lt 60 ] && sc_elapsed=60
+                            if [ "$sc_elapsed" -ge "$RATE_7D_PROJ_MIN_SECONDS" ]; then
+                                local sc_proj=$(( ${sc_pct%%.*} * 7 * 86400 / sc_elapsed ))
+                                local sc_proj_color=""
+                                if [ "$sc_proj" -ge 100 ] && [ -n "${COLOR_RATE_CRITICAL:-}" ]; then
+                                    sc_proj_color="$COLOR_RATE_CRITICAL"
+                                elif [ "$sc_proj" -ge 90 ] && [ -n "${COLOR_RATE_WARNING:-}" ]; then
+                                    sc_proj_color="$COLOR_RATE_WARNING"
+                                fi
+                                if [ -n "$sc_proj_color" ]; then
+                                    tok_rate_7d_scoped_proj="${sc_proj_color}→${sc_proj}%${COLOR_DEFAULT}"
+                                else
+                                    tok_rate_7d_scoped_proj="→${sc_proj}%"
+                                fi
+                            else
+                                tok_rate_7d_scoped_proj="→…"
+                            fi
+                        fi
+                    fi
                 fi
             fi
         fi
@@ -1285,8 +1425,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{context}' '{cost_budget}' '{cost}' '{model}' '{effort}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_context" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cost_budget}' '{cost}' '{model}' '{effort}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
