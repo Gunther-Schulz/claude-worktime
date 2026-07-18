@@ -195,7 +195,6 @@ A commented-out template with all options is created on install.
 | `{rate_7d_scoped_name}` | Name of the scoped model (e.g. `Fable`) |
 | `{rate_7d_scoped_proj}` | Projected scoped usage at week's end |
 | `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
-| `{cost_budget}` | Session cost / inferred budget (e.g. `$12.34/≈$40`) — includes agents, tools |
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source when overridden (e.g. `Opus 4.6 (local)`) |
