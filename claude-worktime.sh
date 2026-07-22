@@ -178,7 +178,13 @@ MODEL_COLORS="fable=pink"
 # Model-scoped weekly limit (e.g. Fable on Max plans) is NOT in the
 # statusline stdin — it's fetched from the OAuth usage endpoint in the
 # background and cached. Seconds between fetches; 0 disables entirely.
-USAGE_FETCH_INTERVAL=300
+USAGE_FETCH_INTERVAL=60
+# Max age of a CACHED usage figure that may still be displayed. Past this,
+# the percentage renders as "?" instead of a number: a fetch that keeps
+# failing (expired token, no network, API change) must never leave a stale
+# number on screen looking current. Generous vs USAGE_FETCH_INTERVAL so a
+# brief offline blip doesn't blank the display.
+USAGE_STALE_MAX=900
 COLOR_NORMAL="green"
 COLOR_RATE_WARNING="yellow"
 COLOR_RATE_CRITICAL="red"
@@ -197,6 +203,14 @@ RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily  # daily, weekly, monthly
 GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
+# Cold-cache tracking: ❄N statusline counter + prompt-submit guard.
+# TTL basis: Claude Code requests a 1h prompt-cache TTL for main-thread
+# requests and detects expiry itself by clock math — both hardcoded in the
+# CLI, no API to query (see docs/cache-ttl-verification.md; re-verify after
+# CLI updates).
+CACHE_GUARD_TTL=3600      # idle seconds before the guard warns; 0 disables it
+CACHE_GUARD_MIN_CTX=50000 # don't warn below this context size (tokens)
+COLD_MIN_CTX=25000        # min previous context for a rewrite to count as ❄
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -544,6 +558,7 @@ cmd_debug() {
     echo "  ROTATE_INTERVAL:    $ROTATE_INTERVAL"
     echo "  RATE_7D_PROJ_MIN:   ${RATE_7D_PROJ_MIN_DAYS} days"
     echo "  USAGE_FETCH_INTERVAL: ${USAGE_FETCH_INTERVAL}s"
+    echo "  USAGE_STALE_MAX: ${USAGE_STALE_MAX}s"
     echo "  MODEL_COLORS:       ${MODEL_COLORS:-none}"
     echo "  STATUSLINE_1:       $STATUSLINE_1"
     [ -n "${STATUSLINE_2:-}" ] && echo "  STATUSLINE_2:       $STATUSLINE_2"
@@ -610,6 +625,7 @@ cmd_debug() {
 _read_hook_stdin() {
     HOOK_SESSION_ID=""
     HOOK_CWD=""
+    HOOK_TRANSCRIPT=""
     _STDIN_JSON=""
     [ -t 0 ] && return
     if read -t 1 -r _STDIN_JSON 2>/dev/null && [ -n "$_STDIN_JSON" ]; then
@@ -621,6 +637,9 @@ _read_hook_stdin() {
         tmp="${_STDIN_JSON#*\"cwd\":\"}"
         HOOK_CWD="${tmp%%\"*}"
         [ "$HOOK_CWD" = "$_STDIN_JSON" ] && HOOK_CWD=""
+        tmp="${_STDIN_JSON#*\"transcript_path\":\"}"
+        HOOK_TRANSCRIPT="${tmp%%\"*}"
+        [ "$HOOK_TRANSCRIPT" = "$_STDIN_JSON" ] && HOOK_TRANSCRIPT=""
     fi
 }
 
@@ -686,6 +705,101 @@ _project_label_v() {
 }
 
 # ============================================================
+# Cold-cache guard — runs on UserPromptSubmit (log --prompt)
+# ============================================================
+# After an idle gap past the prompt-cache TTL, the next request silently
+# re-writes the entire conversation prefix at the cache-write premium.
+# Claude Code warns about this on resume-from-closed but not in an open idle
+# session — its own check is the same clock math used here (idle time vs the
+# TTL it requested; see docs/cache-ttl-verification.md). This guard blocks
+# the first prompt after such a gap — once — so the user can /compact or
+# /clear at the only moment that's cheap; resubmitting proceeds normally.
+# Every failure path returns silently: the guard must never block on error.
+_cold_guard() {
+    [ "${CACHE_GUARD_TTL:-0}" -gt 0 ] 2>/dev/null || return 0
+    local sid="${HOOK_SESSION_ID:-}"
+    [ -n "$sid" ] || return 0
+
+    local now gap
+    now=$(date +%s)
+
+    # Both the context size and the idle gap come from the last logged token
+    # entry for this session.
+    #
+    # NOT the transcript mtime, which is what this guard measured until
+    # 2026-07-22 and why it never fired once across seven cold rewrites:
+    # Claude Code appends the user message to the transcript *before* running
+    # the UserPromptSubmit hook, so by the time we look, the file was written
+    # milliseconds ago and the gap reads ~0. A token entry is only written
+    # when a new API response arrives, which is precisely the event that last
+    # warmed the cache — so its age is the idle gap we actually want.
+    local line tmp last_tok=""
+    while IFS= read -r line; do
+        case "$line" in
+            *'"type":"tokens"'*'"s":"'"$sid"'"'*) last_tok="$line" ;;
+        esac
+    done < <(tail -n 2000 "$LOGFILE" 2>/dev/null)
+    [ -n "$last_tok" ] || return 0
+    local cr cc ui
+    # Trailing `}` strip: these fields are mid-record in every entry the
+    # writer emits, so `%%,*` is enough today. If one ever lands last, the
+    # captured value would carry the closing brace, fail the digit check
+    # below, and silently switch this guard off — the failure mode it exists
+    # to prevent. One substitution buys immunity to that.
+    tmp="${last_tok#*\"cr\":}"; cr="${tmp%%,*}"; cr="${cr%\}}"
+    tmp="${last_tok#*\"cc\":}"; cc="${tmp%%,*}"; cc="${cc%\}}"
+    tmp="${last_tok#*\"ui\":}"; ui="${tmp%%,*}"; ui="${ui%\}}"
+    tmp="${last_tok#*\"t\":}"; local last_ts="${tmp%%,*}"
+    [ -n "$cr" ] && [ -n "$cc" ] && [ -n "$ui" ] && [ -n "$last_ts" ] || return 0
+    case "${cr}${cc}${ui}${last_ts}" in *[!0-9]*) return 0 ;; esac
+    local ctx_tok=$(( cr + cc + ui ))
+    gap=$(( now - last_ts ))
+
+    local met=0
+    [ "$gap" -ge "$CACHE_GUARD_TTL" ] \
+        && [ "$ctx_tok" -ge "${CACHE_GUARD_MIN_CTX:-50000}" ] && met=1
+
+    # Shadow entry on every evaluation, including the silent ones. A guard
+    # that only records its hits cannot be told apart from a guard that never
+    # runs — which is exactly how the transcript-mtime bug stayed invisible.
+    # These make the miss rate measurable instead of assumed; tests/ replays
+    # them. Kept 90 days by rotation, same as the hit entries.
+    #
+    # `met` is "both thresholds cleared", NOT "the user saw a warning": the
+    # one-shot marker below still suppresses repeats within a single gap. The
+    # k="warn" entries are the record of warnings actually delivered.
+    (
+        flock -w 2 9 2>/dev/null || true
+        printf '{"type":"cold","t":%d,"s":"%s","k":"gauge","met":%d,"gap":%d,"ctx":%d}\n' \
+            "$now" "$sid" "$met" "$gap" "$ctx_tok" >> "$LOGFILE"
+    ) 9>"${LOGFILE}.lock"
+
+    [ "$met" -eq 1 ] || return 0
+
+    # One-shot per idle gap: a marker newer than the last API response means
+    # we already warned about this gap and the user chose to resubmit.
+    local marker="${LOGDIR}/.cold_guard_last"
+    if [ -f "$marker" ]; then
+        local m_sid=""
+        read -r m_sid < "$marker" 2>/dev/null
+        _mtime_v "$marker"
+        [ "$m_sid" = "$sid" ] && [ "${_V:-0}" -gt "$last_ts" ] && return 0
+    fi
+    echo "$sid" > "$marker" 2>/dev/null
+
+    # Persist the event for longitudinal analysis (kept 90 days by rotation)
+    (
+        flock -w 2 9 2>/dev/null || true
+        printf '{"type":"cold","t":%d,"s":"%s","k":"warn","gap":%d,"ctx":%d}\n' \
+            "$now" "$sid" "$gap" "$ctx_tok" >> "$LOGFILE"
+    ) 9>"${LOGFILE}.lock"
+
+    local gap_h=$(( gap / 3600 )) gap_m=$(( (gap % 3600) / 60 ))
+    printf '{"decision":"block","reason":"❄ Prompt cache likely cold: idle %dh%02dm (TTL %dmin) with ~%dk context. Sending now re-writes the whole context at the cache-write premium — cheapest moment to /compact or /clear is now. Press ↑ Enter to send anyway."}' \
+        "$gap_h" "$gap_m" "$(( CACHE_GUARD_TTL / 60 ))" "$(( ctx_tok / 1000 ))"
+}
+
+# ============================================================
 # Subcommand: log — append a JSONL entry (called by hooks)
 # ============================================================
 cmd_log() {
@@ -733,7 +847,11 @@ cmd_log() {
         # Auto-rotate on session start
         $AUTO_ROTATE && [ -f "$LOGFILE" ] && _do_rotate true
         printf '{"systemMessage":"Session timer started at %s"}' "$(date +%H:%M)"
+    elif [ "$event" = "prompt" ]; then
+        # May block this prompt (one-shot) if the cache expired while idle
+        _cold_guard
     fi
+    return 0
 }
 
 
@@ -1036,8 +1154,12 @@ mode_statusline() {
         [ "$eff" = "_" ] && eff=""
         [ -n "$eff" ] && tok_effort="$eff"
 
-        # Merge cache hit rate into context token: "77% ⟳99%"
-        # Instantaneous ratio from the most recent API response — no state file needed.
+        # Context token: fullness % with color ramp, plus ❄N cold-rewrite
+        # counter. No hit-ratio metric: it pins at 95-99% in steady state
+        # (cached prefix dwarfs each turn's new tokens). Instead the token
+        # logger below counts actual cold rewrites — rare events where an
+        # idle gap expired the cache and the full context was re-written
+        # at the cache-write premium.
         if [ -n "$ctx" ]; then
             local ctx_int="${ctx%%.*}"
             local ctx_color=""
@@ -1056,19 +1178,14 @@ mode_statusline() {
             local ctx_str="${ctx_int}%"
             [ -n "$ctx_color" ] && ctx_str="${ctx_color}${ctx_int}%${COLOR_DEFAULT}"
 
-            if [ -n "$cache_create" ] && [ -n "$cache_read" ]; then
-                local cc=${cache_create%.*} cr=${cache_read%.*} ui=${uncached_input%.*}
-                [ -z "$ui" ] && ui=0
-                local total=$(( cc + cr + ui ))
-                if [ "$total" -gt 0 ]; then
-                    local cache_pct=$(( cr * 100 / total ))
-                    tok_context="${ctx_str} ⟳${cache_pct}%"
-                else
-                    tok_context="${ctx_str}"
-                fi
-            else
-                tok_context="${ctx_str}"
-            fi
+            # Session cold-rewrite count, maintained by the token logger below
+            # (reads the previous render's value — fine, it only grows)
+            local cold_count=0
+            [ -f "${LOGDIR}/.cold_${sid}" ] && read -r cold_count _ < "${LOGDIR}/.cold_${sid}" 2>/dev/null
+            case "${cold_count:-}" in ''|*[!0-9]*) cold_count=0 ;; esac
+            [ "$cold_count" -gt 0 ] && ctx_str="${ctx_str} "$'\033[38;5;81m'"❄${cold_count}${COLOR_DEFAULT}"
+
+            tok_context="${ctx_str}"
         fi
 
         if [ -n "$r5h" ]; then
@@ -1222,13 +1339,20 @@ mode_statusline() {
         # Fetched in the background and cached; the statusline never blocks
         # on the network — it renders the cache and kicks off a refresh
         # when the cache is older than USAGE_FETCH_INTERVAL.
+        #
+        # The fetch interval is keyed on a SEPARATE lock file, never on the
+        # cache itself: the cache's mtime is the age of the last SUCCESSFUL
+        # response, which is what the USAGE_STALE_MAX gate below reads.
+        # Touching the cache to rate-limit would forge that freshness and a
+        # permanently failing fetch would display its last number forever.
         if [[ "$all_formats" == *"{rate_7d_scoped"* ]] && [ "${USAGE_FETCH_INTERVAL:-0}" -gt 0 ] 2>/dev/null; then
             local usage_cache="${LOGDIR}/.usage_cache"
-            local _uc_mtime; _mtime_v "$usage_cache"; _uc_mtime="$_V"
-            if [ $(( now - _uc_mtime )) -ge "$USAGE_FETCH_INTERVAL" ]; then
+            local usage_lock="${LOGDIR}/.usage_fetch"
+            local _ul_mtime; _mtime_v "$usage_lock"; _ul_mtime="$_V"
+            if [ $(( now - _ul_mtime )) -ge "$USAGE_FETCH_INTERVAL" ]; then
                 # Touch first: acts as a lock so overlapping statusline runs
                 # don't stack up fetches while this one is in flight.
-                touch "$usage_cache" 2>/dev/null
+                touch "$usage_lock" 2>/dev/null
                 (
                     _tok=$(jq -r '.claudeAiOauth.accessToken // empty' \
                         "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json" 2>/dev/null)
@@ -1259,7 +1383,17 @@ mode_statusline() {
                 if [ -n "$scoped_parsed" ]; then
                     local sc_name sc_pct sc_reset
                     IFS=$'\t' read -r sc_name sc_pct sc_reset <<< "$scoped_parsed"
-                    if [ -n "$sc_pct" ] && [ "$sc_pct" != "_" ]; then
+                    # Staleness gate: the cache mtime is the age of the last
+                    # successful fetch. Past USAGE_STALE_MAX the number is no
+                    # longer evidence of anything — show "?" so a silently
+                    # broken fetch reads as unknown, never as current.
+                    local _uc_mtime; _mtime_v "$usage_cache"; _uc_mtime="$_V"
+                    local sc_stale=0
+                    [ $(( now - _uc_mtime )) -ge "${USAGE_STALE_MAX:-900}" ] && sc_stale=1
+                    if [ "$sc_stale" = 1 ]; then
+                        tok_rate_7d_scoped_name="${sc_name:-model}"
+                        tok_rate_7d_scoped="?%"
+                    elif [ -n "$sc_pct" ] && [ "$sc_pct" != "_" ]; then
                         tok_rate_7d_scoped_name="$sc_name"
                         tok_rate_7d_scoped="${sc_pct%%.*}%"
                         # Projection at week's end — same math and coloring as {rate_7d_proj}
@@ -1300,10 +1434,36 @@ mode_statusline() {
             [ -f "$token_prev" ] && read -r tp_cr tp_cc < "$token_prev" 2>/dev/null
             if [ -n "${sid:-}" ] && [ "${sid:-}" != "" ] && ([ "${t_cr:-0}" != "$tp_cr" ] || [ "${t_cc:-0}" != "$tp_cc" ]); then
                 echo "${t_cr:-0} ${t_cc:-0}" > "$token_prev" 2>/dev/null
+                # Cold-rewrite detection for the ❄ counter: this request wrote
+                # (cc) most of the previous context while reading (cr) almost
+                # none of it back from cache — the cache expired and the full
+                # prefix was re-written at the write premium. Ratios instead of
+                # cr==0 so a surviving global system-prompt cache entry can't
+                # mask a cold conversation, and /compact (small cc relative to
+                # the previous context) doesn't false-positive.
+                local cold_state="${LOGDIR}/.cold_${sid}"
+                local cs_count=0 cs_prev=0 cs_prev_t=0 cold_hit="" cold_gap=0
+                [ -f "$cold_state" ] && read -r cs_count cs_prev cs_prev_t < "$cold_state" 2>/dev/null
+                case "${cs_count:-}${cs_prev:-}${cs_prev_t:-}" in
+                    ''|*[!0-9]*) cs_count=0; cs_prev=0; cs_prev_t=0 ;;
+                esac
+                cs_count=${cs_count:-0}; cs_prev=${cs_prev:-0}; cs_prev_t=${cs_prev_t:-0}
+                local ctx_tok=$(( ${t_cr:-0} + ${t_cc:-0} + ${t_ui:-0} ))
+                if [ "$cs_prev" -ge "${COLD_MIN_CTX:-25000}" ] \
+                    && [ "${t_cc:-0}" -ge $(( cs_prev * 6 / 10 )) ] \
+                    && [ "${t_cr:-0}" -le $(( cs_prev / 5 )) ]; then
+                    cs_count=$(( cs_count + 1 ))
+                    cold_hit=1
+                    [ "$cs_prev_t" -gt 0 ] && cold_gap=$(( now - cs_prev_t ))
+                fi
+                echo "${cs_count} ${ctx_tok} ${now}" > "$cold_state" 2>/dev/null
                 (
                     flock -w 2 9 2>/dev/null || true
                     printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s,"ctx":%s,"ci":%s,"co":%s,"w":%s}\n' \
                         "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" "${r5h:-0}" "${cst:-0}" "${ctx:-0}" "${cum_input:-0}" "${cum_output:-0}" "${r5h_reset:-0}" >> "$LOGFILE"
+                    # Cold events persist 90 days across rotation (tokens don't)
+                    [ -n "$cold_hit" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d}\n' \
+                        "$now" "$sid" "$cold_gap" "$ctx_tok" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
             fi
 
@@ -1919,10 +2079,12 @@ _do_rotate() {
 
     # Rewrite active log: existing summaries + new summaries + current entries + token entries
     # Token entries are not archived (budget state carries the cross-window prior instead).
-    local existing_summaries current_entries token_entries rewrite_error=""
+    local existing_summaries current_entries token_entries cold_entries rewrite_error=""
     existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null) || rewrite_error="summaries"
     current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="current entries"
     token_entries=$(jq -c --argjson since "$token_cutoff" 'select(.type == "tokens" and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="token entries"
+    # Cold-cache events: rare, kept 90 days for longitudinal TTL analysis
+    cold_entries=$(jq -c --argjson since "$(( ROTATE_CUTOFF - 7776000 ))" 'select(.type == "cold" and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="cold entries"
 
     if [ -n "$rewrite_error" ]; then
         # jq failed to read existing data — don't rewrite, archive already done
@@ -1939,8 +2101,13 @@ _do_rotate() {
           [ -n "$summaries" ] && echo "$summaries"
           [ -n "$current_entries" ] && echo "$current_entries"
           [ -n "$token_entries" ] && echo "$token_entries"
+          [ -n "$cold_entries" ] && echo "$cold_entries"
+          :  # group must exit 0 — an empty last entry class would skip the mv
         } > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
     ) 9>"${LOGFILE}.lock"
+
+    # Prune cold-counter state files of sessions idle for over a week
+    find "$LOGDIR" -maxdepth 1 -name '.cold_*' -mtime +7 -delete 2>/dev/null
 
     if ! $quiet; then
         local old_count
@@ -2000,9 +2167,9 @@ Statusline token reference:
 
   Context (from Claude Code)
     ctx 77%        context window fullness (auto-compacts at ~95%)
-    ⟳93%           KV cache hit ratio from the last API response.
-                   Drops during tool-heavy work (new content) or
-                   after breaks (cache expires after inactivity).
+    ❄1             cold-cache rewrites this session (hidden at 0): the prompt
+                   cache expired during an idle gap and the full context was
+                   re-written at the cache-write premium
 
   Cost budget (tracked per 5h window)
     $12.34/≈$40   cost used / inferred budget (cost_budget)

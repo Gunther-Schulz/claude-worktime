@@ -5,7 +5,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
 08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m
-Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77%
 ```
 
 Three lines, three perspectives on the same data:
@@ -80,7 +80,7 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 3 — Model & limits**:
 ```
-Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
+Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77%
 ```
 
 | Element | Meaning |
@@ -88,7 +88,7 @@ Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77% ⟳93%
 | `Opus 4.6 (local)` | Active model + config source (local/project/global/session/default) |
 | `◑30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
 | `⑦5% ↻Sat` | 7d rate limit: used, reset day |
-| `ctx 77% ⟳93%` | Context window fullness + KV cache hit ratio |
+| `ctx 77%` | Context window fullness; `❄N` appended after N cold-cache rewrites this session |
 
 One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution.
 
@@ -194,7 +194,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d_scoped}` | Model-scoped weekly limit (e.g. the Fable bucket on Max plans) |
 | `{rate_7d_scoped_name}` | Name of the scoped model (e.g. `Fable`) |
 | `{rate_7d_scoped_proj}` | Projected scoped usage at week's end |
-| `{context}` | Context window + cache ratio (e.g. `77% ⟳93%`) |
+| `{context}` | Context window usage (e.g. `77%`); appends `❄N` after N cold-cache rewrites this session (hidden at 0) |
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source when overridden (e.g. `Opus 4.6 (local)`) |
@@ -206,7 +206,11 @@ Empty tokens are automatically removed along with their surrounding separators.
 
 **Per-model colors:** `MODEL_COLORS` colors the `{model}` token by model — a comma-separated list of `substring=color` pairs matched case-insensitively against the model id and display name; first match wins, unmatched models keep the group color. Default: `fable=pink`. Example pinning all families: `MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"`.
 
-**Model-scoped weekly limit:** Claude Code's statusline stdin only carries the all-models 5h and 7d buckets. The per-model weekly bucket shown at claude.ai (e.g. "Fable — 36% used" on Max plans, where Fable is capped separately from the overall weekly limit) is fetched from `api.anthropic.com/api/oauth/usage` using the OAuth token Claude Code already stores (`~/.claude/.credentials.json`, or the Keychain on macOS), cached in the data dir, and refreshed in the background every `USAGE_FETCH_INTERVAL` seconds (default 300, `0` disables). The statusline never waits on the network — it renders the cached value. If the account has no scoped limit, the tokens stay empty and the group is hidden.
+**Cold-cache counter & guard:** After an idle gap longer than the prompt-cache TTL (~1h for Claude Code's main thread), the next request silently re-writes the entire conversation prefix at the cache-write premium. Claude Code warns about this when *resuming a closed session*, but not when a session sits open and idle in a terminal — that gap is covered here, twice. The `❄N` counter in `{context}` counts actual cold rewrites this session (detected from usage: a request that wrote most of the previous context while reading almost none of it back from cache — so `/compact`, which writes only a small summary, doesn't trigger it). The **cold guard** runs inside the `UserPromptSubmit` hook (`claude-worktime log --prompt`, already installed): the first prompt after an idle gap past `CACHE_GUARD_TTL` (default 3600s) with at least `CACHE_GUARD_MIN_CTX` context (default 50k tokens) is blocked with a warning — that moment is the cheapest time to `/compact` or `/clear`, since the cache is lost either way. Pressing `↑` `Enter` resubmits and proceeds normally (the guard warns once per gap). Set `CACHE_GUARD_TTL=0` to disable the guard. Every cold event is logged (`{"type":"cold",...}`, kept 90 days) so the effective TTL can be verified empirically. The TTL itself is hardcoded in the Claude Code CLI with no API to query it — the reverse-engineering record and re-verification commands live in [`docs/cache-ttl-verification.md`](docs/cache-ttl-verification.md).
+
+**Model-scoped weekly limit:** Claude Code's statusline stdin only carries the all-models 5h and 7d buckets. The per-model weekly bucket shown at claude.ai (e.g. "Fable — 36% used" on Max plans, where Fable is capped separately from the overall weekly limit) is fetched from `api.anthropic.com/api/oauth/usage` using the OAuth token Claude Code already stores (`~/.claude/.credentials.json`, or the Keychain on macOS), cached in the data dir, and refreshed in the background every `USAGE_FETCH_INTERVAL` seconds (default 60, `0` disables). The statusline never waits on the network — it renders the cached value. If the account has no scoped limit, the tokens stay empty and the group is hidden.
+
+A cached value is only displayed while it is fresh: once the cache is older than `USAGE_STALE_MAX` seconds (default 900) the percentage renders as `?%` and the projection is dropped. The fetch interval is tracked on a separate lock file, so the cache's own timestamp always reflects the last *successful* response — a fetch that keeps failing (expired token, no network, API change) degrades to `?%` instead of showing its last number forever.
 
 ### Groups and layout
 
@@ -335,10 +339,6 @@ Each entry records **session ID**, **project path**, and **git branch**:
 - **Session** (`{session}`, `--session`) — tied to Claude Code's session ID, persists across resume
 - **Project** (`{today_project}`, `--filter`) — based on working directory
 - **Branch** (`{git}`, `--branch`) — git branch at event time
-
-### Cache hit ratio
-
-`{context}` shows `77% ⟳93%` — context window fullness + KV cache hit ratio from the most recent API response. High (>95%) in steady conversation; drops during tool-heavy work (new content that hasn't been cached), after breaks (server cache expires), or at conversation start. Stateless — always reflects the current state.
 
 ## Diagnostics
 

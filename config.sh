@@ -34,7 +34,8 @@
 #                           in the background (see USAGE_FETCH_INTERVAL)
 #   {rate_7d_scoped_name} — name of the scoped model (e.g. "Fable")
 #   {rate_7d_scoped_proj} — projected scoped usage at week's end
-#   {context}        — context window usage (e.g. "45%")
+#   {context}        — context window usage (e.g. "45%"); appends ❄N after
+#                      N cold-cache rewrites this session (hidden at 0)
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
@@ -93,6 +94,23 @@
 #GROUP_BUDGET_COLOR="dark-gray"
 
 # ---------------------------------------------------------------------------
+# Cold-cache counter (❄) & prompt-submit guard
+# ---------------------------------------------------------------------------
+# After an idle gap longer than the prompt-cache TTL (~1h on the main thread),
+# the next request silently re-writes the whole conversation prefix at the
+# cache-write premium. Two defenses:
+#   ❄N counter — {context} shows how often that happened this session
+#   cold guard — the UserPromptSubmit hook (claude-worktime log --prompt)
+#                blocks the FIRST prompt after such a gap, once, so you can
+#                /compact or /clear at the only moment it's cheap; pressing
+#                ↑ Enter resubmits and proceeds normally.
+# The TTL is hardcoded in the Claude Code CLI (no API to query it) — basis
+# and re-verification commands: docs/cache-ttl-verification.md.
+#CACHE_GUARD_TTL=3600       # idle seconds before the guard warns; 0 = guard off
+#CACHE_GUARD_MIN_CTX=50000  # don't warn below this context size (tokens)
+#COLD_MIN_CTX=25000         # min previous context for a rewrite to count as ❄
+
+# ---------------------------------------------------------------------------
 # Model-scoped weekly limit (e.g. Fable on Max plans)
 # ---------------------------------------------------------------------------
 # Claude Code's statusline stdin only carries the all-models 5h/7d buckets.
@@ -100,8 +118,12 @@
 # is fetched from api.anthropic.com/api/oauth/usage using the OAuth token
 # Claude Code already stores, cached on disk, and refreshed in the
 # background — the statusline never waits on the network.
-#USAGE_FETCH_INTERVAL=300  # seconds between fetches; 0 disables the fetch
+#USAGE_FETCH_INTERVAL=60   # seconds between fetches; 0 disables the fetch
                            # (and the {rate_7d_scoped*} tokens stay empty)
+#USAGE_STALE_MAX=900       # max age of a cached figure that may still be
+                           # displayed; past it the percentage renders "?%"
+                           # so a fetch that keeps failing never leaves a
+                           # stale number on screen looking current
 
 # ---------------------------------------------------------------------------
 # Per-model colors for {model}
