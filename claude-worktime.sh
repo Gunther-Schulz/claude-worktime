@@ -174,7 +174,7 @@ STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT"
 # Per-model colors for {model}: comma list of "substring=color" pairs,
 # matched case-insensitively against the model id and display name.
 # First match wins; unmatched models keep the group color.
-MODEL_COLORS="fable=pink"
+MODEL_COLORS="fable=pink,opus=cyan"
 # Model-scoped weekly limit (e.g. Fable on Max plans) is NOT in the
 # statusline stdin — it's fetched from the OAuth usage endpoint in the
 # background and cached. Seconds between fetches; 0 disables entirely.
@@ -195,8 +195,14 @@ STREAK_CRITICAL=9000   # 2.5h — work streak turns red
 # Below start: default color. Set to "" to disable ramp.
 CTX_RAMP_START=20      # start shifting color from green
 CTX_RAMP_END=90        # fully red at this %
-COLOR_TIMELINE_WORK="green"    # color for ▮ blocks
-COLOR_TIMELINE_BREAK="green"   # color for · blocks
+COLOR_TIMELINE_WORK="green"    # color for present slots
+COLOR_TIMELINE_BREAK="green"   # color for away slots
+# Timeline glyphs — single characters, must differ. Use non-ASCII block
+# glyphs: the colorizer substitutes them inside an already-escaped string,
+# so an ASCII glyph could match inside an ANSI sequence.
+#   ■ □ square    ▪ ▫ small square (default)    █ ░ full cell    ▮ ▯ vertical bar
+TIMELINE_CHAR_WORK="▪"
+TIMELINE_CHAR_AWAY="·"
 TIMELINE_SLOT=1200  # seconds per timeline block (1200=20min, 1800=30min, 3600=1h)
 COLOR_DEFAULT="dark-gray"
 RATE_7D_PROJ_MIN_DAYS=1
@@ -795,7 +801,7 @@ _cold_guard() {
     ) 9>"${LOGFILE}.lock"
 
     local gap_h=$(( gap / 3600 )) gap_m=$(( (gap % 3600) / 60 ))
-    printf '{"decision":"block","reason":"❄ Prompt cache likely cold: idle %dh%02dm (TTL %dmin) with ~%dk context. Sending now re-writes the whole context at the cache-write premium — cheapest moment to /compact or /clear is now. Press ↑ Enter to send anyway."}' \
+    printf '{"decision":"block","reason":"❄ Prompt cache likely cold: idle %dh%02dm (TTL %dmin) with ~%dk context. Sending now re-writes the whole context at the cache-write premium — cheapest moment to /compact or /clear is now. To send anyway, submit the prompt again — it is echoed below; warns once per gap."}' \
         "$gap_h" "$gap_m" "$(( CACHE_GUARD_TTL / 60 ))" "$(( ctx_tok / 1000 ))"
 }
 
@@ -961,7 +967,7 @@ mode_statusline() {
             ),
             timeline: (if (\$today | length) > 0 then
                 # One character per time slot (configurable via TIMELINE_SLOT)
-                # ▮ = present (worked more than half the slot), · = away
+                # \$tlwork = present (worked more than half the slot), \$tlaway = away
                 (\$today[0].t) as \$tstart
                 | ((\$tstart / \$slot) | floor) as \$first_slot
                 | ((\$now / \$slot) | floor) as \$current_slot
@@ -979,7 +985,7 @@ mode_statusline() {
                         | ([.to, \$eff_end] | min) as \$oe
                         | if \$oe > \$os then (\$oe - \$os) else 0 end
                       ] | add // 0) as \$away_in_slot
-                    | if \$slot_len > 0 and (\$away_in_slot < (\$slot_len / 2)) then \"▮\" else \"·\" end
+                    | if \$slot_len > 0 and (\$away_in_slot < (\$slot_len / 2)) then \$tlwork else \$tlaway end
                 ] | join(\"\")
               else \"\" end)
         }
@@ -994,7 +1000,11 @@ mode_statusline() {
     done
     local _credit="${CLAUDE_CREDIT:-0}"
     [ "$_credit" -le 0 ] 2>/dev/null && _credit=$(( PAUSE_THRESHOLD / 3 ))
-    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson credit "$_credit" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson slot "${TIMELINE_SLOT:-1800}")
+    local _tl_work="${TIMELINE_CHAR_WORK:-▪}" _tl_away="${TIMELINE_CHAR_AWAY:-·}"
+    # A glyph pair that collides would make every slot read as "present" and
+    # break the leading-away trim below; fall back rather than lie.
+    [ "$_tl_work" = "$_tl_away" ] && { _tl_work="▪"; _tl_away="·"; }
+    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson credit "$_credit" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson slot "${TIMELINE_SLOT:-1800}" --arg tlwork "$_tl_work" --arg tlaway "$_tl_away")
 
     # Fast path: direct read. Fallback: skip corrupt lines.
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
@@ -1020,13 +1030,13 @@ mode_statusline() {
     local tok_today_start="" tok_today_now=""
     # Trim leading away-slots from timeline and adjust start time
     if [ -n "$tok_timeline" ]; then
-        local trimmed="${tok_timeline#"${tok_timeline%%▮*}"}"
+        local trimmed="${tok_timeline#"${tok_timeline%%"$_tl_work"*}"}"
         if [ -n "$trimmed" ]; then
             # Count leading away-slots as GLYPHS, not bytes. LC_ALL=C is forced
             # (see top of file), so ${#…} counts bytes and · is 2 bytes — a byte
             # delta would double the count and push today_start hours forward.
-            local _away="${tok_timeline%%▮*}" trimmed_count=0
-            while [ -n "$_away" ]; do _away="${_away#·}"; trimmed_count=$(( trimmed_count + 1 )); done
+            local _away="${tok_timeline%%"$_tl_work"*}" trimmed_count=0
+            while [ -n "$_away" ]; do _away="${_away#"$_tl_away"}"; trimmed_count=$(( trimmed_count + 1 )); done
             local slot_secs="${TIMELINE_SLOT:-1800}"
             local adjusted_start=$(( (today_first / slot_secs + trimmed_count) * slot_secs ))
             tok_timeline="$trimmed"
@@ -1577,9 +1587,9 @@ mode_statusline() {
     # Colorize timeline blocks if colors are configured
     # Colorize timeline blocks using actual ANSI escape bytes
     if [ -n "${tok_timeline:-}" ]; then
-        # Colorize timeline: ▮ = work, · = away
-        [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//▮/${COLOR_TIMELINE_WORK}▮${COLOR_DEFAULT}}"
-        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//·/${COLOR_TIMELINE_BREAK}·${COLOR_DEFAULT}}"
+        # Colorize timeline: work glyph = present, away glyph = break
+        [ -n "$COLOR_TIMELINE_WORK" ] && tok_timeline="${tok_timeline//"$_tl_work"/${COLOR_TIMELINE_WORK}${_tl_work}${COLOR_DEFAULT}}"
+        [ -n "$COLOR_TIMELINE_BREAK" ] && tok_timeline="${tok_timeline//"$_tl_away"/${COLOR_TIMELINE_BREAK}${_tl_away}${COLOR_DEFAULT}}"
     fi
 
     # Token arrays (constant per statusline refresh, shared by all groups)
@@ -2152,7 +2162,7 @@ Statusline token reference:
     total 8h30m    all-time total for this project
     🤖 total       all-time Claude work for this project
     👤 total       all-time your work for this project
-    08:22 ▮▮··▮▮ 17:30  day timeline with start/end times (▮=present ·=away)
+    08:22 ▪▪··▪▪ 17:30  day timeline with start/end times (▪=present ·=away)
     ▶1h12m         presence streak since last break (yellow >1.5h, red >2.5h)
     ⏸ 20m          last break duration (after first break)
     45m            current session active time

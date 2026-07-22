@@ -17,7 +17,7 @@
 #   {total_you}      — all-time your active time for current project
 #   {last_break}     — last break duration with ⏸ icon (empty if none)
 #   {since_break}    — presence time since last break with ▶ icon
-#   {timeline}       — ▮▮··▮▮▮ day timeline (▮=present, ·=away)
+#   {timeline}       — ▪▪··▪▪▪ day timeline (▪=present, ·=away)
 #
 #   Project tokens:
 #   {project}        — project name (last 2 path segments)
@@ -102,8 +102,9 @@
 #   ❄N counter — {context} shows how often that happened this session
 #   cold guard — the UserPromptSubmit hook (claude-worktime log --prompt)
 #                blocks the FIRST prompt after such a gap, once, so you can
-#                /compact or /clear at the only moment it's cheap; pressing
-#                ↑ Enter resubmits and proceeds normally.
+#                /compact or /clear at the only moment it's cheap; submitting
+#                the prompt a second time proceeds normally (the blocked text
+#                is echoed back under the warning).
 # The TTL is hardcoded in the Claude Code CLI (no API to query it) — basis
 # and re-verification commands: docs/cache-ttl-verification.md.
 #CACHE_GUARD_TTL=3600       # idle seconds before the guard warns; 0 = guard off
@@ -181,6 +182,12 @@
 # Helps you tune PAUSE_THRESHOLD by seeing where your gaps cluster.
 #GAP_BUCKETS="60,300,600,900,1800"  # 1m, 5m, 10m, 15m, 30m
 #TIMELINE_SLOT=1200  # seconds per timeline block (1200=20min, 1800=30min, 3600=1h)
+# Timeline glyphs — single characters, must differ. Stick to non-ASCII block
+# glyphs: the colorizer substitutes them into an already-escaped string, so an
+# ASCII glyph could match inside an ANSI sequence. How heavy the bar reads is
+# font-dependent — ▪ is a small square, ■ a full one, ▮ a narrow vertical bar.
+#TIMELINE_CHAR_WORK="▪"   # alternatives: ■ █ ▮ ▬
+#TIMELINE_CHAR_AWAY="·"   # alternatives: □ ▫ ░ ▯ ‧
 
 # ============================= EXAMPLES ====================================
 #

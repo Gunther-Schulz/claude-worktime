@@ -4,7 +4,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
-08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m
+08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶1h12m ⏸ 20m
 Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77%
 ```
 
@@ -67,12 +67,12 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 2 — Your day** (cross-session):
 ```
-08:22 ▮▮▮···▮▮▮▮··▮▮▮ 17:30 · ▶1h12m ⏸ 20m
+08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶1h12m ⏸ 20m
 ```
 
 | Element | Meaning |
 |---------|---------|
-| `▮▮··▮▮▮` | Day timeline — ▮ = present, · = away |
+| `▪▪··▪▪▪` | Day timeline — ▪ = present, · = away |
 | `08:22` | Start time (first event today) |
 | `17:30` | Current time |
 | `▶1h12m` | Presence streak since last break (yellow >1.5h, red >2.5h) |
@@ -90,7 +90,7 @@ Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77%
 | `⑦5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77%` | Context window fullness; `❄N` appended after N cold-cache rewrites this session |
 
-One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution.
+One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution. The glyphs are `TIMELINE_CHAR_WORK` / `TIMELINE_CHAR_AWAY` — how heavy the bar reads depends on the terminal font, so `▪ ■ █ ▮ ▬` are all worth a try.
 
 ### CLI queries
 
@@ -170,7 +170,7 @@ A commented-out template with all options is created on install.
 | `{total_you}` | All-time your active time for current project |
 | `{since_break}` | ▶2h40m — presence streak since last break |
 | `{last_break}` | ⏸ 41m — most recent break duration (hidden until first break) |
-| `{timeline}` | ▮▮··▮▮▮ — day timeline (▮=present ·=away), one char per `TIMELINE_SLOT` |
+| `{timeline}` | ▪▪··▪▪▪ — day timeline (▪=present ·=away), one char per `TIMELINE_SLOT` |
 
 **Project tokens:**
 
@@ -206,7 +206,7 @@ Empty tokens are automatically removed along with their surrounding separators.
 
 **Per-model colors:** `MODEL_COLORS` colors the `{model}` token by model — a comma-separated list of `substring=color` pairs matched case-insensitively against the model id and display name; first match wins, unmatched models keep the group color. Default: `fable=pink`. Example pinning all families: `MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"`.
 
-**Cold-cache counter & guard:** After an idle gap longer than the prompt-cache TTL (~1h for Claude Code's main thread), the next request silently re-writes the entire conversation prefix at the cache-write premium. Claude Code warns about this when *resuming a closed session*, but not when a session sits open and idle in a terminal — that gap is covered here, twice. The `❄N` counter in `{context}` counts actual cold rewrites this session (detected from usage: a request that wrote most of the previous context while reading almost none of it back from cache — so `/compact`, which writes only a small summary, doesn't trigger it). The **cold guard** runs inside the `UserPromptSubmit` hook (`claude-worktime log --prompt`, already installed): the first prompt after an idle gap past `CACHE_GUARD_TTL` (default 3600s) with at least `CACHE_GUARD_MIN_CTX` context (default 50k tokens) is blocked with a warning — that moment is the cheapest time to `/compact` or `/clear`, since the cache is lost either way. Pressing `↑` `Enter` resubmits and proceeds normally (the guard warns once per gap). Set `CACHE_GUARD_TTL=0` to disable the guard. Every cold event is logged (`{"type":"cold",...}`, kept 90 days) so the effective TTL can be verified empirically. The TTL itself is hardcoded in the Claude Code CLI with no API to query it — the reverse-engineering record and re-verification commands live in [`docs/cache-ttl-verification.md`](docs/cache-ttl-verification.md).
+**Cold-cache counter & guard:** After an idle gap longer than the prompt-cache TTL (~1h for Claude Code's main thread), the next request silently re-writes the entire conversation prefix at the cache-write premium. Claude Code warns about this when *resuming a closed session*, but not when a session sits open and idle in a terminal — that gap is covered here, twice. The `❄N` counter in `{context}` counts actual cold rewrites this session (detected from usage: a request that wrote most of the previous context while reading almost none of it back from cache — so `/compact`, which writes only a small summary, doesn't trigger it). The **cold guard** runs inside the `UserPromptSubmit` hook (`claude-worktime log --prompt`, already installed): the first prompt after an idle gap past `CACHE_GUARD_TTL` (default 3600s) with at least `CACHE_GUARD_MIN_CTX` context (default 50k tokens) is blocked with a warning — that moment is the cheapest time to `/compact` or `/clear`, since the cache is lost either way. Submitting the prompt a second time proceeds normally — Claude Code echoes the blocked text back under the warning, and the guard warns only once per gap. Set `CACHE_GUARD_TTL=0` to disable the guard. Every cold event is logged (`{"type":"cold",...}`, kept 90 days) so the effective TTL can be verified empirically. The TTL itself is hardcoded in the Claude Code CLI with no API to query it — the reverse-engineering record and re-verification commands live in [`docs/cache-ttl-verification.md`](docs/cache-ttl-verification.md).
 
 **Model-scoped weekly limit:** Claude Code's statusline stdin only carries the all-models 5h and 7d buckets. The per-model weekly bucket shown at claude.ai (e.g. "Fable — 36% used" on Max plans, where Fable is capped separately from the overall weekly limit) is fetched from `api.anthropic.com/api/oauth/usage` using the OAuth token Claude Code already stores (`~/.claude/.credentials.json`, or the Keychain on macOS), cached in the data dir, and refreshed in the background every `USAGE_FETCH_INTERVAL` seconds (default 60, `0` disables). The statusline never waits on the network — it renders the cached value. If the account has no scoped limit, the tokens stay empty and the group is hidden.
 
