@@ -132,7 +132,7 @@
 # Comma-separated "substring=color" pairs, matched case-insensitively
 # against the model id and display name. First match wins; models that
 # match nothing keep the group color. Any preset or raw ANSI color works.
-#MODEL_COLORS="fable=pink"
+#MODEL_COLORS="fable=pink,opus=cyan"
 # All families pinned:
 #MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"
 
