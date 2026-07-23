@@ -109,7 +109,11 @@
 # and re-verification commands: docs/cache-ttl-verification.md.
 #CACHE_GUARD_TTL=3600       # idle seconds before the guard warns; 0 = guard off
 #CACHE_GUARD_MIN_CTX=50000  # don't warn below this context size (tokens)
-#COLD_MIN_CTX=25000         # min previous context for a rewrite to count as ❄
+# The ❄ marker skips a session's first write structurally (no prior turn to
+# re-write), so it never mistakes session-start for a cold rewrite while still
+# catching a resume after the cache expired. COLD_MIN_CTX is only an optional
+# cosmetic floor on top: raise it to hide small rewrites (0 = show all).
+#COLD_MIN_CTX=0             # hide rewrites whose prior context was below this
 
 # ---------------------------------------------------------------------------
 # Model-scoped weekly limit (e.g. Fable on Max plans)

@@ -216,7 +216,9 @@ GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
 # CLI updates).
 CACHE_GUARD_TTL=3600      # idle seconds before the guard warns; 0 disables it
 CACHE_GUARD_MIN_CTX=50000 # don't warn below this context size (tokens)
-COLD_MIN_CTX=25000        # min previous context for a rewrite to count as ❄
+COLD_MIN_CTX=0            # optional cosmetic floor: hide rewrites whose prior
+                          # context was below this (0 = show all). Session-start
+                          # is excluded structurally, not by this — see below.
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -1473,7 +1475,14 @@ mode_statusline() {
                 esac
                 cs_count=${cs_count:-0}; cs_prev=${cs_prev:-0}; cs_prev_t=${cs_prev_t:-0}; cs_lastcc=${cs_lastcc:-0}
                 local ctx_tok=$(( ${t_cr:-0} + ${t_cc:-0} + ${t_ui:-0} ))
-                if [ "$cs_prev" -ge "${COLD_MIN_CTX:-25000}" ] \
+                # Skip the session's first write: cr=0 / cc=whole-initial-context
+                # is mechanically identical to a cold rewrite, so telling them
+                # apart used to need a 25k magnitude floor. cs_prev_t>0 asks the
+                # real question — has a prior turn been logged this session? — so
+                # a brand-new session is skipped while a resume after cache expiry
+                # (prior turn exists, cache gone) still flags. COLD_MIN_CTX is now
+                # just an optional cosmetic floor (default 0, shows everything).
+                if [ "$cs_prev_t" -gt 0 ] && [ "$cs_prev" -ge "${COLD_MIN_CTX:-0}" ] \
                     && [ "${t_cc:-0}" -ge $(( cs_prev * 6 / 10 )) ] \
                     && [ "${t_cr:-0}" -le $(( cs_prev / 5 )) ]; then
                     cs_count=$(( cs_count + 1 ))
