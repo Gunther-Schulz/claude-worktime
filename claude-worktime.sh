@@ -133,7 +133,9 @@ else
         _epoch_ms() { echo $(( $(date +%s%N) / 1000000 )); }
     fi
 
-    _CW_GLYPH_7D="⑦"
+    # Trailing space de-crowds the digit (same rationale as the ➐ branch)
+    # and keeps Linux consistent with macOS and with the 5h gauge's "○ 5%".
+    _CW_GLYPH_7D="⑦ "
 fi
 # ============================================================
 # End of macOS compatibility layer.
@@ -1088,9 +1090,9 @@ mode_statusline() {
         streak_color="$COLOR_RATE_WARNING"
     fi
     if [ -n "$streak_color" ]; then
-        tok_since_break="${streak_color}▶$_V${COLOR_DEFAULT}"
+        tok_since_break="${streak_color}▶ $_V${COLOR_DEFAULT}"
     else
-        tok_since_break="▶$_V"
+        tok_since_break="▶ $_V"
     fi
     if [ "$lb" -gt 0 ]; then
         _fmt_short_v "$lb"; tok_last_break="⏸ $_V"
@@ -1217,7 +1219,7 @@ mode_statusline() {
             # below (reads the previous render's value — fine, it only grows).
             # Gate on the size, not the count: a pre-existing state file with
             # no size stays hidden until its next rewrite instead of ❄0k.
-            # Renders SIZE CAUSE (AGE), e.g. "❄397k other (2m)": what / why /
+            # Renders SIZE CAUSE (AGE), e.g. "❄ 397k other (2m)": what / why /
             # when. Space-separated so the group divider's ` · ` stays the only
             # ` · ` on the line; the age is parenthesised so it reads plainly as
             # "how long ago" rather than an arbitrary duration. Its own {cold}
@@ -1231,7 +1233,7 @@ mode_statusline() {
             if [ "$cold_lastcc" -gt 0 ]; then
                 # Round to nearest k so 130098 → 130k, 54344 → 54k
                 local _cold_k=$(( (cold_lastcc + 500) / 1000 ))
-                local _cold_txt="❄${_cold_k}k"
+                local _cold_txt="❄ ${_cold_k}k"
                 # Cause (skip the legacy "-" placeholder)
                 [ -n "$cold_lastcause" ] && [ "$cold_lastcause" != "-" ] && _cold_txt="${_cold_txt} ${cold_lastcause}"
                 # Age since the rewrite, parenthesised (2m, 1h3m); omit if unknown
@@ -2358,7 +2360,7 @@ Statusline token reference:
 
   Context (from Claude Code)
     ctx 77%        context window fullness (auto-compacts at ~95%)
-    ❄397k other (2m) size, cause and (age) of the most recent cold rewrite
+    ❄ 397k other (2m) size, cause and (age) of the most recent cold rewrite
                    this session (the {cold} token, hidden until the first):
                    that many tokens were re-written at the cache-write premium.
                    cause = idle (cache TTL passed), model (model switch), or
