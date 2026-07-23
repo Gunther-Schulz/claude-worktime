@@ -107,7 +107,8 @@
 #                is echoed back under the warning).
 # The TTL is hardcoded in the Claude Code CLI (no API to query it) — basis
 # and re-verification commands: docs/cache-ttl-verification.md.
-#CACHE_GUARD_TTL=3600       # idle seconds before the guard warns; 0 = guard off
+#CACHE_GUARD_TTL=3600       # prompt-cache TTL (s); guard warns at 0.9× it, the
+                            # same point the CLI treats the cache as cold; 0 = off
 #CACHE_GUARD_MIN_CTX=50000  # don't warn below this context size (tokens)
 # The ❄ marker skips a session's first write structurally (no prior turn to
 # re-write), so it never mistakes session-start for a cold rewrite while still
