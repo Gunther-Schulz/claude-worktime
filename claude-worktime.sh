@@ -209,7 +209,7 @@ RATE_7D_PROJ_MIN_DAYS=1
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily  # daily, weekly, monthly
 GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
-# Cold-cache tracking: ❄N statusline counter + prompt-submit guard.
+# Cold-cache tracking: ❄<size> statusline token (last rewrite) + prompt guard.
 # TTL basis: Claude Code requests a 1h prompt-cache TTL for main-thread
 # requests and detects expiry itself by clock math — both hardcoded in the
 # CLI, no API to query (see docs/cache-ttl-verification.md; re-verify after
@@ -1164,8 +1164,8 @@ mode_statusline() {
         [ "$eff" = "_" ] && eff=""
         [ -n "$eff" ] && tok_effort="$eff"
 
-        # Context token: fullness % with color ramp, plus ❄N cold-rewrite
-        # counter. No hit-ratio metric: it pins at 95-99% in steady state
+        # Context token: fullness % with color ramp, plus ❄<size> for the
+        # most recent cold rewrite. No hit-ratio metric: it pins at 95-99% in steady state
         # (cached prefix dwarfs each turn's new tokens). Instead the token
         # logger below counts actual cold rewrites — rare events where an
         # idle gap expired the cache and the full context was re-written
@@ -1188,12 +1188,22 @@ mode_statusline() {
             local ctx_str="${ctx_int}%"
             [ -n "$ctx_color" ] && ctx_str="${ctx_color}${ctx_int}%${COLOR_DEFAULT}"
 
-            # Session cold-rewrite count, maintained by the token logger below
-            # (reads the previous render's value — fine, it only grows)
-            local cold_count=0
-            [ -f "${LOGDIR}/.cold_${sid}" ] && read -r cold_count _ < "${LOGDIR}/.cold_${sid}" 2>/dev/null
-            case "${cold_count:-}" in ''|*[!0-9]*) cold_count=0 ;; esac
-            [ "$cold_count" -gt 0 ] && ctx_str="${ctx_str} "$'\033[38;5;81m'"❄${cold_count}${COLOR_DEFAULT}"
+            # ❄ shows the SIZE of the most recent cold rewrite this session
+            # (4th state field), not a count: 130k re-written at the write
+            # premium is the felt cost; a bare tally flattens a 504k event and
+            # a 25k one into the same "2". Both maintained by the token logger
+            # below (reads the previous render's value — fine, it only grows).
+            # Gate on the size, not the count: a pre-existing 3-field state
+            # file (count>0, no size) then stays hidden until its next rewrite
+            # instead of rendering a meaningless ❄0k.
+            local cold_lastcc=0
+            [ -f "${LOGDIR}/.cold_${sid}" ] && read -r _ _ _ cold_lastcc < "${LOGDIR}/.cold_${sid}" 2>/dev/null
+            case "${cold_lastcc:-}" in ''|*[!0-9]*) cold_lastcc=0 ;; esac
+            if [ "$cold_lastcc" -gt 0 ]; then
+                # Round to nearest k so 130098 → 130k, 54344 → 54k
+                local _cold_k=$(( (cold_lastcc + 500) / 1000 ))
+                ctx_str="${ctx_str} "$'\033[38;5;81m'"❄${_cold_k}k${COLOR_DEFAULT}"
+            fi
 
             tok_context="${ctx_str}"
         fi
@@ -1444,36 +1454,44 @@ mode_statusline() {
             [ -f "$token_prev" ] && read -r tp_cr tp_cc < "$token_prev" 2>/dev/null
             if [ -n "${sid:-}" ] && [ "${sid:-}" != "" ] && ([ "${t_cr:-0}" != "$tp_cr" ] || [ "${t_cc:-0}" != "$tp_cc" ]); then
                 echo "${t_cr:-0} ${t_cc:-0}" > "$token_prev" 2>/dev/null
-                # Cold-rewrite detection for the ❄ counter: this request wrote
+                # Cold-rewrite detection for the ❄ token: this request wrote
                 # (cc) most of the previous context while reading (cr) almost
                 # none of it back from cache — the cache expired and the full
                 # prefix was re-written at the write premium. Ratios instead of
                 # cr==0 so a surviving global system-prompt cache entry can't
                 # mask a cold conversation, and /compact (small cc relative to
                 # the previous context) doesn't false-positive.
+                # State fields: count, previous ctx, previous timestamp, last
+                # cold-rewrite size. The 4th is carried forward untouched on
+                # non-hit turns and overwritten with t_cc on a hit — it feeds
+                # the ❄ statusline token. Absent (old 3-field file) → 0.
                 local cold_state="${LOGDIR}/.cold_${sid}"
-                local cs_count=0 cs_prev=0 cs_prev_t=0 cold_hit="" cold_gap=0
-                [ -f "$cold_state" ] && read -r cs_count cs_prev cs_prev_t < "$cold_state" 2>/dev/null
-                case "${cs_count:-}${cs_prev:-}${cs_prev_t:-}" in
-                    ''|*[!0-9]*) cs_count=0; cs_prev=0; cs_prev_t=0 ;;
+                local cs_count=0 cs_prev=0 cs_prev_t=0 cs_lastcc=0 cold_hit="" cold_gap=0
+                [ -f "$cold_state" ] && read -r cs_count cs_prev cs_prev_t cs_lastcc < "$cold_state" 2>/dev/null
+                case "${cs_count:-}${cs_prev:-}${cs_prev_t:-}${cs_lastcc:-}" in
+                    ''|*[!0-9]*) cs_count=0; cs_prev=0; cs_prev_t=0; cs_lastcc=0 ;;
                 esac
-                cs_count=${cs_count:-0}; cs_prev=${cs_prev:-0}; cs_prev_t=${cs_prev_t:-0}
+                cs_count=${cs_count:-0}; cs_prev=${cs_prev:-0}; cs_prev_t=${cs_prev_t:-0}; cs_lastcc=${cs_lastcc:-0}
                 local ctx_tok=$(( ${t_cr:-0} + ${t_cc:-0} + ${t_ui:-0} ))
                 if [ "$cs_prev" -ge "${COLD_MIN_CTX:-25000}" ] \
                     && [ "${t_cc:-0}" -ge $(( cs_prev * 6 / 10 )) ] \
                     && [ "${t_cr:-0}" -le $(( cs_prev / 5 )) ]; then
                     cs_count=$(( cs_count + 1 ))
                     cold_hit=1
+                    cs_lastcc=${t_cc:-0}
                     [ "$cs_prev_t" -gt 0 ] && cold_gap=$(( now - cs_prev_t ))
                 fi
-                echo "${cs_count} ${ctx_tok} ${now}" > "$cold_state" 2>/dev/null
+                echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc}" > "$cold_state" 2>/dev/null
                 (
                     flock -w 2 9 2>/dev/null || true
                     printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s,"ctx":%s,"ci":%s,"co":%s,"w":%s}\n' \
                         "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" "${r5h:-0}" "${cst:-0}" "${ctx:-0}" "${cum_input:-0}" "${cum_output:-0}" "${r5h_reset:-0}" >> "$LOGFILE"
                     # Cold events persist 90 days across rotation (tokens don't)
-                    [ -n "$cold_hit" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d}\n' \
-                        "$now" "$sid" "$cold_gap" "$ctx_tok" >> "$LOGFILE"
+                    # cc = tokens actually re-written this event (the reactivation
+                    # size); ctx = full context after it. On a hit cc dominates
+                    # ctx, but logging it explicitly avoids the cr+ui overcount.
+                    [ -n "$cold_hit" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d}\n' \
+                        "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
             fi
 
@@ -2177,9 +2195,10 @@ Statusline token reference:
 
   Context (from Claude Code)
     ctx 77%        context window fullness (auto-compacts at ~95%)
-    ❄1             cold-cache rewrites this session (hidden at 0): the prompt
-                   cache expired during an idle gap and the full context was
-                   re-written at the cache-write premium
+    ❄130k          size of the most recent cold rewrite this session (hidden
+                   until the first): the prompt cache expired (idle gap, or a
+                   model switch changing the cache key) and that many tokens
+                   were re-written at the cache-write premium
 
   Cost budget (tracked per 5h window)
     $12.34/≈$40   cost used / inferred budget (cost_budget)

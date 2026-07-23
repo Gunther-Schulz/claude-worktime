@@ -34,8 +34,8 @@
 #                           in the background (see USAGE_FETCH_INTERVAL)
 #   {rate_7d_scoped_name} — name of the scoped model (e.g. "Fable")
 #   {rate_7d_scoped_proj} — projected scoped usage at week's end
-#   {context}        — context window usage (e.g. "45%"); appends ❄N after
-#                      N cold-cache rewrites this session (hidden at 0)
+#   {context}        — context window usage (e.g. "45%"); appends ❄130k, the
+#                      size of the last cold rewrite this session (hidden until first)
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
@@ -99,7 +99,7 @@
 # After an idle gap longer than the prompt-cache TTL (~1h on the main thread),
 # the next request silently re-writes the whole conversation prefix at the
 # cache-write premium. Two defenses:
-#   ❄N counter — {context} shows how often that happened this session
+#   ❄<size>    — {context} shows the size of the last such rewrite (e.g. ❄130k)
 #   cold guard — the UserPromptSubmit hook (claude-worktime log --prompt)
 #                blocks the FIRST prompt after such a gap, once, so you can
 #                /compact or /clear at the only moment it's cheap; submitting
