@@ -34,8 +34,8 @@
 #                           in the background (see USAGE_FETCH_INTERVAL)
 #   {rate_7d_scoped_name} — name of the scoped model (e.g. "Fable")
 #   {rate_7d_scoped_proj} — projected scoped usage at week's end
-#   {context}        — context window usage (e.g. "45%"); appends ❄130k, the
-#                      size of the last cold rewrite this session (hidden until first)
+#   {context}        — context window usage (e.g. "45%"); appends ❄397k·other 2m
+#                      for the last cold rewrite: size·cause + age (hidden until first)
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
@@ -99,7 +99,9 @@
 # After an idle gap longer than the prompt-cache TTL (~1h on the main thread),
 # the next request silently re-writes the whole conversation prefix at the
 # cache-write premium. Two defenses:
-#   ❄<size>    — {context} shows the size of the last such rewrite (e.g. ❄130k)
+#   ❄397k·other 2m — {context} shows the last rewrite: size·cause + age
+#                (idle = cache TTL passed, model = model switch, other =
+#                same model/no idle; cyan when recent, gray once old)
 #   cold guard — the UserPromptSubmit hook (claude-worktime log --prompt)
 #                blocks the FIRST prompt after such a gap, once, so you can
 #                /compact or /clear at the only moment it's cheap; submitting
@@ -115,6 +117,7 @@
 # catching a resume after the cache expired. COLD_MIN_CTX is only an optional
 # cosmetic floor on top: raise it to hide small rewrites (0 = show all).
 #COLD_MIN_CTX=0             # hide rewrites whose prior context was below this
+#COLD_FRESH_SECS=900        # ❄ shows cyan this long after a rewrite, then greys
 
 # ---------------------------------------------------------------------------
 # Model-scoped weekly limit (e.g. Fable on Max plans)

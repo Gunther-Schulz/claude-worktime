@@ -220,6 +220,8 @@ CACHE_GUARD_MIN_CTX=50000 # don't warn below this context size (tokens)
 COLD_MIN_CTX=0            # optional cosmetic floor: hide rewrites whose prior
                           # context was below this (0 = show all). Session-start
                           # is excluded structurally, not by this — see below.
+COLD_FRESH_SECS=900      # the ❄ token shows in cyan for this long after a
+                          # rewrite, then dims to gray so an old value recedes
 
 [ -f "$CONFIGFILE" ] && source "$CONFIGFILE"
 
@@ -1202,16 +1204,35 @@ mode_statusline() {
             # premium is the felt cost; a bare tally flattens a 504k event and
             # a 25k one into the same "2". Both maintained by the token logger
             # below (reads the previous render's value — fine, it only grows).
-            # Gate on the size, not the count: a pre-existing 3-field state
-            # file (count>0, no size) then stays hidden until its next rewrite
-            # instead of rendering a meaningless ❄0k.
-            local cold_lastcc=0
-            [ -f "${LOGDIR}/.cold_${sid}" ] && read -r _ _ _ cold_lastcc < "${LOGDIR}/.cold_${sid}" 2>/dev/null
+            # Gate on the size, not the count: a pre-existing state file with
+            # no size stays hidden until its next rewrite instead of ❄0k.
+            # Renders SIZE·CAUSE AGE, e.g. "❄397k·other 2m": what / why / when.
+            # The age answers the question a static value can't — did this just
+            # happen or is it old news? — and past COLD_FRESH_SECS the whole
+            # token dims from cyan to gray so a ghost value visually recedes.
+            local cold_lastcc=0 cold_lasthit_t=0 cold_lastcause="-"
+            [ -f "${LOGDIR}/.cold_${sid}" ] && read -r _ _ _ cold_lastcc cold_lasthit_t cold_lastcause _ < "${LOGDIR}/.cold_${sid}" 2>/dev/null
             case "${cold_lastcc:-}" in ''|*[!0-9]*) cold_lastcc=0 ;; esac
+            case "${cold_lasthit_t:-}" in ''|*[!0-9]*) cold_lasthit_t=0 ;; esac
             if [ "$cold_lastcc" -gt 0 ]; then
                 # Round to nearest k so 130098 → 130k, 54344 → 54k
                 local _cold_k=$(( (cold_lastcc + 500) / 1000 ))
-                ctx_str="${ctx_str} "$'\033[38;5;81m'"❄${_cold_k}k${COLOR_DEFAULT}"
+                local _cold_txt="❄${_cold_k}k"
+                # Cause (skip the legacy "-" placeholder)
+                [ -n "$cold_lastcause" ] && [ "$cold_lastcause" != "-" ] && _cold_txt="${_cold_txt}·${cold_lastcause}"
+                # Age since the rewrite, compact (2m, 1h3m); omit if unknown
+                local _cold_color=$'\033[38;5;81m'   # cyan = fresh
+                if [ "$cold_lasthit_t" -gt 0 ]; then
+                    local _cold_age=$(( now - cold_lasthit_t ))
+                    [ "$_cold_age" -lt 0 ] && _cold_age=0
+                    local _cold_agestr
+                    if [ "$_cold_age" -lt 3600 ]; then _cold_agestr="$(( _cold_age / 60 ))m"
+                    else _cold_agestr="$(( _cold_age / 3600 ))h$(( (_cold_age % 3600) / 60 ))m"; fi
+                    _cold_txt="${_cold_txt} ${_cold_agestr}"
+                    # Dim once it's no longer "just now"
+                    [ "$_cold_age" -ge "${COLD_FRESH_SECS:-900}" ] && _cold_color=$'\033[38;5;246m'
+                fi
+                ctx_str="${ctx_str} ${_cold_color}${_cold_txt}${COLOR_DEFAULT}"
             fi
 
             tok_context="${ctx_str}"
@@ -2243,10 +2264,11 @@ Statusline token reference:
 
   Context (from Claude Code)
     ctx 77%        context window fullness (auto-compacts at ~95%)
-    ❄130k          size of the most recent cold rewrite this session (hidden
-                   until the first): the prompt cache expired (idle gap, or a
-                   model switch changing the cache key) and that many tokens
-                   were re-written at the cache-write premium
+    ❄397k·other 2m size·cause and age of the most recent cold rewrite this
+                   session (hidden until the first): that many tokens were
+                   re-written at the cache-write premium. cause = idle (cache
+                   TTL passed), model (model switch), or other (same model, no
+                   idle). Cyan when recent, grey once older than COLD_FRESH_SECS
 
   Cost budget (tracked per 5h window)
     $12.34/≈$40   cost used / inferred budget (cost_budget)
