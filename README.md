@@ -4,8 +4,8 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
-08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶1h12m ⏸ 20m
-Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77%
+08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶ 1h12m ⏸ 20m
+Opus 4.6 (local) · ◑ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
 ```
 
 Three lines, three perspectives on the same data:
@@ -67,7 +67,7 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 2 — Your day** (cross-session):
 ```
-08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶1h12m ⏸ 20m
+08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶ 1h12m ⏸ 20m
 ```
 
 | Element | Meaning |
@@ -75,21 +75,21 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 | `▪▪··▪▪▪` | Day timeline — ▪ = present, · = away |
 | `08:22` | Start time (first event today) |
 | `17:30` | Current time |
-| `▶1h12m` | Presence streak since last break (yellow >1.5h, red >2.5h) |
+| `▶ 1h12m` | Presence streak since last break (yellow >1.5h, red >2.5h) |
 | `⏸ 20m` | Duration of most recent break |
 
 **Line 3 — Model & limits**:
 ```
-Opus 4.6 (local) · ◑30% ↻3h21m →51% · ⑦5% ↻Sat · ctx 77%
+Opus 4.6 (local) · ◑ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
 ```
 
 | Element | Meaning |
 |---------|---------|
 | `Opus 4.6 (local)` | Active model + config source (local/project/global/session/default) |
-| `◑30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
-| `⑦5% ↻Sat` | 7d rate limit: used, reset day |
+| `◑ 30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
+| `⑦ 5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77%` | Context window fullness |
-| `❄397k other (2m)` | Last cold-cache rewrite — size, cause, and (age); cyan when recent, gray once old. Its own `{cold}` token / `COLD` group, so it sits after `ctx` behind a normal ` · ` divider |
+| `❄ 397k other (2m)` | Last cold-cache rewrite — size, cause, and (age); cyan when recent, gray once old. Its own `{cold}` token / `COLD` group, so it sits after `ctx` behind a normal ` · ` divider |
 
 One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution. The glyphs are `TIMELINE_CHAR_WORK` / `TIMELINE_CHAR_AWAY` — how heavy the bar reads depends on the terminal font, so `▪ ■ █ ▮ ▬` are all worth a try.
 
@@ -183,7 +183,7 @@ A commented-out template with all options is created on install.
 | `{project_total}` | All-time total for current project |
 | `{total_claude}` | All-time Claude work time for current project |
 | `{total_you}` | All-time your active time for current project |
-| `{since_break}` | ▶2h40m — presence streak since last break |
+| `{since_break}` | ▶ 2h40m — presence streak since last break |
 | `{last_break}` | ⏸ 41m — most recent break duration (hidden until first break) |
 | `{timeline}` | ▪▪··▪▪▪ — day timeline (▪=present ·=away), one char per `TIMELINE_SLOT` |
 
@@ -199,7 +199,7 @@ A commented-out template with all options is created on install.
 
 | Token | Description |
 |-------|-------------|
-| `{rate_5h}` | 5h rate limit with pie icon: `○5%` `◔25%` `◑50%` `◕75%` `●95%` |
+| `{rate_5h}` | 5h rate limit with pie icon: `○ 5%` `◔ 25%` `◑ 50%` `◕ 75%` `● 95%` |
 | `{rate_5h_reset}` | Time until 5h window resets |
 | `{rate_5h_proj}` | Projected 5h usage at reset (yellow ≥90%, red ≥100%) |
 | `{rate_7d}` | 7-day rate limit usage |
@@ -210,7 +210,7 @@ A commented-out template with all options is created on install.
 | `{rate_7d_scoped_name}` | Name of the scoped model (e.g. `Fable`) |
 | `{rate_7d_scoped_proj}` | Projected scoped usage at week's end |
 | `{context}` | Context window usage (e.g. `77%`) |
-| `{cold}` | Most recent cold-cache rewrite as `❄397k other (2m)` — size, cause, and (age); cyan when recent, gray after `COLD_FRESH_SECS`; empty until the first. Its own `GROUP_COLD` group so the ` · ` divider is inserted automatically |
+| `{cold}` | Most recent cold-cache rewrite as `❄ 397k other (2m)` — size, cause, and (age); cyan when recent, gray after `COLD_FRESH_SECS`; empty until the first. Its own `GROUP_COLD` group so the ` · ` divider is inserted automatically |
 | `{cost_budget}` | Actual cost / inferred 5h budget (e.g. `$19.65/≈$40`) — includes agent costs. The `≈` value is estimated; see below. |
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source when overridden (e.g. `Opus 4.6 (local)`) |
@@ -222,7 +222,7 @@ Empty tokens are automatically removed along with their surrounding separators.
 
 **Per-model colors:** `MODEL_COLORS` colors the `{model}` token by model — a comma-separated list of `substring=color` pairs matched case-insensitively against the model id and display name; first match wins, unmatched models keep the group color. Default: `fable=pink`. Example pinning all families: `MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"`.
 
-**Cold-cache counter & guard:** After an idle gap longer than the prompt-cache TTL (~1h for Claude Code's main thread), the next request silently re-writes the entire conversation prefix at the cache-write premium. Claude Code warns about this when *resuming a closed session*, but not when a session sits open and idle in a terminal — that gap is covered here, twice. The `❄397k other (2m)` marker — its own `{cold}` token, rendered as a `COLD` group so a ` · ` divider sets it off from `ctx` — shows the size, cause, and age of the most recent cold rewrite this session: the tokens re-written at the write premium (the felt cost; a bare count would flatten a 500k event and a 25k one into the same number), why it went cold, and how long ago, parenthesised so it reads plainly as elapsed time (the age answers what a static value can't: did this just happen, or is it old news?). It renders cyan while recent and dims to gray after `COLD_FRESH_SECS` (default 15min) so a ghost value recedes. Cold rewrites are detected from usage: a request that wrote most of the previous context while reading almost none of it back from cache — so `/compact`, which writes only a small summary, doesn't trigger it, and an idle gap or a model switch that changes the cache key does. A session's *first* write looks identical (nothing cached yet, whole context written) but is skipped structurally — it's flagged only when a prior turn already exists this session, so a fresh start is never mistaken for a rewrite while a resume after the cache expired still counts. `COLD_MIN_CTX` is an optional cosmetic floor on top (default 0 — shows everything; raise it to hide small rewrites). Every event is also logged with its exact size and a cause classification (`{"type":"cold",…,"cc":130000,"cause":"idle","mdl":"claude-…"}`): `idle` (gap past the cache TTL), `model` (the model changed since the previous turn — a cache-key switch), or `other` (same model, no idle — an injection/eviction/assembly race not observable from the usage numbers alone). On a hit the `other` residual is subdivided by what co-occurred in the transcript at that turn: `other:msg` (a cross-session message was being delivered) or `other:hook` (our own Stop-hook summary landed on that turn), falling back to plain `other` when neither is present. These suffixes are **co-occurrence flags, not proven causes** — they were the two factors that lined up when a real bust was traced by hand, and logging them turns each future `other` into a self-documenting sample so that, over many events, their rate against baseline can confirm or rule out the cross-session-message theory. The `❄` display above is always on and passive — it never blocks. Separately, an opt-in **cold guard** can warn you *before* a rewrite: it runs inside the `UserPromptSubmit` hook (`claude-worktime log --prompt`, already installed) and is **off by default** (`CACHE_GUARD_TTL=0`). Set `CACHE_GUARD_TTL` to the cache TTL in seconds (e.g. `3600`) to enable it; the first prompt after an idle gap past `0.9 × CACHE_GUARD_TTL` (→ 54min at a 3600s TTL, mirroring the CLI's own `elapsed < TTL×0.9` warmth test) with at least `CACHE_GUARD_MIN_CTX` context (default 50k tokens) is then blocked with a warning — the cheapest time to `/compact` or `/clear`, since the cache is lost either way. Submitting the prompt a second time proceeds normally — Claude Code echoes the blocked text back under the warning, and the guard warns only once per gap. Every cold event is logged (`{"type":"cold",...}`, kept 90 days) so the effective TTL can be verified empirically. The TTL itself is hardcoded in the Claude Code CLI with no API to query it — the reverse-engineering record and re-verification commands live in [`docs/cache-ttl-verification.md`](docs/cache-ttl-verification.md).
+**Cold-cache counter & guard:** After an idle gap longer than the prompt-cache TTL (~1h for Claude Code's main thread), the next request silently re-writes the entire conversation prefix at the cache-write premium. Claude Code warns about this when *resuming a closed session*, but not when a session sits open and idle in a terminal — that gap is covered here, twice. The `❄ 397k other (2m)` marker — its own `{cold}` token, rendered as a `COLD` group so a ` · ` divider sets it off from `ctx` — shows the size, cause, and age of the most recent cold rewrite this session: the tokens re-written at the write premium (the felt cost; a bare count would flatten a 500k event and a 25k one into the same number), why it went cold, and how long ago, parenthesised so it reads plainly as elapsed time (the age answers what a static value can't: did this just happen, or is it old news?). It renders cyan while recent and dims to gray after `COLD_FRESH_SECS` (default 15min) so a ghost value recedes. Cold rewrites are detected from usage: a request that wrote most of the previous context while reading almost none of it back from cache — so `/compact`, which writes only a small summary, doesn't trigger it, and an idle gap or a model switch that changes the cache key does. A session's *first* write looks identical (nothing cached yet, whole context written) but is skipped structurally — it's flagged only when a prior turn already exists this session, so a fresh start is never mistaken for a rewrite while a resume after the cache expired still counts. `COLD_MIN_CTX` is an optional cosmetic floor on top (default 0 — shows everything; raise it to hide small rewrites). Every event is also logged with its exact size and a cause classification (`{"type":"cold",…,"cc":130000,"cause":"idle","mdl":"claude-…"}`): `idle` (gap past the cache TTL), `model` (the model changed since the previous turn — a cache-key switch), or `other` (same model, no idle — an injection/eviction/assembly race not observable from the usage numbers alone). On a hit the `other` residual is subdivided by what co-occurred in the transcript at that turn: `other:msg` (a cross-session message was being delivered) or `other:hook` (our own Stop-hook summary landed on that turn), falling back to plain `other` when neither is present. These suffixes are **co-occurrence flags, not proven causes** — they were the two factors that lined up when a real bust was traced by hand, and logging them turns each future `other` into a self-documenting sample so that, over many events, their rate against baseline can confirm or rule out the cross-session-message theory. The `❄` display above is always on and passive — it never blocks. Separately, an opt-in **cold guard** can warn you *before* a rewrite: it runs inside the `UserPromptSubmit` hook (`claude-worktime log --prompt`, already installed) and is **off by default** (`CACHE_GUARD_TTL=0`). Set `CACHE_GUARD_TTL` to the cache TTL in seconds (e.g. `3600`) to enable it; the first prompt after an idle gap past `0.9 × CACHE_GUARD_TTL` (→ 54min at a 3600s TTL, mirroring the CLI's own `elapsed < TTL×0.9` warmth test) with at least `CACHE_GUARD_MIN_CTX` context (default 50k tokens) is then blocked with a warning — the cheapest time to `/compact` or `/clear`, since the cache is lost either way. Submitting the prompt a second time proceeds normally — Claude Code echoes the blocked text back under the warning, and the guard warns only once per gap. Every cold event is logged (`{"type":"cold",...}`, kept 90 days) so the effective TTL can be verified empirically. The TTL itself is hardcoded in the Claude Code CLI with no API to query it — the reverse-engineering record and re-verification commands live in [`docs/cache-ttl-verification.md`](docs/cache-ttl-verification.md).
 
 **Model-scoped weekly limit:** Claude Code's statusline stdin only carries the all-models 5h and 7d buckets. The per-model weekly bucket shown at claude.ai (e.g. "Fable — 36% used" on Max plans, where Fable is capped separately from the overall weekly limit) is fetched from `api.anthropic.com/api/oauth/usage` using the OAuth token Claude Code already stores (`~/.claude/.credentials.json`, or the Keychain on macOS), cached in the data dir, and refreshed in the background every `USAGE_FETCH_INTERVAL` seconds (default 60, `0` disables). The statusline never waits on the network — it renders the cached value. If the account has no scoped limit, the tokens stay empty and the group is hidden.
 

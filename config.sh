@@ -35,7 +35,7 @@
 #   {rate_7d_scoped_name} — name of the scoped model (e.g. "Fable")
 #   {rate_7d_scoped_proj} — projected scoped usage at week's end
 #   {context}        — context window usage (e.g. "45%")
-#   {cold}           — last cold-cache rewrite as ❄397k other (2m): size, cause,
+#   {cold}           — last cold-cache rewrite as ❄ 397k other (2m): size, cause,
 #                      (age); own group GROUP_COLD, empty until the first rewrite
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
@@ -103,7 +103,7 @@
 # After an idle gap longer than the prompt-cache TTL (~1h on the main thread),
 # the next request silently re-writes the whole conversation prefix at the
 # cache-write premium. Two independent features:
-#   ❄397k other (2m) — ALWAYS ON. The {cold} token shows the last rewrite:
+#   ❄ 397k other (2m) — ALWAYS ON. The {cold} token shows the last rewrite:
 #                size, cause, (age) — idle = cache TTL passed, model = model
 #                switch, other = same model/no idle; cyan when recent, gray once
 #                old. The "other" residual gains a :msg / :hook suffix when a
