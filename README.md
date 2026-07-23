@@ -104,6 +104,7 @@ claude-worktime --gaps --today        # gap distribution (tune threshold)
 claude-worktime --summary --today     # per-project breakdown
 claude-worktime --csv --today         # export as CSV
 claude-worktime --cost --today        # cost analysis
+claude-worktime --cold                # cold-cache rewrites this session (❄ history)
 claude-worktime --tokens              # statusline token legend
 ```
 
@@ -142,6 +143,19 @@ Cost by project:
 ```
 
 This shows what your session would cost at API rates. On subscription plans (Pro/Max), this is informational — not your actual bill. Your real budget is the rate limit windows.
+
+### Cold-cache history
+
+`--cold` lists the cold-cache rewrites the `❄` token only shows one of — the current session by default, or widened with `--today` / `--week` / `--since` / `--session`:
+
+```
+when                    size  cause      idle  model
+2026-07-23 04:34:32     130k  idle       2h0m  opus-4-8
+2026-07-23 05:23:03     397k  other       49s  fable-5
+total                   527k  (2 rewrites)
+```
+
+Each row is one full-context rewrite paid at the cache-write premium: its size, cause (`idle` / `model` / `other`), the idle gap before it, and the model in play. Add `--raw` for JSON. Cause and model are blank for events logged before that field existed.
 
 ## Configuration
 

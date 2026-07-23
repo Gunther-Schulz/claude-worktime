@@ -34,6 +34,7 @@
 #   claude-worktime --breakdown [--today]   # phase breakdown (Claude/You)
 #   claude-worktime --gaps [--today]        # gap distribution (tune threshold)
 #   claude-worktime --cost [--today]        # cost analysis
+#   claude-worktime --cold [--today]        # cold-cache rewrites (❄ history)
 #   claude-worktime --summary [--today]     # per-project breakdown
 #   claude-worktime --csv [--today]         # export as CSV
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
@@ -2213,6 +2214,61 @@ _do_rotate() {
     fi
 }
 
+# List cold-cache rewrites (type=cold, k=hit) — the history behind the ❄
+# statusline token, which only shows the most recent one. Defaults to the
+# current session; --today/--week/--since/--session widen or retarget.
+mode_cold() {
+    local raw=$1 since=$2 session_filter=${3:-}
+    # Scope: an explicit --session wins; otherwise, with no time filter, the
+    # current session; a time filter alone means "all sessions since then".
+    local scope_sid=""
+    if [ -n "$session_filter" ]; then scope_sid="$session_filter"
+    elif [ "$since" -eq 0 ]; then scope_sid="$(_current_session_id)"; fi
+
+    local rows
+    rows=$(jq -rc --argjson since "$since" --arg sid "$scope_sid" '
+        select((.type // "") == "cold" and .k == "hit")
+        | select($since == 0 or .t >= $since)
+        | select($sid == "" or .s == $sid)
+        | [.t, (.cc // .ctx // 0), (.cause // "-"), (.gap // 0), (.mdl // "-"), (.s[0:8])]
+        | @tsv' "$LOGFILE" 2>/dev/null | sort -n) || rows=""
+
+    if [ -z "$rows" ]; then
+        if $raw; then echo '[]'
+        elif [ -n "$scope_sid" ]; then echo "No cold rewrites recorded for this session"
+        else echo "No cold rewrites recorded"; fi
+        return
+    fi
+
+    if $raw; then
+        # Emit a JSON array of the filtered events straight from the log
+        jq -sc --argjson since "$since" --arg sid "$scope_sid" '
+            map(select((.type // "") == "cold" and .k == "hit")
+                | select($since == 0 or .t >= $since)
+                | select($sid == "" or .s == $sid))
+            | sort_by(.t)' "$LOGFILE" 2>/dev/null
+        return
+    fi
+
+    printf '%-19s %8s  %-6s %8s  %s\n' "when" "size" "cause" "idle" "model"
+    local t cc cause gap mdl s total=0 sum=0
+    while IFS=$'\t' read -r t cc cause gap mdl s; do
+        [ -z "$t" ] && continue
+        local when; when=$(date -d "@$t" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r "$t" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
+        local k=$(( (cc + 500) / 1000 ))
+        # Idle gap as compact duration
+        local gtxt
+        if [ "$gap" -lt 60 ]; then gtxt="${gap}s"
+        elif [ "$gap" -lt 3600 ]; then gtxt="$(( gap / 60 ))m"
+        else gtxt="$(( gap / 3600 ))h$(( (gap % 3600) / 60 ))m"; fi
+        # Trim the "claude-" prefix from the model id for width
+        local mshort="${mdl#claude-}"
+        printf '%-19s %7dk  %-6s %8s  %s\n' "$when" "$k" "$cause" "$gtxt" "$mshort"
+        total=$(( total + 1 )); sum=$(( sum + k ))
+    done <<< "$rows"
+    printf '%-19s %7dk  (%d rewrite%s)\n' "total" "$sum" "$total" "$([ "$total" -eq 1 ] || echo s)"
+}
+
 mode_rotate() {
     [ ! -f "$LOGFILE" ] && { echo "No log file to rotate"; return; }
     _rotate_boundaries
@@ -2320,6 +2376,7 @@ while [ $# -gt 0 ]; do
         --breakdown) MODE="breakdown" ;;
         --gaps) MODE="gaps" ;;
         --cost) MODE="cost" ;;
+        --cold) MODE="cold" ;;
         --csv) MODE="csv" ;;
         --statusline) MODE="statusline" ;;
         --rotate) MODE="rotate" ;;
@@ -2347,6 +2404,7 @@ case "$MODE" in
     breakdown)  mode_breakdown "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     gaps)       mode_gaps "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     cost)       mode_cost "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
+    cold)       mode_cold "$RAW" "$SINCE_TS" "$FILTER_SESSION" ;;
     summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     statusline) mode_statusline ;;
