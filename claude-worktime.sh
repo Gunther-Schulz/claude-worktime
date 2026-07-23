@@ -856,7 +856,13 @@ _cold_guard() {
     local gap_h=$(( gap / 3600 )) gap_m=$(( (gap % 3600) / 60 ))
     local _resend
     if [ "$copied" -eq 1 ]; then
-        _resend="Your prompt is on the clipboard — paste and submit to send anyway (also echoed below)."
+        # "prompt text" not "prompt": the UserPromptSubmit payload carries only
+        # the .prompt string — no image/attachment field exists (verified against
+        # the hooks doc), so a pasted image can't be copied and must be
+        # re-attached by hand. The word "text" signals that boundary without a
+        # clutter line the hook can't scope (it can't detect whether an image
+        # was pasted, so any explicit caveat would fire on every text-only block).
+        _resend="Your prompt text is on the clipboard — paste and submit to send anyway (also echoed below)."
     else
         _resend="To send anyway, submit the prompt again — it is echoed below."
     fi

@@ -117,7 +117,9 @@
 #                cheap; submitting the prompt a second time proceeds normally.
 #                The blocked prompt is copied to the system clipboard
 #                (wl-copy/pbcopy/xclip/xsel) so resending is paste-and-submit,
-#                and also echoed back under the warning as a fallback.
+#                and also echoed back under the warning as a fallback. Text
+#                only — a pasted image isn't in the hook payload, so re-attach
+#                it by hand on resend.
 # The TTL is hardcoded in the Claude Code CLI (no API to query it) — basis
 # and re-verification commands: docs/cache-ttl-verification.md.
 #CACHE_GUARD_TTL=3600       # cold-guard warning: 0 = off (the default). Set to
