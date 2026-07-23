@@ -159,6 +159,7 @@ GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="${_CW_GLYPH_7D}{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 GROUP_CONTEXT="ctx {context}"
+GROUP_COLD="{cold}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
 # token_budget removed: weighted tokens only tracked main conversation,
@@ -168,10 +169,14 @@ GROUP_RATE_7D_COLOR="dark-gray"
 GROUP_RATE_SCOPED_COLOR="dark-gray"
 GROUP_CONTEXT_COLOR="dark-gray"
 GROUP_BUDGET_COLOR="dark-gray"
+# ❄ self-colours (cyan fresh / gray stale) — "none" stops the group wrapper
+# from repainting it, and its own group means the ` · ` divider is inserted
+# automatically only when a cold rewrite exists.
+GROUP_COLD_COLOR="none"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
-STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT"
+STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD"
 # Per-model colors for {model}: comma list of "substring=color" pairs,
 # matched case-insensitively against the model id and display name.
 # First match wins; unmatched models keep the group color.
@@ -1132,7 +1137,7 @@ mode_statusline() {
     fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model, effort)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cost_budget="" tok_cost="" tok_model="" tok_effort=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cold="" tok_cost_budget="" tok_cost="" tok_model="" tok_effort=""
     local tok_rate_7d_scoped="" tok_rate_7d_scoped_name="" tok_rate_7d_scoped_proj=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
@@ -1203,6 +1208,7 @@ mode_statusline() {
             fi
             local ctx_str="${ctx_int}%"
             [ -n "$ctx_color" ] && ctx_str="${ctx_color}${ctx_int}%${COLOR_DEFAULT}"
+            tok_context="${ctx_str}"
 
             # ❄ shows the SIZE of the most recent cold rewrite this session
             # (4th state field), not a count: 130k re-written at the write
@@ -1211,10 +1217,13 @@ mode_statusline() {
             # below (reads the previous render's value — fine, it only grows).
             # Gate on the size, not the count: a pre-existing state file with
             # no size stays hidden until its next rewrite instead of ❄0k.
-            # Renders SIZE·CAUSE AGE, e.g. "❄397k·other 2m": what / why / when.
-            # The age answers the question a static value can't — did this just
-            # happen or is it old news? — and past COLD_FRESH_SECS the whole
-            # token dims from cyan to gray so a ghost value visually recedes.
+            # Renders SIZE CAUSE (AGE), e.g. "❄397k other (2m)": what / why /
+            # when. Space-separated so the group divider's ` · ` stays the only
+            # ` · ` on the line; the age is parenthesised so it reads plainly as
+            # "how long ago" rather than an arbitrary duration. Its own {cold}
+            # token (GROUP_COLD), self-coloured cyan when fresh and dimming to
+            # gray past COLD_FRESH_SECS so a ghost value visually recedes — the
+            # age answers what a static value can't: did this just happen?
             local cold_lastcc=0 cold_lasthit_t=0 cold_lastcause="-"
             [ -f "${LOGDIR}/.cold_${sid}" ] && read -r _ _ _ cold_lastcc cold_lasthit_t cold_lastcause _ < "${LOGDIR}/.cold_${sid}" 2>/dev/null
             case "${cold_lastcc:-}" in ''|*[!0-9]*) cold_lastcc=0 ;; esac
@@ -1224,8 +1233,8 @@ mode_statusline() {
                 local _cold_k=$(( (cold_lastcc + 500) / 1000 ))
                 local _cold_txt="❄${_cold_k}k"
                 # Cause (skip the legacy "-" placeholder)
-                [ -n "$cold_lastcause" ] && [ "$cold_lastcause" != "-" ] && _cold_txt="${_cold_txt}·${cold_lastcause}"
-                # Age since the rewrite, compact (2m, 1h3m); omit if unknown
+                [ -n "$cold_lastcause" ] && [ "$cold_lastcause" != "-" ] && _cold_txt="${_cold_txt} ${cold_lastcause}"
+                # Age since the rewrite, parenthesised (2m, 1h3m); omit if unknown
                 local _cold_color=$'\033[38;5;81m'   # cyan = fresh
                 if [ "$cold_lasthit_t" -gt 0 ]; then
                     local _cold_age=$(( now - cold_lasthit_t ))
@@ -1233,14 +1242,12 @@ mode_statusline() {
                     local _cold_agestr
                     if [ "$_cold_age" -lt 3600 ]; then _cold_agestr="$(( _cold_age / 60 ))m"
                     else _cold_agestr="$(( _cold_age / 3600 ))h$(( (_cold_age % 3600) / 60 ))m"; fi
-                    _cold_txt="${_cold_txt} ${_cold_agestr}"
+                    _cold_txt="${_cold_txt} (${_cold_agestr})"
                     # Dim once it's no longer "just now"
                     [ "$_cold_age" -ge "${COLD_FRESH_SECS:-900}" ] && _cold_color=$'\033[38;5;246m'
                 fi
-                ctx_str="${ctx_str} ${_cold_color}${_cold_txt}${COLOR_DEFAULT}"
+                tok_cold="${_cold_color}${_cold_txt}${COLOR_DEFAULT}"
             fi
-
-            tok_context="${ctx_str}"
         fi
 
         if [ -n "$r5h" ]; then
@@ -1708,8 +1715,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cost_budget}' '{cost}' '{model}' '{effort}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{effort}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
@@ -2345,11 +2352,13 @@ Statusline token reference:
 
   Context (from Claude Code)
     ctx 77%        context window fullness (auto-compacts at ~95%)
-    ❄397k·other 2m size·cause and age of the most recent cold rewrite this
-                   session (hidden until the first): that many tokens were
-                   re-written at the cache-write premium. cause = idle (cache
-                   TTL passed), model (model switch), or other (same model, no
-                   idle). Cyan when recent, grey once older than COLD_FRESH_SECS
+    ❄397k other (2m) size, cause and (age) of the most recent cold rewrite
+                   this session (the {cold} token, hidden until the first):
+                   that many tokens were re-written at the cache-write premium.
+                   cause = idle (cache TTL passed), model (model switch), or
+                   other (same model, no idle; +:msg / :hook when a cross-session
+                   message or Stop-hook summary co-occurred). Cyan when recent,
+                   grey once older than COLD_FRESH_SECS
 
   Cost budget (tracked per 5h window)
     $12.34/≈$40   cost used / inferred budget (cost_budget)

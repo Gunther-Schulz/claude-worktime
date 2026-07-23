@@ -34,8 +34,9 @@
 #                           in the background (see USAGE_FETCH_INTERVAL)
 #   {rate_7d_scoped_name} — name of the scoped model (e.g. "Fable")
 #   {rate_7d_scoped_proj} — projected scoped usage at week's end
-#   {context}        — context window usage (e.g. "45%"); appends ❄397k·other 2m
-#                      for the last cold rewrite: size·cause + age (hidden until first)
+#   {context}        — context window usage (e.g. "45%")
+#   {cold}           — last cold-cache rewrite as ❄397k other (2m): size, cause,
+#                      (age); own group GROUP_COLD, empty until the first rewrite
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
@@ -77,13 +78,14 @@
 #GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 #GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 #GROUP_CONTEXT="ctx {context}"
+#GROUP_COLD="{cold}"
 #GROUP_MODEL="{model}"
 #GROUP_EFFORT="{effort}"
 # GROUP_TOKENS removed — weighted tokens missed subagent costs; use {cost_budget} instead
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
 #STATUSLINE_2="TIMELINE BREAKS"
-#STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT"
+#STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD"
 #GROUP_DIVIDER=" · "
 
 # Per-group colors (optional, falls back to COLOR_NORMAL)
@@ -92,6 +94,8 @@
 #GROUP_RATE_SCOPED_COLOR="dark-gray"
 #GROUP_CONTEXT_COLOR="dark-gray"
 #GROUP_BUDGET_COLOR="dark-gray"
+#GROUP_COLD_COLOR="none"    # ❄ self-colours (cyan fresh / gray stale); "none"
+                            # keeps the group wrapper from repainting it
 
 # ---------------------------------------------------------------------------
 # Cold-cache counter (❄) & prompt-submit guard
@@ -99,10 +103,10 @@
 # After an idle gap longer than the prompt-cache TTL (~1h on the main thread),
 # the next request silently re-writes the whole conversation prefix at the
 # cache-write premium. Two independent features:
-#   ❄397k·other 2m — ALWAYS ON. {context} shows the last rewrite: size·cause
-#                + age (idle = cache TTL passed, model = model switch, other =
-#                same model/no idle; cyan when recent, gray once old). The
-#                "other" residual gains a :msg / :hook suffix when a
+#   ❄397k other (2m) — ALWAYS ON. The {cold} token shows the last rewrite:
+#                size, cause, (age) — idle = cache TTL passed, model = model
+#                switch, other = same model/no idle; cyan when recent, gray once
+#                old. The "other" residual gains a :msg / :hook suffix when a
 #                cross-session message or our Stop-hook summary co-occurred in
 #                the transcript at the rewrite — a co-occurrence flag for later
 #                analysis, not a proven cause. Passive display only — never
