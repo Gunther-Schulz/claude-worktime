@@ -5,7 +5,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
 08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶ 1h12m ⏸ 20m
-Opus 4.6 (local) · ⣄ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
+Opus 4.6 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77%
 ```
 
 Three lines, three perspectives on the same data:
@@ -80,14 +80,14 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 3 — Model & limits**:
 ```
-Opus 4.6 (local) · ⣄ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
+Opus 4.6 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77%
 ```
 
 | Element | Meaning |
 |---------|---------|
 | `Opus 4.6 (local)` | Active model + config source (local/project/global/session/default) |
-| `⣄ 30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
-| `⑦ 5% ↻Sat` | 7d rate limit: used, reset day |
+| `⧗30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
+| `➐ 5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77%` | Context window fullness |
 | `❄ 397k other (2m)` | Last cold-cache rewrite — size, cause, and (age); cyan when recent, gray once old. Its own `{cold}` token / `COLD` group, so it sits after `ctx` behind a normal ` · ` divider |
 
@@ -199,7 +199,7 @@ A commented-out template with all options is created on install.
 
 | Token | Description |
 |-------|-------------|
-| `{rate_5h}` | 5h rate limit with braille fill gauge: `⠀5%` `⣀25%` `⣤50%` `⣶75%` `⣿95%` |
+| `{rate_5h}` | 5h rate limit usage (e.g. `30%`); the `⧗` label lives in `GROUP_RATE_5H` |
 | `{rate_5h_reset}` | Time until 5h window resets |
 | `{rate_5h_proj}` | Projected 5h usage at reset (yellow ≥90%, red ≥100%) |
 | `{rate_7d}` | 7-day rate limit usage |
@@ -239,8 +239,8 @@ GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 GROUP_TOTAL="total {project_total}"
 GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
-GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
-GROUP_RATE_7D="⑦{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
+GROUP_RATE_5H="⧗{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
+GROUP_RATE_7D="➐ {rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_MODEL="{model}"
@@ -402,7 +402,7 @@ JSONL at `~/.local/share/claude-worktime/activity.jsonl`:
 
 Run `claude-worktime --check` to verify. No python, no node, no extra runtimes.
 
-**Platform notes.** Linux uses GNU coreutils and bash 4+ directly; this is the canonical code path. macOS runs against vanilla system bash 3.2 and BSD utilities via a thin compatibility layer in `claude-worktime.sh` (bracketed near the top of the file). No `brew install bash` or `brew install coreutils` required — just `brew install jq`. The 7-day rate-limit glyph is `⑦` on Linux and `➐` on macOS (the latter renders cleanly in common macOS monospace fonts where `⑦` does not).
+**Platform notes.** Linux uses GNU coreutils and bash 4+ directly; this is the canonical code path. macOS runs against vanilla system bash 3.2 and BSD utilities via a thin compatibility layer in `claude-worktime.sh` (bracketed near the top of the file). No `brew install bash` or `brew install coreutils` required — just `brew install jq`. The rate-limit glyphs (`⧗` for 5h, `➐` for 7d) render cleanly on both Linux and macOS, so there is no per-platform glyph split; `➐` replaced an earlier `⑦` that showed as tofu in common macOS monospace fonts.
 
 ## Known limitations
 

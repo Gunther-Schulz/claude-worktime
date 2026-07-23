@@ -106,11 +106,6 @@ if [[ ${OSTYPE:-} == darwin* ]]; then
             eval "$_name=(\"\${_arr[@]}\")"
         }
     fi
-
-    # Glyph: U+2466 ⑦ renders as tofu in several common macOS monospace
-    # fonts; U+2790 ➐ is the cleanest portable alternative. The leading
-    # space prevents it from visually crowding the following digit.
-    _CW_GLYPH_7D="➐ "
 else
     _CW_IS_DARWIN=0
     _sedi() { sed -i "$@"; }
@@ -133,13 +128,21 @@ else
         _epoch_ms() { echo $(( $(date +%s%N) / 1000000 )); }
     fi
 
-    # Trailing space de-crowds the digit (same rationale as the ➐ branch)
-    # and keeps Linux consistent with macOS and with the 5h gauge's "○ 5%".
-    _CW_GLYPH_7D="⑦ "
 fi
 # ============================================================
 # End of macOS compatibility layer.
 # ============================================================
+
+# Rate-limit group glyphs (platform-independent).
+#   5h: U+29D7 ⧗ BLACK HOURGLASS — a short-window "time" mark, EAW=Neutral
+#       (one cell everywhere) so it sits tight against the digit with no
+#       de-crowding space: "⧗30%".
+#   7d: U+2790 ➐ DINGBAT-7. Was U+2466 ⑦, which renders as tofu in several
+#       common macOS monospace fonts; ➐ renders cleanly on both Linux and
+#       macOS, so it replaces the old per-platform ⑦/➐ split with one glyph.
+#       Trailing space de-crowds the digit.
+_CW_GLYPH_5H="⧗"
+_CW_GLYPH_7D="➐ "
 
 # Paths: env vars > XDG spec > defaults
 CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
@@ -157,7 +160,7 @@ GROUP_TODAY="{status} today {today_project} 🤖{today_claude} 👤{today_you}"
 GROUP_TOTAL="total {project_total}"
 GROUP_TIMELINE="{today_start} {timeline} {today_now}"
 GROUP_BREAKS="{since_break} {last_break}"
-GROUP_RATE_5H="{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
+GROUP_RATE_5H="${_CW_GLYPH_5H}{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="${_CW_GLYPH_7D}{rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 GROUP_CONTEXT="ctx {context}"
@@ -1253,24 +1256,11 @@ mode_statusline() {
         fi
 
         if [ -n "$r5h" ]; then
-            local r5h_int="${r5h%%.*}"
-            # 9-level braille fill gauge (0..8 dots, bottom-up). Unlike the old
-            # pie-circle ramp (○◔◑◕●) these are ALL U+2800-block, EAW=Neutral —
-            # one consistent width class, so no font draws some steps wider than
-            # others and the glyph never bleeds into the digit. That uniformity
-            # is why no de-crowding space is needed: "⣤50%" stays tight and
-            # aligned everywhere. Tradeoff: a near-empty gauge (<13%) shows the
-            # blank cell ⠀, so the low end reads as just the number.
-            local r5h_icon="⠀"
-            [ "$r5h_int" -ge 13 ] && r5h_icon="⡀"
-            [ "$r5h_int" -ge 25 ] && r5h_icon="⣀"
-            [ "$r5h_int" -ge 38 ] && r5h_icon="⣄"
-            [ "$r5h_int" -ge 50 ] && r5h_icon="⣤"
-            [ "$r5h_int" -ge 63 ] && r5h_icon="⣦"
-            [ "$r5h_int" -ge 75 ] && r5h_icon="⣶"
-            [ "$r5h_int" -ge 88 ] && r5h_icon="⣷"
-            [ "$r5h_int" -ge 100 ] && r5h_icon="⣿"
-            tok_rate_5h="${r5h_icon}${r5h_int}%"
+            # Just the percentage — the ⧗ hourglass label lives in
+            # GROUP_RATE_5H (like ➐ for 7d), not baked into the token, so a
+            # near-empty limit still reads plainly and the glyph never
+            # depends on the value.
+            tok_rate_5h="${r5h%%.*}%"
         fi
         if [ -n "$r5h_reset" ]; then _fmt_short_v $(( r5h_reset - now )); tok_rate_5h_reset="$_V"; fi
         [ -n "$r7d" ] && tok_rate_7d="${r7d%%.*}%"
@@ -2365,10 +2355,10 @@ Statusline token reference:
     45m            current session active time
 
   Rate limits (from Claude Code)
-    ⣤50%           5h rate limit usage (⠀⡀⣀⣄⣤⣦⣶⣷⣿ braille fill, 0..8 dots)
+    ⧗50%           5h rate limit usage (⧗ = short/hourly window)
     ↻3h21m         time until 5h window resets
     →51%           projected 5h usage at reset (yellow ≥90%, red ≥100%)
-    ⑦5%            7-day rate limit usage
+    ➐5%            7-day rate limit usage
     ↻Sat           7-day reset weekday
     →12%           projected 7d usage at reset (→… while insufficient data)
 
