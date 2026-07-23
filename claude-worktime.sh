@@ -1152,11 +1152,12 @@ mode_statusline() {
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_"),
             (.model.id // "_"),
-            (.effort.level // "_")
+            (.effort.level // "_"),
+            (.transcript_path // "_")
         ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff tp_path
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff tp_path <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
@@ -1177,6 +1178,7 @@ mode_statusline() {
         [[ "$mdl" == *" ("*"context)" ]] && mdl="${mdl% (*context)}"
         [ "$eff" = "_" ] && eff=""
         [ -n "$eff" ] && tok_effort="$eff"
+        [ "$tp_path" = "_" ] && tp_path=""
 
         # Context token: fullness % with color ramp, plus ❄<size> for the
         # most recent cold rewrite. No hit-ratio metric: it pins at 95-99% in steady state
@@ -1538,8 +1540,7 @@ mode_statusline() {
                     # kills the cache regardless of model. Else a model change
                     # since the previous turn is a cache-key switch. Else
                     # "other" — same model, no idle: an injection/eviction/race
-                    # we cannot see from the usage numbers alone (deliberately
-                    # NOT labelled further; the cause isn't observable here).
+                    # not visible in the usage numbers alone.
                     local cause_ttl=${CACHE_GUARD_TTL:-3600}
                     [ "$cause_ttl" -gt 0 ] 2>/dev/null || cause_ttl=3600
                     if [ "$cold_gap" -ge $(( cause_ttl * 9 / 10 )) ]; then
@@ -1548,6 +1549,25 @@ mode_statusline() {
                         cs_lastcause="model"
                     else
                         cs_lastcause="other"
+                        # Subdivide the residual by what co-occurred in the
+                        # transcript at the rewrite. When this was traced by
+                        # hand, both busts coincided with a cross-session
+                        # message delivery and our own Stop-hook summary. These
+                        # are CO-OCCURRENCE flags, not proven causes — over many
+                        # samples their rate vs. baseline is what could confirm
+                        # or kill the cross-session-message theory. Read only on
+                        # a hit (rare), tail only, so the statusline stays cheap;
+                        # no transcript or no marker leaves it plain "other".
+                        # Priority msg > hook: msg is the hypothesised trigger,
+                        # the Stop-hook summary the weaker co-factor.
+                        if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
+                            local _cold_tail
+                            _cold_tail=$(tail -n 80 "$tp_path" 2>/dev/null)
+                            case "$_cold_tail" in
+                                *"Another Claude session sent a message"*) cs_lastcause="other:msg" ;;
+                                *"stop_hook_summary"*)                     cs_lastcause="other:hook" ;;
+                            esac
+                        fi
                     fi
                 fi
                 echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc} ${cs_lasthit_t} ${cs_lastcause} ${cur_model}" > "$cold_state" 2>/dev/null
@@ -1559,9 +1579,12 @@ mode_statusline() {
                     # cc = tokens actually re-written this event (the reactivation
                     # size); ctx = full context after it. On a hit cc dominates
                     # ctx, but logging it explicitly avoids the cr+ui overcount.
-                    # cause = idle|model|other; mdl = model id at the rewrite —
-                    # together they let `--cold` and later analysis separate the
-                    # knowable causes from the residual.
+                    # cause = idle|model|other[:msg|:hook]; mdl = model id at
+                    # the rewrite — together they let `--cold` and later
+                    # analysis separate the knowable causes from the residual.
+                    # The :msg / :hook suffix flags a transcript co-occurrence
+                    # (cross-session message / Stop-hook summary), not a proven
+                    # cause.
                     [ -n "$cold_hit" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
                         "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
@@ -2252,7 +2275,7 @@ mode_cold() {
         return
     fi
 
-    printf '%-19s %8s  %-6s %8s  %s\n' "when" "size" "cause" "idle" "model"
+    printf '%-19s %8s  %-10s %8s  %s\n' "when" "size" "cause" "idle" "model"
     local t cc cause gap mdl s total=0 sum=0
     while IFS=$'\t' read -r t cc cause gap mdl s; do
         [ -z "$t" ] && continue
@@ -2265,7 +2288,7 @@ mode_cold() {
         else gtxt="$(( gap / 3600 ))h$(( (gap % 3600) / 60 ))m"; fi
         # Trim the "claude-" prefix from the model id for width
         local mshort="${mdl#claude-}"
-        printf '%-19s %7dk  %-6s %8s  %s\n' "$when" "$k" "$cause" "$gtxt" "$mshort"
+        printf '%-19s %7dk  %-10s %8s  %s\n' "$when" "$k" "$cause" "$gtxt" "$mshort"
         total=$(( total + 1 )); sum=$(( sum + k ))
     done <<< "$rows"
     printf '%-19s %7dk  (%d rewrite%s)\n' "total" "$sum" "$total" "$([ "$total" -eq 1 ] || echo s)"

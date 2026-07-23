@@ -101,8 +101,12 @@
 # cache-write premium. Two independent features:
 #   ❄397k·other 2m — ALWAYS ON. {context} shows the last rewrite: size·cause
 #                + age (idle = cache TTL passed, model = model switch, other =
-#                same model/no idle; cyan when recent, gray once old). Passive
-#                display only — never blocks. Tuned by COLD_MIN_CTX below.
+#                same model/no idle; cyan when recent, gray once old). The
+#                "other" residual gains a :msg / :hook suffix when a
+#                cross-session message or our Stop-hook summary co-occurred in
+#                the transcript at the rewrite — a co-occurrence flag for later
+#                analysis, not a proven cause. Passive display only — never
+#                blocks. Tuned by COLD_MIN_CTX below.
 #   cold guard — OFF by default (CACHE_GUARD_TTL=0). When enabled, the
 #                UserPromptSubmit hook blocks the FIRST prompt after such a gap,
 #                once, so you can /compact or /clear at the only moment it's

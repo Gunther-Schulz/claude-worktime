@@ -67,6 +67,30 @@ checkcause() {
     rm -rf "$d"
 }
 
+# Like checkcause but also drops a transcript file and passes its path on
+# stdin, so the "other" residual can be subdivided by transcript co-occurrence.
+# $1 label $2 want-cause $3 state $4 model $5 cr $6 cc $7 ui $8 transcript-body
+checkcause_tp() {
+    local label=$1 want=$2 state=$3 mdl=$4 cr=$5 cc=$6 ui=$7 tbody=$8
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
+    : > "$d/config.sh"
+    [ -n "$state" ] && printf '%s\n' "$state" > "$d/.cold_$SID"
+    local tp="$d/transcript.jsonl"; printf '%s\n' "$tbody" > "$tp"
+    local got
+    printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"%s"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"input_tokens":%d,"output_tokens":10}}}\n' \
+        "$SID" "$tp" "$mdl" "$cr" "$cc" "$ui" \
+        | CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+    got=$(grep '"k":"hit"' "$d/activity.jsonl" 2>/dev/null | jq -r '.cause' 2>/dev/null | tail -1)
+    if [ "$got" = "$want" ]; then
+        printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m %s (wanted cause=%s, got %s)\n' "$label" "$want" "${got:-none}"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+
 # $1 label  $2 expected(0/1)  $3 prior-state-file-line(or "")  $4 cr $5 cc $6 ui
 check() {
     local label=$1 want=$2 state=$3 cr=$4 cc=$5 ui=$6
@@ -120,6 +144,24 @@ checkcause "gap past 0.9xTTL -> idle" idle \
 # idle takes precedence even if the model also changed
 checkcause "long gap + model change -> idle" idle \
     "3 130000 $((NOW-7200)) 128000 0 - claude-fable-5"  claude-opus-4-8 0 130000 100
+
+echo
+echo "❄ 'other' residual subdivided by transcript co-occurrence:"
+# Same-model, short-gap 'other' — but the transcript at the rewrite carries a
+# co-factor. msg wins over hook when both are present.
+checkcause_tp "cross-session message present -> other:msg" other:msg \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
+    '{"type":"user","content":"Another Claude session sent a message: agent-message from x"}'
+checkcause_tp "stop-hook summary present -> other:hook" other:hook \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
+    '{"type":"system","subtype":"stop_hook_summary","hookCount":1}'
+checkcause_tp "both present -> msg wins" other:msg \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
+    '{"subtype":"stop_hook_summary"}
+{"content":"Another Claude session sent a message: hi"}'
+checkcause_tp "no marker -> plain other" other \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
+    '{"type":"assistant","content":"nothing special here"}'
 
 echo
 if [ "$fail" -eq 0 ]; then
