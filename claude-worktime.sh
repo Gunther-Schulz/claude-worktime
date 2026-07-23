@@ -1434,6 +1434,15 @@ mode_statusline() {
                         _resp=$(curl -sf --max-time 10 "https://api.anthropic.com/api/oauth/usage" \
                             -H "Authorization: Bearer $_tok" \
                             -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
+                        # TLS-intercepting proxies (claude-code-cache-fix,
+                        # corporate MITM) re-sign with a CA that node trusts
+                        # via NODE_EXTRA_CA_CERTS but curl does not — retry
+                        # once bypassing the proxy before giving up.
+                        [ -z "$_resp" ] && [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ] && \
+                            _resp=$(curl -sf --max-time 10 --noproxy '*' \
+                                "https://api.anthropic.com/api/oauth/usage" \
+                                -H "Authorization: Bearer $_tok" \
+                                -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
                         # Only overwrite the cache with a well-formed response
                         [ -n "$_resp" ] && jq -e '.limits' <<< "$_resp" >/dev/null 2>&1 \
                             && printf '%s\n' "$_resp" > "$usage_cache" 2>/dev/null
