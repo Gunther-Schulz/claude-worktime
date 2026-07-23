@@ -215,8 +215,10 @@ GAP_BUCKETS="60,300,600,900,1800"  # seconds: 1m, 5m, 10m, 15m, 30m
 # requests and detects expiry itself by clock math — both hardcoded in the
 # CLI, no API to query (see docs/cache-ttl-verification.md; re-verify after
 # CLI updates).
-CACHE_GUARD_TTL=3600      # the prompt-cache TTL (s); guard warns at 0.9× it
-                          # (mirrors the CLI's warmth test); 0 disables it
+CACHE_GUARD_TTL=0         # cold-guard warning: OFF by default (0). Set to the
+                          # prompt-cache TTL in seconds (e.g. 3600) to enable —
+                          # then it warns at 0.9× that, mirroring the CLI's own
+                          # warmth test. The ❄ display is unaffected either way.
 CACHE_GUARD_MIN_CTX=50000 # don't warn below this context size (tokens)
 COLD_MIN_CTX=0            # optional cosmetic floor: hide rewrites whose prior
                           # context was below this (0 = show all). Session-start

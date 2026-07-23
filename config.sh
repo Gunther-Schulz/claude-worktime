@@ -98,19 +98,22 @@
 # ---------------------------------------------------------------------------
 # After an idle gap longer than the prompt-cache TTL (~1h on the main thread),
 # the next request silently re-writes the whole conversation prefix at the
-# cache-write premium. Two defenses:
-#   ❄397k·other 2m — {context} shows the last rewrite: size·cause + age
-#                (idle = cache TTL passed, model = model switch, other =
-#                same model/no idle; cyan when recent, gray once old)
-#   cold guard — the UserPromptSubmit hook (claude-worktime log --prompt)
-#                blocks the FIRST prompt after such a gap, once, so you can
-#                /compact or /clear at the only moment it's cheap; submitting
-#                the prompt a second time proceeds normally (the blocked text
-#                is echoed back under the warning).
+# cache-write premium. Two independent features:
+#   ❄397k·other 2m — ALWAYS ON. {context} shows the last rewrite: size·cause
+#                + age (idle = cache TTL passed, model = model switch, other =
+#                same model/no idle; cyan when recent, gray once old). Passive
+#                display only — never blocks. Tuned by COLD_MIN_CTX below.
+#   cold guard — OFF by default (CACHE_GUARD_TTL=0). When enabled, the
+#                UserPromptSubmit hook blocks the FIRST prompt after such a gap,
+#                once, so you can /compact or /clear at the only moment it's
+#                cheap; submitting the prompt a second time proceeds normally
+#                (the blocked text is echoed back under the warning).
 # The TTL is hardcoded in the Claude Code CLI (no API to query it) — basis
 # and re-verification commands: docs/cache-ttl-verification.md.
-#CACHE_GUARD_TTL=3600       # prompt-cache TTL (s); guard warns at 0.9× it, the
-                            # same point the CLI treats the cache as cold; 0 = off
+#CACHE_GUARD_TTL=3600       # cold-guard warning: 0 = off (the default). Set to
+                            # the cache TTL in seconds to enable — it then warns
+                            # at 0.9× that, the point the CLI treats it as cold.
+                            # (The ❄ display stays on regardless of this.)
 #CACHE_GUARD_MIN_CTX=50000  # don't warn below this context size (tokens)
 # The ❄ marker skips a session's first write structurally (no prior turn to
 # re-write), so it never mistakes session-start for a cold rewrite while still

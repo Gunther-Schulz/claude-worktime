@@ -51,7 +51,10 @@ command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/cfg"        # empty config -> script defaults, ignores user config
+mkdir -p "$WORK/cfg"        # isolated config, ignores the user's
+# The guard now ships OFF (CACHE_GUARD_TTL=0); enable it explicitly here so
+# this harness scores its catch behaviour rather than the shipped default.
+echo "CACHE_GUARD_TTL=3600" > "$WORK/cfg/config.sh"
 
 now=$(date +%s)
 
