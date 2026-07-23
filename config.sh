@@ -114,8 +114,10 @@
 #   cold guard — OFF by default (CACHE_GUARD_TTL=0). When enabled, the
 #                UserPromptSubmit hook blocks the FIRST prompt after such a gap,
 #                once, so you can /compact or /clear at the only moment it's
-#                cheap; submitting the prompt a second time proceeds normally
-#                (the blocked text is echoed back under the warning).
+#                cheap; submitting the prompt a second time proceeds normally.
+#                The blocked prompt is copied to the system clipboard
+#                (wl-copy/pbcopy/xclip/xsel) so resending is paste-and-submit,
+#                and also echoed back under the warning as a fallback.
 # The TTL is hardcoded in the Claude Code CLI (no API to query it) — basis
 # and re-verification commands: docs/cache-ttl-verification.md.
 #CACHE_GUARD_TTL=3600       # cold-guard warning: 0 = off (the default). Set to
@@ -123,6 +125,8 @@
                             # at 0.9× that, the point the CLI treats it as cold.
                             # (The ❄ display stays on regardless of this.)
 #CACHE_GUARD_MIN_CTX=50000  # don't warn below this context size (tokens)
+#CACHE_GUARD_CLIPBOARD=true # copy the blocked prompt to the clipboard on a
+                            # block (false = leave the clipboard untouched)
 # The ❄ marker skips a session's first write structurally (no prior turn to
 # re-write), so it never mistakes session-start for a cold rewrite while still
 # catching a resume after the cache expired. COLD_MIN_CTX is only an optional

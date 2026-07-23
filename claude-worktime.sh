@@ -230,6 +230,9 @@ CACHE_GUARD_TTL=0         # cold-guard warning: OFF by default (0). Set to the
                           # then it warns at 0.9× that, mirroring the CLI's own
                           # warmth test. The ❄ display is unaffected either way.
 CACHE_GUARD_MIN_CTX=50000 # don't warn below this context size (tokens)
+CACHE_GUARD_CLIPBOARD=true # on a block, copy the prompt to the system clipboard
+                          # (wl-copy/pbcopy/xclip/xsel) so resending is paste +
+                          # submit. Set false to leave the clipboard untouched.
 COLD_MIN_CTX=0            # optional cosmetic floor: hide rewrites whose prior
                           # context was below this (0 = show all). Session-start
                           # is excluded structurally, not by this — see below.
@@ -737,7 +740,8 @@ _project_label_v() {
 # session — its own check is the same clock math used here (idle time vs the
 # TTL it requested; see docs/cache-ttl-verification.md). This guard blocks
 # the first prompt after such a gap — once — so the user can /compact or
-# /clear at the only moment that's cheap; resubmitting proceeds normally.
+# /clear at the only moment that's cheap; resubmitting proceeds normally
+# (the blocked prompt is copied to the clipboard to make that resend cheap).
 # Every failure path returns silently: the guard must never block on error.
 _cold_guard() {
     [ "${CACHE_GUARD_TTL:-0}" -gt 0 ] 2>/dev/null || return 0
@@ -824,9 +828,40 @@ _cold_guard() {
             "$now" "$sid" "$gap" "$ctx_tok" >> "$LOGFILE"
     ) 9>"${LOGFILE}.lock"
 
+    # Copy the blocked prompt to the system clipboard so resending is
+    # paste-and-submit, not a hand-select from scrollback — the whole point
+    # of the guard is to make the cheap moment cheap, and re-typing a large
+    # prompt is its own tax. Best-effort across platforms (wl-copy Wayland,
+    # pbcopy macOS, xclip/xsel X11); backgrounded and output-swallowed so a
+    # missing tool or a dead clipboard daemon never hangs or fails the hook
+    # (line 837's prime directive). Opt out with CACHE_GUARD_CLIPBOARD=false.
+    # jq is fine here — the block path is rare, unlike the log hot path.
+    local copied=0
+    if [ "${CACHE_GUARD_CLIPBOARD:-true}" != "false" ]; then
+        local _prompt; _prompt=$(printf '%s' "$_STDIN_JSON" | jq -r '.prompt // empty' 2>/dev/null)
+        if [ -n "$_prompt" ]; then
+            local _clip=""
+            if command -v wl-copy >/dev/null 2>&1;   then _clip="wl-copy"
+            elif command -v pbcopy >/dev/null 2>&1;  then _clip="pbcopy"
+            elif command -v xclip >/dev/null 2>&1;   then _clip="xclip -selection clipboard"
+            elif command -v xsel >/dev/null 2>&1;    then _clip="xsel --clipboard --input"
+            fi
+            if [ -n "$_clip" ]; then
+                ( printf '%s' "$_prompt" | $_clip >/dev/null 2>&1 & ) 2>/dev/null
+                copied=1
+            fi
+        fi
+    fi
+
     local gap_h=$(( gap / 3600 )) gap_m=$(( (gap % 3600) / 60 ))
-    printf '{"decision":"block","reason":"❄ Prompt cache likely cold: idle %dh%02dm (TTL %dmin) with ~%dk context. Sending now re-writes the whole context at the cache-write premium — cheapest moment to /compact or /clear is now. To send anyway, submit the prompt again — it is echoed below; warns once per gap."}' \
-        "$gap_h" "$gap_m" "$(( CACHE_GUARD_TTL / 60 ))" "$(( ctx_tok / 1000 ))"
+    local _resend
+    if [ "$copied" -eq 1 ]; then
+        _resend="Your prompt is on the clipboard — paste and submit to send anyway (also echoed below)."
+    else
+        _resend="To send anyway, submit the prompt again — it is echoed below."
+    fi
+    printf '{"decision":"block","reason":"❄ Prompt cache likely cold: idle %dh%02dm (TTL %dmin) with ~%dk context. Sending now re-writes the whole context at the cache-write premium — cheapest moment to /compact or /clear is now. %s Warns once per gap."}' \
+        "$gap_h" "$gap_m" "$(( CACHE_GUARD_TTL / 60 ))" "$(( ctx_tok / 1000 ))" "$_resend"
 }
 
 # ============================================================
