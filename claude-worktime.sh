@@ -1257,7 +1257,13 @@ mode_statusline() {
             [ "$r5h_int" -ge 38 ] && r5h_icon="◑"
             [ "$r5h_int" -ge 63 ] && r5h_icon="◕"
             [ "$r5h_int" -ge 88 ] && r5h_icon="●"
-            tok_rate_5h="${r5h_icon}${r5h_int}%"
+            # Space between gauge glyph and number: the partial-fill circles
+            # (◔◑◕, U+25D4/D1/D5) are East-Asian-Ambiguous width and some fonts
+            # draw them wider than one cell, bleeding into the digit. A
+            # separating space is font/OS-independent (same rationale as the
+            # ➐ macOS fallback above) — never relies on the terminal honouring
+            # a width the font gets wrong.
+            tok_rate_5h="${r5h_icon} ${r5h_int}%"
         fi
         if [ -n "$r5h_reset" ]; then _fmt_short_v $(( r5h_reset - now )); tok_rate_5h_reset="$_V"; fi
         [ -n "$r7d" ] && tok_rate_7d="${r7d%%.*}%"
