@@ -5,7 +5,7 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
 08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶ 1h12m ⏸ 20m
-Opus 4.6 (local) · ◑ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
+Opus 4.6 (local) · ⣄ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
 ```
 
 Three lines, three perspectives on the same data:
@@ -80,13 +80,13 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 
 **Line 3 — Model & limits**:
 ```
-Opus 4.6 (local) · ◑ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
+Opus 4.6 (local) · ⣄ 30% ↻3h21m →51% · ⑦ 5% ↻Sat · ctx 77%
 ```
 
 | Element | Meaning |
 |---------|---------|
 | `Opus 4.6 (local)` | Active model + config source (local/project/global/session/default) |
-| `◑ 30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
+| `⣄ 30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
 | `⑦ 5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77%` | Context window fullness |
 | `❄ 397k other (2m)` | Last cold-cache rewrite — size, cause, and (age); cyan when recent, gray once old. Its own `{cold}` token / `COLD` group, so it sits after `ctx` behind a normal ` · ` divider |
@@ -199,7 +199,7 @@ A commented-out template with all options is created on install.
 
 | Token | Description |
 |-------|-------------|
-| `{rate_5h}` | 5h rate limit with pie icon: `○ 5%` `◔ 25%` `◑ 50%` `◕ 75%` `● 95%` |
+| `{rate_5h}` | 5h rate limit with braille fill gauge: `⠀5%` `⣀25%` `⣤50%` `⣶75%` `⣿95%` |
 | `{rate_5h_reset}` | Time until 5h window resets |
 | `{rate_5h_proj}` | Projected 5h usage at reset (yellow ≥90%, red ≥100%) |
 | `{rate_7d}` | 7-day rate limit usage |

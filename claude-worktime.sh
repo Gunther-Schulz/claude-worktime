@@ -1254,18 +1254,23 @@ mode_statusline() {
 
         if [ -n "$r5h" ]; then
             local r5h_int="${r5h%%.*}"
-            local r5h_icon="○"
-            [ "$r5h_int" -ge 13 ] && r5h_icon="◔"
-            [ "$r5h_int" -ge 38 ] && r5h_icon="◑"
-            [ "$r5h_int" -ge 63 ] && r5h_icon="◕"
-            [ "$r5h_int" -ge 88 ] && r5h_icon="●"
-            # Space between gauge glyph and number: the partial-fill circles
-            # (◔◑◕, U+25D4/D1/D5) are East-Asian-Ambiguous width and some fonts
-            # draw them wider than one cell, bleeding into the digit. A
-            # separating space is font/OS-independent (same rationale as the
-            # ➐ macOS fallback above) — never relies on the terminal honouring
-            # a width the font gets wrong.
-            tok_rate_5h="${r5h_icon} ${r5h_int}%"
+            # 9-level braille fill gauge (0..8 dots, bottom-up). Unlike the old
+            # pie-circle ramp (○◔◑◕●) these are ALL U+2800-block, EAW=Neutral —
+            # one consistent width class, so no font draws some steps wider than
+            # others and the glyph never bleeds into the digit. That uniformity
+            # is why no de-crowding space is needed: "⣤50%" stays tight and
+            # aligned everywhere. Tradeoff: a near-empty gauge (<13%) shows the
+            # blank cell ⠀, so the low end reads as just the number.
+            local r5h_icon="⠀"
+            [ "$r5h_int" -ge 13 ] && r5h_icon="⡀"
+            [ "$r5h_int" -ge 25 ] && r5h_icon="⣀"
+            [ "$r5h_int" -ge 38 ] && r5h_icon="⣄"
+            [ "$r5h_int" -ge 50 ] && r5h_icon="⣤"
+            [ "$r5h_int" -ge 63 ] && r5h_icon="⣦"
+            [ "$r5h_int" -ge 75 ] && r5h_icon="⣶"
+            [ "$r5h_int" -ge 88 ] && r5h_icon="⣷"
+            [ "$r5h_int" -ge 100 ] && r5h_icon="⣿"
+            tok_rate_5h="${r5h_icon}${r5h_int}%"
         fi
         if [ -n "$r5h_reset" ]; then _fmt_short_v $(( r5h_reset - now )); tok_rate_5h_reset="$_V"; fi
         [ -n "$r7d" ] && tok_rate_7d="${r7d%%.*}%"
@@ -2360,7 +2365,7 @@ Statusline token reference:
     45m            current session active time
 
   Rate limits (from Claude Code)
-    ◑50%           5h rate limit usage (○◔◑◕● matches visual fill)
+    ⣤50%           5h rate limit usage (⠀⡀⣀⣄⣤⣦⣶⣷⣿ braille fill, 0..8 dots)
     ↻3h21m         time until 5h window resets
     →51%           projected 5h usage at reset (yellow ≥90%, red ≥100%)
     ⑦5%            7-day rate limit usage
