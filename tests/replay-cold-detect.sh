@@ -40,6 +40,33 @@ turn() {
     grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null || true
 }
 
+# Run one turn WITH a model id and echo the logged cause of the resulting hit
+# (empty if no hit). $1 dir  $2 model-id  $3 cr  $4 cc  $5 ui
+turn_model() {
+    local d=$1 mdl=$2 cr=$3 cc=$4 ui=$5
+    printf '{"session_id":"%s","model":{"id":"%s"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"input_tokens":%d,"output_tokens":10}}}\n' \
+        "$SID" "$mdl" "$cr" "$cc" "$ui" \
+        | CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+    grep '"k":"hit"' "$d/activity.jsonl" 2>/dev/null | jq -r '.cause' 2>/dev/null | tail -1
+}
+
+# $1 label  $2 expected-cause  $3 prior-state-line  $4 model  $5 cr $6 cc $7 ui
+checkcause() {
+    local label=$1 want=$2 state=$3 mdl=$4 cr=$5 cc=$6 ui=$7
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
+    : > "$d/config.sh"
+    [ -n "$state" ] && printf '%s\n' "$state" > "$d/.cold_$SID"
+    local got; got=$(turn_model "$d" "$mdl" "$cr" "$cc" "$ui")
+    if [ "$got" = "$want" ]; then
+        printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m %s (wanted cause=%s, got %s)\n' "$label" "$want" "${got:-none}"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+
 # $1 label  $2 expected(0/1)  $3 prior-state-file-line(or "")  $4 cr $5 cc $6 ui
 check() {
     local label=$1 want=$2 state=$3 cr=$4 cc=$5 ui=$6
@@ -79,6 +106,20 @@ check "small real rewrite (15k) is visible" 1 "0 15000 $((NOW-4000)) 0" 1000 140
 # 4. /clear mid-session: prior context large, then a tiny fresh write. cc is
 #    small relative to the prior context, so the cc>=0.6*prev gate rejects it.
 check "/clear (tiny fresh write) does not flag" 0 "5 130000 $((NOW-30)) 120000" 0 3000 400
+
+echo
+echo "❄ cause classification (state: count ctx now lastcc lasthit_t lastcause prevmodel):"
+# Prior context 130k, gap set via the 'now' field. Same-model + small gap =
+# other; model changed = model; gap past 0.9×TTL = idle (idle wins over model).
+checkcause "same model, short gap -> other" other \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5   0 130000 100
+checkcause "model changed -> model" model \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-opus-4-8  0 130000 100
+checkcause "gap past 0.9xTTL -> idle" idle \
+    "3 130000 $((NOW-7200)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100
+# idle takes precedence even if the model also changed
+checkcause "long gap + model change -> idle" idle \
+    "3 130000 $((NOW-7200)) 128000 0 - claude-fable-5"  claude-opus-4-8 0 130000 100
 
 echo
 if [ "$fail" -eq 0 ]; then

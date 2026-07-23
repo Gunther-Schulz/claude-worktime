@@ -1470,17 +1470,30 @@ mode_statusline() {
                 # cr==0 so a surviving global system-prompt cache entry can't
                 # mask a cold conversation, and /compact (small cc relative to
                 # the previous context) doesn't false-positive.
-                # State fields: count, previous ctx, previous timestamp, last
-                # cold-rewrite size. The 4th is carried forward untouched on
-                # non-hit turns and overwritten with t_cc on a hit — it feeds
-                # the ❄ statusline token. Absent (old 3-field file) → 0.
+                # State fields (space-delimited):
+                #   count ctx now lastcc lasthit_t lastcause prevmodel
+                # The first four are numeric; ctx/now/prevmodel update every
+                # turn (they describe THIS turn, read as "previous" next turn),
+                # while lastcc/lasthit_t/lastcause change only on a hit and are
+                # carried forward otherwise. lasthit_t + lastcause feed the ❄
+                # token's age and cause; prevmodel lets a hit tell a model
+                # switch from an idle expiry. Old 4-field files: the three new
+                # fields read empty and default cleanly.
                 local cold_state="${LOGDIR}/.cold_${sid}"
-                local cs_count=0 cs_prev=0 cs_prev_t=0 cs_lastcc=0 cold_hit="" cold_gap=0
-                [ -f "$cold_state" ] && read -r cs_count cs_prev cs_prev_t cs_lastcc < "$cold_state" 2>/dev/null
-                case "${cs_count:-}${cs_prev:-}${cs_prev_t:-}${cs_lastcc:-}" in
-                    ''|*[!0-9]*) cs_count=0; cs_prev=0; cs_prev_t=0; cs_lastcc=0 ;;
+                local cs_count=0 cs_prev=0 cs_prev_t=0 cs_lastcc=0 cs_lasthit_t=0 cs_lastcause="-" cs_prevmodel="-" cold_hit="" cold_gap=0
+                [ -f "$cold_state" ] && read -r cs_count cs_prev cs_prev_t cs_lastcc cs_lasthit_t cs_lastcause cs_prevmodel < "$cold_state" 2>/dev/null
+                # Validate the numeric fields only; strings default below.
+                case "${cs_count:-}${cs_prev:-}${cs_prev_t:-}${cs_lastcc:-}${cs_lasthit_t:-}" in
+                    ''|*[!0-9]*) cs_count=0; cs_prev=0; cs_prev_t=0; cs_lastcc=0; cs_lasthit_t=0 ;;
                 esac
-                cs_count=${cs_count:-0}; cs_prev=${cs_prev:-0}; cs_prev_t=${cs_prev_t:-0}; cs_lastcc=${cs_lastcc:-0}
+                cs_count=${cs_count:-0}; cs_prev=${cs_prev:-0}; cs_prev_t=${cs_prev_t:-0}
+                cs_lastcc=${cs_lastcc:-0}; cs_lasthit_t=${cs_lasthit_t:-0}
+                [ -n "$cs_lastcause" ] || cs_lastcause="-"
+                [ -n "$cs_prevmodel" ] || cs_prevmodel="-"
+                # Current model id, sanitized for the space-delimited state file.
+                local cur_model="${mdl_id:-}"
+                [ -n "$cur_model" ] || cur_model="-"
+                cur_model="${cur_model// /_}"
                 local ctx_tok=$(( ${t_cr:-0} + ${t_cc:-0} + ${t_ui:-0} ))
                 # Skip the session's first write: cr=0 / cc=whole-initial-context
                 # is mechanically identical to a cold rewrite, so telling them
@@ -1495,9 +1508,25 @@ mode_statusline() {
                     cs_count=$(( cs_count + 1 ))
                     cold_hit=1
                     cs_lastcc=${t_cc:-0}
+                    cs_lasthit_t=$now
                     [ "$cs_prev_t" -gt 0 ] && cold_gap=$(( now - cs_prev_t ))
+                    # Classify the cause. idle first: a gap past the cache TTL
+                    # kills the cache regardless of model. Else a model change
+                    # since the previous turn is a cache-key switch. Else
+                    # "other" — same model, no idle: an injection/eviction/race
+                    # we cannot see from the usage numbers alone (deliberately
+                    # NOT labelled further; the cause isn't observable here).
+                    local cause_ttl=${CACHE_GUARD_TTL:-3600}
+                    [ "$cause_ttl" -gt 0 ] 2>/dev/null || cause_ttl=3600
+                    if [ "$cold_gap" -ge $(( cause_ttl * 9 / 10 )) ]; then
+                        cs_lastcause="idle"
+                    elif [ "$cs_prevmodel" != "-" ] && [ "$cs_prevmodel" != "$cur_model" ]; then
+                        cs_lastcause="model"
+                    else
+                        cs_lastcause="other"
+                    fi
                 fi
-                echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc}" > "$cold_state" 2>/dev/null
+                echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc} ${cs_lasthit_t} ${cs_lastcause} ${cur_model}" > "$cold_state" 2>/dev/null
                 (
                     flock -w 2 9 2>/dev/null || true
                     printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s,"ctx":%s,"ci":%s,"co":%s,"w":%s}\n' \
@@ -1506,8 +1535,11 @@ mode_statusline() {
                     # cc = tokens actually re-written this event (the reactivation
                     # size); ctx = full context after it. On a hit cc dominates
                     # ctx, but logging it explicitly avoids the cr+ui overcount.
-                    [ -n "$cold_hit" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d}\n' \
-                        "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" >> "$LOGFILE"
+                    # cause = idle|model|other; mdl = model id at the rewrite —
+                    # together they let `--cold` and later analysis separate the
+                    # knowable causes from the residual.
+                    [ -n "$cold_hit" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
+                        "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
             fi
 
