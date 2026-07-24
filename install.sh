@@ -27,7 +27,6 @@ SETTINGS="${CLAUDE_DIR}/settings.json"
 SCRIPT_NAME="claude-worktime"
 SCRIPT_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/claude-worktime.sh"
 CONFIG_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/config.sh"
-COMMAND_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/commands/worktime.md"
 
 # XDG paths
 CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
@@ -75,15 +74,6 @@ else
     echo "  Config already exists at $CONFIGDIR/config.sh (kept)"
 fi
 
-# Install command file (slash command for Claude Code)
-mkdir -p "${CLAUDE_DIR}/commands"
-if [ -f "commands/worktime.md" ]; then
-    cp "commands/worktime.md" "${CLAUDE_DIR}/commands/worktime.md"
-else
-    curl -fsSL "$COMMAND_URL" -o "${CLAUDE_DIR}/commands/worktime.md"
-fi
-echo "  Installed /worktime command"
-
 # Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "$BIN_DIR"; then
     echo "  Note: $BIN_DIR is not on your PATH."
@@ -93,7 +83,7 @@ fi
 # Create settings.json if it doesn't exist
 [ ! -f "$SETTINGS" ] && echo '{}' > "$SETTINGS"
 
-# Remove old CLAUDE.md section (replaced by /worktime command)
+# Remove old CLAUDE.md section (no longer used)
 CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
 MARKER_START="<!-- claude-worktime:start -->"
 MARKER_END="<!-- claude-worktime:end -->"
@@ -105,7 +95,7 @@ if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
     ' "$CLAUDE_MD" > "${CLAUDE_MD}.tmp" && mv "${CLAUDE_MD}.tmp" "$CLAUDE_MD"
     # Remove trailing blank lines left behind
     _sedi -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$CLAUDE_MD" 2>/dev/null || true
-    echo "  Removed old claude-worktime section from CLAUDE.md (replaced by /worktime command)"
+    echo "  Removed old claude-worktime section from CLAUDE.md"
 fi
 
 # Hook commands
@@ -154,8 +144,7 @@ echo ""
 echo "Usage:"
 echo "  claude-worktime              # current session"
 echo "  claude-worktime --today      # today's total"
-echo "  /worktime                    # slash command in Claude Code"
-echo "  /worktime --summary          # per-project breakdown"
+echo "  claude-worktime --summary    # per-project breakdown"
 if ! $ENABLE_STATUSLINE; then
     echo ""
     echo "Tip: Re-run with --statusline to show time in the status bar"

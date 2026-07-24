@@ -23,12 +23,6 @@ if [ -f "$BIN_DIR/claude-worktime" ]; then
     echo "  Removed $BIN_DIR/claude-worktime"
 fi
 
-# Remove command file
-if [ -f "${CLAUDE_DIR}/commands/worktime.md" ]; then
-    rm "${CLAUDE_DIR}/commands/worktime.md"
-    echo "  Removed /worktime command"
-fi
-
 # Remove hooks and statusline from settings.json
 if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
     # Remove only worktime hooks, preserve other tools' hooks
