@@ -1566,7 +1566,8 @@ mode_statusline() {
                 # switch from an idle expiry. Old 4-field files: the three new
                 # fields read empty and default cleanly.
                 local cold_state="${LOGDIR}/.cold_${sid}"
-                local cs_count=0 cs_prev=0 cs_prev_t=0 cs_lastcc=0 cs_lasthit_t=0 cs_lastcause="-" cs_prevmodel="-" cold_hit="" cold_gap=0
+                local cs_count=0 cs_prev=0 cs_prev_t=0 cs_lastcc=0 cs_lasthit_t=0 cs_lastcause="-" cs_prevmodel="-" cold_hit="" cold_resume="" cold_gap=0
+                local _cw_cause="" _cw_miss_tok=0 _cw_prev_blocks="[]" _cw_prev_stop="" _cw_user_bytes=0 _cw_concur=0
                 [ -f "$cold_state" ] && read -r cs_count cs_prev cs_prev_t cs_lastcc cs_lasthit_t cs_lastcause cs_prevmodel < "$cold_state" 2>/dev/null
                 # Validate the numeric fields only; strings default below.
                 case "${cs_count:-}${cs_prev:-}${cs_prev_t:-}${cs_lastcc:-}${cs_lasthit_t:-}" in
@@ -1591,10 +1592,6 @@ mode_statusline() {
                 if [ "$cs_prev_t" -gt 0 ] && [ "$cs_prev" -ge "${COLD_MIN_CTX:-0}" ] \
                     && [ "${t_cc:-0}" -ge $(( cs_prev * 6 / 10 )) ] \
                     && [ "${t_cr:-0}" -le $(( cs_prev / 5 )) ]; then
-                    cs_count=$(( cs_count + 1 ))
-                    cold_hit=1
-                    cs_lastcc=${t_cc:-0}
-                    cs_lasthit_t=$now
                     [ "$cs_prev_t" -gt 0 ] && cold_gap=$(( now - cs_prev_t ))
                     # Classify the cause. idle first: a gap past the cache TTL
                     # kills the cache regardless of model. Else a model change
@@ -1608,26 +1605,67 @@ mode_statusline() {
                     elif [ "$cs_prevmodel" != "-" ] && [ "$cs_prevmodel" != "$cur_model" ]; then
                         cs_lastcause="model"
                     else
+                        # Residual: idle-TTL and model-switch are already ruled
+                        # out above (both are visible from the state file alone
+                        # and cheaper to check than a transcript read). For what's
+                        # left, ask the API itself instead of tail-grepping for
+                        # co-occurrence strings: every assistant transcript entry
+                        # carries message.diagnostics.cache_miss_reason
+                        # {type, cache_missed_input_tokens} straight from the
+                        # provider. type is one of messages_changed /
+                        # tools_changed / model_changed / previous_message_not_found
+                        # / unavailable. previous_message_not_found means the
+                        # transcript resumed/forked (see below — routed out of
+                        # the hit ledger, not a live bust). Read only on a hit
+                        # (rare) so the statusline stays cheap; missing/older
+                        # transcripts (no diagnostics field) degrade to "other"
+                        # rather than blocking or crashing the statusline.
                         cs_lastcause="other"
-                        # Subdivide the residual by what co-occurred in the
-                        # transcript at the rewrite. When this was traced by
-                        # hand, both busts coincided with a cross-session
-                        # message delivery and our own Stop-hook summary. These
-                        # are CO-OCCURRENCE flags, not proven causes — over many
-                        # samples their rate vs. baseline is what could confirm
-                        # or kill the cross-session-message theory. Read only on
-                        # a hit (rare), tail only, so the statusline stays cheap;
-                        # no transcript or no marker leaves it plain "other".
-                        # Priority msg > hook: msg is the hypothesised trigger,
-                        # the Stop-hook summary the weaker co-factor.
                         if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
-                            local _cold_tail
-                            _cold_tail=$(tail -n 80 "$tp_path" 2>/dev/null)
-                            case "$_cold_tail" in
-                                *"Another Claude session sent a message"*) cs_lastcause="other:msg" ;;
-                                *"stop_hook_summary"*)                     cs_lastcause="other:hook" ;;
-                            esac
+                            local _cw_diag
+                            _cw_diag=$(jq -c 'select(.type == "assistant")' "$tp_path" 2>/dev/null | tail -n 1)
+                            if [ -n "$_cw_diag" ]; then
+                                _cw_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_diag" 2>/dev/null)
+                                _cw_miss_tok=$(jq -r '.message.diagnostics.cache_miss_reason.cache_missed_input_tokens // 0' <<< "$_cw_diag" 2>/dev/null)
+                                case "$_cw_miss_tok" in ''|*[!0-9]*) _cw_miss_tok=0 ;; esac
+                                [ -n "$_cw_cause" ] && cs_lastcause="$_cw_cause"
+                                # Forensic fields (change 3): content-block types
+                                # of the preceding assistant turn, its stop_reason
+                                # (tool_use = the turn before the busting one was
+                                # still mid-flight), byte size of the newest
+                                # user-role entry before the bust, and how many
+                                # other transcripts in this project dir were
+                                # touched within the last 5 minutes (concurrent
+                                # subagent proxy). All cheap jq/stat, all gated
+                                # behind the hit branch so the non-hit path never
+                                # pays for them.
+                                _cw_prev_blocks=$(jq -c '[.message.content[]?.type] // []' <<< "$_cw_diag" 2>/dev/null)
+                                [ -n "$_cw_prev_blocks" ] || _cw_prev_blocks="[]"
+                                _cw_prev_stop=$(jq -r '.message.stop_reason // empty' <<< "$_cw_diag" 2>/dev/null)
+                                local _cw_last_user
+                                _cw_last_user=$(jq -c 'select(.type == "user")' "$tp_path" 2>/dev/null | tail -n 1)
+                                _cw_user_bytes=${#_cw_last_user}
+                                if [ -n "${tp_path:-}" ]; then
+                                    local _cw_pdir; _cw_pdir=$(dirname "$tp_path")
+                                    _cw_concur=$(find "$_cw_pdir" -maxdepth 1 -name '*.jsonl' -newermt "@$(( now - 300 ))" 2>/dev/null | wc -l | tr -d ' ')
+                                    case "$_cw_concur" in ''|*[!0-9]*) _cw_concur=0 ;; esac
+                                    [ "$_cw_concur" -gt 0 ] && _cw_concur=$(( _cw_concur - 1 ))
+                                fi
+                            fi
                         fi
+                    fi
+                    # previous_message_not_found is a session-resume/fork
+                    # artifact, not a live cache bust — split it out of the hit
+                    # ledger (change 2), tagged k:"resume" below, so `--cold`'s
+                    # hit history and the ❄ statusline token (which reads
+                    # cs_lastcc/cs_lasthit_t) stay a record of live busts only.
+                    if [ "$cs_lastcause" = "previous_message_not_found" ]; then
+                        cold_resume=1
+                    else
+                        cs_count=$(( cs_count + 1 ))
+                        cold_hit=1
+                        cs_lastcc=${t_cc:-0}
+                        cs_lasthit_t=$now
                     fi
                 fi
                 echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc} ${cs_lasthit_t} ${cs_lastcause} ${cur_model}" > "$cold_state" 2>/dev/null
@@ -1639,13 +1677,36 @@ mode_statusline() {
                     # cc = tokens actually re-written this event (the reactivation
                     # size); ctx = full context after it. On a hit cc dominates
                     # ctx, but logging it explicitly avoids the cr+ui overcount.
-                    # cause = idle|model|other[:msg|:hook]; mdl = model id at
-                    # the rewrite — together they let `--cold` and later
-                    # analysis separate the knowable causes from the residual.
-                    # The :msg / :hook suffix flags a transcript co-occurrence
-                    # (cross-session message / Stop-hook summary), not a proven
-                    # cause.
-                    [ -n "$cold_hit" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
+                    # cause = idle|model|<API cache_miss_reason.type>|other; mdl =
+                    # model id at the rewrite — together they let `--cold` and
+                    # later analysis separate the knowable causes from the
+                    # residual. mtok = cache_missed_input_tokens as reported by
+                    # the API (0 when no diagnostics were available). Forensic
+                    # fields (additive, self-analyzing rather than requiring a
+                    # fresh forensic pass next time): pblk = content-block types
+                    # of the preceding assistant turn; flight = true when that
+                    # turn's stop_reason was tool_use (still mid-flight when the
+                    # bust landed); ubytes = byte size of the newest user-role
+                    # transcript entry before the busting turn; concur = other
+                    # transcript files in the same project dir touched in the
+                    # last 5 minutes (concurrent-subagent proxy). None of these
+                    # correlated in the n=6 2026-07-26 sample; logged so the next
+                    # occurrences are self-analyzing.
+                    if [ -n "$cold_hit" ]; then
+                        local _cw_flight="null"
+                        case "$_cw_prev_stop" in
+                            tool_use) _cw_flight="true" ;;
+                            end_turn) _cw_flight="false" ;;
+                        esac
+                        printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s","mtok":%d,"pblk":%s,"flight":%s,"ubytes":%d,"concur":%d}\n' \
+                            "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" \
+                            "${_cw_miss_tok:-0}" "$_cw_prev_blocks" "$_cw_flight" "${_cw_user_bytes:-0}" "${_cw_concur:-0}" >> "$LOGFILE"
+                    fi
+                    # previous_message_not_found: a resume/fork artifact, not a
+                    # live bust (change 2) — logged under k:"resume" so it never
+                    # enters the hit ledger `--cold` reads, but is still on
+                    # record for anyone auditing resume behavior.
+                    [ -n "$cold_resume" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"resume","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
                         "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
             fi
@@ -2335,7 +2396,11 @@ mode_cold() {
         return
     fi
 
-    printf '%-19s %8s  %-10s %8s  %s\n' "when" "size" "cause" "idle" "model"
+    # cause is idle|model (worktime's own pre-classification) or, for the
+    # residual, the API's cache_miss_reason.type verbatim (messages_changed /
+    # tools_changed / model_changed / unavailable / other when no diagnostics
+    # were available) — widened to 17 to fit "messages_changed" unquoted.
+    printf '%-19s %8s  %-17s %8s  %s\n' "when" "size" "cause" "idle" "model"
     local t cc cause gap mdl s total=0 sum=0
     while IFS=$'\t' read -r t cc cause gap mdl s; do
         [ -z "$t" ] && continue
@@ -2348,7 +2413,7 @@ mode_cold() {
         else gtxt="$(( gap / 3600 ))h$(( (gap % 3600) / 60 ))m"; fi
         # Trim the "claude-" prefix from the model id for width
         local mshort="${mdl#claude-}"
-        printf '%-19s %7dk  %-10s %8s  %s\n' "$when" "$k" "$cause" "$gtxt" "$mshort"
+        printf '%-19s %7dk  %-17s %8s  %s\n' "$when" "$k" "$cause" "$gtxt" "$mshort"
         total=$(( total + 1 )); sum=$(( sum + k ))
     done <<< "$rows"
     printf '%-19s %7dk  (%d rewrite%s)\n' "total" "$sum" "$total" "$([ "$total" -eq 1 ] || echo s)"

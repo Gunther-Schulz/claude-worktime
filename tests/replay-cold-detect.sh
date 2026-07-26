@@ -146,22 +146,53 @@ checkcause "long gap + model change -> idle" idle \
     "3 130000 $((NOW-7200)) 128000 0 - claude-fable-5"  claude-opus-4-8 0 130000 100
 
 echo
-echo "❄ 'other' residual subdivided by transcript co-occurrence:"
-# Same-model, short-gap 'other' — but the transcript at the rewrite carries a
-# co-factor. msg wins over hook when both are present.
-checkcause_tp "cross-session message present -> other:msg" other:msg \
+echo "❄ 'other' residual classified via API cache_miss_reason diagnostics:"
+# Same-model, short-gap residual — the transcript's last assistant entry
+# carries message.diagnostics.cache_miss_reason.type straight from the API;
+# that type becomes the cause verbatim (replaces the old tail-grep tags).
+checkcause_tp "messages_changed -> cause=messages_changed" messages_changed \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
-    '{"type":"user","content":"Another Claude session sent a message: agent-message from x"}'
-checkcause_tp "stop-hook summary present -> other:hook" other:hook \
+    '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"messages_changed","cache_missed_input_tokens":128000}}}}'
+checkcause_tp "tools_changed -> cause=tools_changed" tools_changed \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
-    '{"type":"system","subtype":"stop_hook_summary","hookCount":1}'
-checkcause_tp "both present -> msg wins" other:msg \
+    '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}],"stop_reason":"tool_use","diagnostics":{"cache_miss_reason":{"type":"tools_changed","cache_missed_input_tokens":128000}}}}'
+checkcause_tp "unavailable -> cause=unavailable" unavailable \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
-    '{"subtype":"stop_hook_summary"}
-{"content":"Another Claude session sent a message: hi"}'
-checkcause_tp "no marker -> plain other" other \
+    '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"unavailable"}}}}'
+# Graceful degradation: an older-CC transcript with no diagnostics field at
+# all (or no transcript entry matching) must fall back to plain "other" —
+# never crash, never block the statusline.
+checkcause_tp "no diagnostics field -> falls back to other" other \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
-    '{"type":"assistant","content":"nothing special here"}'
+    '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn"}}'
+
+echo
+echo "❄ previous_message_not_found routes to k:\"resume\", not the hit ledger:"
+# A resume/fork artifact must NOT count as a live bust: no k:"hit" line, and
+# the ❄ statusline state (cs_lastcc/cs_lasthit_t) must not advance either —
+# checked here via the resume-tagged log line and the absence of a hit line.
+resume_check() {
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
+    : > "$d/config.sh"
+    printf '%s\n' "3 130000 $((NOW-49)) 128000 0 - claude-fable-5" > "$d/.cold_$SID"
+    local tp="$d/transcript.jsonl"
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' > "$tp"
+    printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":0,"cache_creation_input_tokens":130000,"input_tokens":100,"output_tokens":10}}}\n' \
+        "$SID" "$tp" \
+        | CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+    local hit_count resume_count
+    hit_count=$(grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null)
+    resume_count=$(grep -c '"k":"resume"' "$d/activity.jsonl" 2>/dev/null)
+    if [ "$hit_count" -eq 0 ] && [ "$resume_count" -eq 1 ]; then
+        printf '  \033[32m✓\033[0m %s\n' "previous_message_not_found tags k:resume, not k:hit"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m previous_message_not_found tags k:resume, not k:hit (hit=%s resume=%s)\n' "$hit_count" "$resume_count"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+resume_check
 
 echo
 if [ "$fail" -eq 0 ]; then
