@@ -32,6 +32,14 @@ expected and you can stop here:
   full rewrite is unavoidable.
 - A **deliberate opt-in config flip** made mid-session (each toggle busts
   the cache exactly once — expected, not a bug).
+- **A `cache-fix-proxy` restart while the session was live** — measured
+  at 225k (2026-07-27 00:15), surfacing as `tools_changed`: the fresh
+  process sends a different tools array than the old one. Check
+  `systemctl --user show cache-fix-proxy -p ActiveEnterTimestamp`
+  against the hit's timestamp before investigating further. **Don't
+  restart the proxy to investigate a bust — that causes one.** The
+  `<key>-events.jsonl` ledger is append-only so post-mortems need no
+  live intervention.
 - **`/rc` (rewind/compact) mid-session** — a known, avoidable cache-buster;
   if it shows up here, note it, but there's nothing further to trace.
 
@@ -75,6 +83,11 @@ self-analyzing instead of requiring a fresh forensic pass from scratch.
 Read them, but don't over-interpret a single event's fields as proof —
 look for a pattern across multiple recorded hits first.
 
+**`cause: "other"` does not mean "unknown" — it means Claude Code sent
+no diagnostics** for that request, so worktime had nothing to classify.
+Step 2 below usually still names the culprit; `other` is a gap in the
+API's reporting, not in the evidence.
+
 ### 2. Where the prefix diverged (wire-level)
 
 **Precondition:** requires the `claude-code-cache-fix` proxy with
@@ -93,15 +106,50 @@ byte-identical prefixes).
 journalctl --user -u cache-fix-proxy --since "-30min" --no-pager | grep prefix-diff
 ```
 
-Each `prefix-diff` line for a request reports which windows of the
-request changed: `head=X, markers=Y, tail=Z, marker_count=M`, plus the
-message indices where `cache_control` markers sit. A line showing
-`head=0` but nonzero `markers`/`tail` means the divergence is in the
-middle or end of the conversation, not the system prompt — useful for
-ruling out "did my CLAUDE.md / system prompt change" as the cause.
+Each `prefix-diff` line reports which windows changed (`head=X,
+markers=Y, tail=Z`) plus a **`cause=`** field naming the culprit
+directly. Read `cause=` first — it is usually the whole answer:
+
+| `cause=` | Meaning |
+|---|---|
+| `params:model` | a top-level param changed (model switch, thinking config, temperature) — invalidates everything |
+| `system[2:env@1847]` | system block 2, labelled `env`, first differs at char 1847 |
+| `tools[Bash:schema]` | the Bash tool's schema changed (not the tool list — the definition) |
+| `messages@311(system)` | first divergent message index 311, a system-role entry |
+
+`system[...]` and `params:...` invalidate from the front, so they cost
+the whole context. A `messages@N` near the end is the ordinary cost of
+the conversation advancing.
+
+Byte-level detail lives in two files per session:
+
+```sh
+ls ~/.claude/cache-fix-snapshots/
+# <key>-diff.json    latest diff, full detail — OVERWRITTEN each time
+# <key>-events.jsonl append-only ledger, one bounded record per diff
+```
+
+**Read the `.jsonl`, not the `.json`,** for anything older than the
+last few minutes: the detail file is rewritten on every diff, so in an
+active session it is gone within minutes. Each ledger record carries
+the changed system block's label, char offset, and a 120-char window
+from both sides — enough to identify the culprit months later.
+
+```sh
+jq -c 'select(.causes|length>0) | {ts, causes}' \
+    ~/.claude/cache-fix-snapshots/s-*-events.jsonl | tail -20
+```
+
+Keys prefixed `s-` are derived from the session-id header; a bare hex
+key means the request had no session header and fell back to a content
+hash.
 
 If this service isn't installed or isn't running, skip this step — it's
 a bonus signal, not a requirement for the other three steps.
+
+**Never restart the proxy to improve the evidence mid-session** — the
+restart is itself a 225k-class bust (see Controlled causes above). The
+ledger is append-only so no live intervention is needed.
 
 ### 3. The exact mutated bytes (ground truth, replayable)
 
