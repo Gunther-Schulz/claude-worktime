@@ -77,6 +77,12 @@ look for a pattern across multiple recorded hits first.
 
 ### 2. Where the prefix diverged (wire-level)
 
+**Precondition:** requires the `claude-code-cache-fix` proxy with
+prefix-diff + session-mirror enabled; without it, skip steps 2-3 —
+steps 1 and 4 stand alone. `claude-worktime` itself has no dependency
+on this proxy; it's an optional evidence amplifier for whoever's
+environment happens to have it running.
+
 If a `cache-fix-proxy` systemd user service is running (check with
 `systemctl --user status cache-fix-proxy`), it can log where in the
 outgoing request the token prefix diverged from the previous request —

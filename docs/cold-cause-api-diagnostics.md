@@ -1,6 +1,14 @@
 # Cold-cause classification: replace the tail-grep with API diagnostics
 
-Status: TODO (high value, small change). Origin: 2026-07-26 forensic
+Status: **IMPLEMENTED** (2026-07-26, commit `73d4dd3`, plus the hit
+notification + investigation runbook that followed in `54c32dd`). All
+four changes below shipped as specified: the classifier reads
+`message.diagnostics.cache_miss_reason` via jq, `previous_message_not_found`
+is logged as `k:"resume"` instead of `k:"hit"`, the four forensic fields
+are logged per hit, and `--cold` displays the API reason type verbatim.
+The Finding section below describes the PRE-change state (the tail-grep
+classifier) and is kept as the historical record of why the change was
+made — it does not describe current behavior. Origin: 2026-07-26 forensic
 analysis of 6 same-session full rewrites (~1.78M tokens re-cached);
 full analysis in that session's scratchpad
 (`cachebust-forensics-report.md`) — key numbers reproduced here so this
