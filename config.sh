@@ -111,7 +111,12 @@
 #                the transcript at the rewrite — a co-occurrence flag for later
 #                analysis, not a proven cause. Passive display only — never
 #                blocks. Tuned by COLD_MIN_CTX below.
-#   cold guard — OFF by default (CACHE_GUARD_TTL=0). When enabled, the
+#   cold guard — RECOMMENDED, but OFF by default (CACHE_GUARD_TTL=0): it is
+#                the only feature here that ACTS rather than reports, and an
+#                installer shouldn't hand you a hook that swallows a prompt you
+#                just submitted. Uncomment CACHE_GUARD_TTL below to turn it on —
+#                it's the one thing that can save a rewrite instead of telling
+#                you about it afterwards. When enabled, the
 #                UserPromptSubmit hook blocks the FIRST prompt after such a gap,
 #                once, so you can /compact or /clear at the only moment it's
 #                cheap; submitting the prompt a second time proceeds normally.
@@ -125,7 +130,9 @@
 #CACHE_GUARD_TTL=3600       # cold-guard warning: 0 = off (the default). Set to
                             # the cache TTL in seconds to enable — it then warns
                             # at 0.9× that, the point the CLI treats it as cold.
-                            # (The ❄ display stays on regardless of this.)
+                            # Recommended: uncomment this line as-is (3600 = the
+                            # main thread's TTL). (The ❄ display stays on
+                            # regardless of this.)
 #CACHE_GUARD_MIN_CTX=50000  # don't warn below this context size (tokens)
 #CACHE_GUARD_CLIPBOARD=true # copy the blocked prompt to the clipboard on a
                             # block (false = leave the clipboard untouched)
