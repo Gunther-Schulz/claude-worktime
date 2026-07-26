@@ -27,6 +27,7 @@ SETTINGS="${CLAUDE_DIR}/settings.json"
 SCRIPT_NAME="claude-worktime"
 SCRIPT_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/claude-worktime.sh"
 CONFIG_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/config.sh"
+RUNBOOK_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/docs/cachebust-runbook.md"
 
 # XDG paths
 CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
@@ -44,7 +45,7 @@ done
 
 echo "Installing claude-worktime..."
 
-mkdir -p "$BIN_DIR" "$CONFIGDIR" "$DATADIR"
+mkdir -p "$BIN_DIR" "$CONFIGDIR" "$DATADIR" "$CLAUDE_DIR"
 
 # Check for jq
 if ! command -v jq &>/dev/null; then
@@ -73,6 +74,17 @@ if [ ! -f "$CONFIGDIR/config.sh" ]; then
 else
     echo "  Config already exists at $CONFIGDIR/config.sh (kept)"
 fi
+
+# Install the cache-bust investigation runbook — the ❄ hit notification
+# points here. Always refreshed (like the script itself), not preserved
+# like config.sh: it's documentation, not user state to protect from
+# overwrite.
+if [ -f "docs/cachebust-runbook.md" ]; then
+    cp "docs/cachebust-runbook.md" "$CLAUDE_DIR/cachebust-runbook.md"
+else
+    curl -fsSL "$RUNBOOK_URL" -o "$CLAUDE_DIR/cachebust-runbook.md"
+fi
+echo "  Installed cache-bust runbook at $CLAUDE_DIR/cachebust-runbook.md"
 
 # Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "$BIN_DIR"; then

@@ -158,6 +158,18 @@ total                   527k  (2 rewrites)
 
 Each row is one full-context rewrite paid at the cache-write premium: its size, cause (`idle` / `model` / `other`), the idle gap before it, and the model in play. Add `--raw` for JSON. Cause and model are blank for events logged before that field existed.
 
+### Cache-bust investigation
+
+Every recorded hit (not a resume artifact — see below) fires a desktop
+notification, if `notify-send` is available, pointing at
+[`docs/cachebust-runbook.md`](docs/cachebust-runbook.md) — installed to
+`~/.claude/cachebust-runbook.md` so it's in a fixed, findable place. The
+runbook is written for a fresh Claude session with no prior context: hand
+it the notification and it starts by telling `idle`/`model`/deliberate
+causes (nothing to investigate) apart from the rest, then walks through
+`claude-worktime --cold` plus, where available, the wire-level and
+transcript layers to find out what actually happened.
+
 ## Configuration
 
 Config file: `~/.config/claude-worktime/config.sh` — plain bash, sourced at startup. All defaults are built into the script; the config only needs settings you want to override.

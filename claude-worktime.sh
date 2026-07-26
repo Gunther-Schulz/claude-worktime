@@ -1709,6 +1709,22 @@ mode_statusline() {
                     [ -n "$cold_resume" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"resume","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
                         "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" >> "$LOGFILE"
                 ) 9>"${LOGFILE}.lock"
+
+                # Desktop notification on a real hit only (never on a resume
+                # artifact) — pointer to the runbook, not the forensics
+                # themselves; keeping the message static means it works
+                # whether or not the runbook has been installed yet. Outside
+                # the flock (fire-and-forget must never hold the log lock
+                # open), backgrounded so a slow/hung notification daemon can't
+                # delay the statusline, and silently skipped when notify-send
+                # isn't installed — this must never block or fail the render.
+                if [ -n "$cold_hit" ] && command -v notify-send >/dev/null 2>&1; then
+                    local _cw_notify_k=$(( (${t_cc:-0} + 500) / 1000 ))
+                    ( notify-send --expire-time=10000 \
+                        "Cache bust: ${_cw_notify_k}k tokens re-cached" \
+                        "Forensics captured — see ~/.claude/cachebust-runbook.md or run: claude-worktime --cold" \
+                        >/dev/null 2>&1 & ) 2>/dev/null
+                fi
             fi
 
             # Compute token and cost totals from log for current 5h window
