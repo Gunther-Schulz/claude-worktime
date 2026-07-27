@@ -1297,10 +1297,11 @@ mode_statusline() {
             # token (GROUP_COLD), self-coloured cyan when fresh and dimming to
             # gray past COLD_FRESH_SECS so a ghost value visually recedes — the
             # age answers what a static value can't: did this just happen?
-            local cold_lastcc=0 cold_lasthit_t=0 cold_lastcause="-"
-            [ -f "${LOGDIR}/.cold_${sid}" ] && read -r _ _ _ cold_lastcc cold_lasthit_t cold_lastcause _ < "${LOGDIR}/.cold_${sid}" 2>/dev/null
+            local cold_lastcc=0 cold_lasthit_t=0 cold_lastcause="-" cold_count=0
+            [ -f "${LOGDIR}/.cold_${sid}" ] && read -r cold_count _ _ cold_lastcc cold_lasthit_t cold_lastcause _ < "${LOGDIR}/.cold_${sid}" 2>/dev/null
             case "${cold_lastcc:-}" in ''|*[!0-9]*) cold_lastcc=0 ;; esac
             case "${cold_lasthit_t:-}" in ''|*[!0-9]*) cold_lasthit_t=0 ;; esac
+            case "${cold_count:-}" in ''|*[!0-9]*) cold_count=0 ;; esac
             if [ "$cold_lastcc" -gt 0 ]; then
                 # Round to nearest k so 130098 → 130k, 54344 → 54k
                 local _cold_k=$(( (cold_lastcc + 500) / 1000 ))
@@ -1319,6 +1320,14 @@ mode_statusline() {
                     # Dim once it's no longer "just now"
                     [ "$_cold_age" -ge "${COLD_FRESH_SECS:-900}" ] && _cold_color=$'\033[38;5;246m'
                 fi
+                # Session tally, appended as ×N and omitted at N=1. The size and
+                # age describe ONE event; three rewrites in a session read as a
+                # single incident without this. It is also the one part of the
+                # token that stays true on a frozen statusline: an idle CLI
+                # never re-renders, so the age can sit at "(4m)" for hours
+                # (observed 2026-07-27), but a count only ever grows — stale, it
+                # under-reports rather than misleads.
+                [ "$cold_count" -gt 1 ] && _cold_txt="${_cold_txt} ×${cold_count}"
                 tok_cold="${_cold_color}${_cold_txt}${COLOR_DEFAULT}"
             fi
         fi
@@ -1696,7 +1705,16 @@ mode_statusline() {
                     fi
                 fi
                 echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc} ${cs_lasthit_t} ${cs_lastcause} ${cur_model}" > "$cold_state" 2>/dev/null
-                (
+                # The hit record is written inside the lock below; the desktop
+                # notification is then derived FROM that record rather than
+                # re-rendered from live variables. Single source: if the append
+                # doesn't land, no notification fires, so a popup can never
+                # describe an event the ledger lacks (they were previously two
+                # independent renderings that could silently disagree — the
+                # ledger being the one nobody checks). The subshell reports the
+                # bytes it committed on stdout; empty means nothing was logged.
+                local _cw_committed=""
+                _cw_committed=$(
                     flock -w 2 9 2>/dev/null || true
                     printf '{"type":"tokens","t":%d,"s":"%s","cr":%d,"cc":%d,"ui":%d,"out":%d,"pct":%s,"cst":%s,"ctx":%s,"ci":%s,"co":%s,"w":%s}\n' \
                         "$now" "$sid" "$t_cr" "$t_cc" "$t_ui" "$t_out" "${r5h:-0}" "${cst:-0}" "${ctx:-0}" "${cum_input:-0}" "${cum_output:-0}" "${r5h_reset:-0}" >> "$LOGFILE"
@@ -1725,9 +1743,13 @@ mode_statusline() {
                             tool_use) _cw_flight="true" ;;
                             end_turn) _cw_flight="false" ;;
                         esac
-                        printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s","mtok":%d,"pblk":%s,"flight":%s,"ubytes":%d,"concur":%d}\n' \
+                        local _cw_rec
+                        _cw_rec=$(printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s","mtok":%d,"pblk":%s,"flight":%s,"ubytes":%d,"concur":%d}' \
                             "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" \
-                            "${_cw_miss_tok:-0}" "$_cw_prev_blocks" "$_cw_flight" "${_cw_user_bytes:-0}" "${_cw_concur:-0}" >> "$LOGFILE"
+                            "${_cw_miss_tok:-0}" "$_cw_prev_blocks" "$_cw_flight" "${_cw_user_bytes:-0}" "${_cw_concur:-0}")
+                        # Emit on stdout ONLY if the append succeeded — this is
+                        # what the parent notifies from.
+                        printf '%s\n' "$_cw_rec" >> "$LOGFILE" && printf '%s' "$_cw_rec"
                     fi
                     # previous_message_not_found: a resume/fork artifact, not a
                     # live bust (change 2) — logged under k:"resume" so it never
@@ -1735,6 +1757,7 @@ mode_statusline() {
                     # record for anyone auditing resume behavior.
                     [ -n "$cold_resume" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"resume","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
                         "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" >> "$LOGFILE"
+                    :
                 ) 9>"${LOGFILE}.lock"
 
                 # Desktop notification on a real hit only (never on a resume
@@ -1745,11 +1768,26 @@ mode_statusline() {
                 # open), backgrounded so a slow/hung notification daemon can't
                 # delay the statusline, and silently skipped when notify-send
                 # isn't installed — this must never block or fail the render.
-                if [ -n "$cold_hit" ] && command -v notify-send >/dev/null 2>&1; then
-                    local _cw_notify_k=$(( (${t_cc:-0} + 500) / 1000 ))
+                # Gated on _cw_committed (the record the ledger actually took),
+                # NOT on cold_hit: a notification that isn't backed by a log
+                # line is a claim nobody can audit, and the audit trail is the
+                # point. Numbers are parsed back out of that record so popup and
+                # ledger cannot drift.
+                if [ -n "$_cw_committed" ] && command -v notify-send >/dev/null 2>&1; then
+                    local _cw_n_cc _cw_n_cause _cw_n_sid
+                    _cw_n_cc=${_cw_committed##*\"cc\":}; _cw_n_cc=${_cw_n_cc%%,*}
+                    case "${_cw_n_cc:-}" in ''|*[!0-9]*) _cw_n_cc=0 ;; esac
+                    _cw_n_cause=${_cw_committed##*\"cause\":\"}; _cw_n_cause=${_cw_n_cause%%\"*}
+                    _cw_n_sid=${_cw_committed##*\"s\":\"}; _cw_n_sid=${_cw_n_sid%%\"*}
+                    # Session tag: three concurrent sessions produced three
+                    # popups reading 40k/47k/263k with no way to tell two of
+                    # them belonged elsewhere (2026-07-27). The short id is what
+                    # `--cold` and the snapshot filenames key on, so the popup
+                    # now joins up with the forensics instead of floating free.
+                    local _cw_notify_k=$(( (_cw_n_cc + 500) / 1000 ))
                     ( notify-send --expire-time=10000 \
-                        "Cache bust: ${_cw_notify_k}k tokens re-cached" \
-                        "Forensics captured — see ~/.claude/cachebust-runbook.md or run: claude-worktime --cold" \
+                        "Cache bust: ${_cw_notify_k}k re-cached (${_cw_n_cause})" \
+                        "Session ${_cw_n_sid%%-*} — see ~/.claude/cachebust-runbook.md or run: claude-worktime --cold" \
                         >/dev/null 2>&1 & ) 2>/dev/null
                 fi
             fi
@@ -2395,6 +2433,17 @@ _do_rotate() {
 
     # Prune cold-counter state files of sessions idle for over a week
     find "$LOGDIR" -maxdepth 1 -name '.cold_*' -mtime +7 -delete 2>/dev/null
+
+    # Prune archives past the retention horizon. The active log is bounded by
+    # the rewrite above, but archives were appended and never removed — growth
+    # was linear and unbounded by construction (~15MB over the first two
+    # months). Default 730 days: long enough that year-over-year comparison
+    # still works, finite so the directory cannot grow forever. Set
+    # ARCHIVE_RETAIN_DAYS=0 to keep everything.
+    if [ "${ARCHIVE_RETAIN_DAYS:-730}" -gt 0 ] 2>/dev/null; then
+        find "$LOGDIR" -maxdepth 1 -name 'activity-*.jsonl' \
+            -mtime "+${ARCHIVE_RETAIN_DAYS:-730}" -delete 2>/dev/null
+    fi
 
     if ! $quiet; then
         local old_count

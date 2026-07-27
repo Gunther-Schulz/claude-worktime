@@ -199,6 +199,12 @@
 # ---------------------------------------------------------------------------
 #AUTO_ROTATE=true
 #ROTATE_INTERVAL=daily    # daily, weekly, monthly
+# How long archived activity-YYYY-MM-DD.jsonl files are kept. The active
+# log is trimmed on every rotation, but archives are only ever appended —
+# without a horizon the directory grows linearly forever (~15MB in the
+# first two months). 730 days keeps year-over-year comparison possible;
+# 0 disables pruning and keeps everything.
+#ARCHIVE_RETAIN_DAYS=730
 
 # ---------------------------------------------------------------------------
 # Projections
