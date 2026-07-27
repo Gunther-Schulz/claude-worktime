@@ -854,6 +854,33 @@ _cold_guard() {
     fi
 
     local gap_h=$(( gap / 3600 )) gap_m=$(( (gap % 3600) / 60 ))
+
+    # Session-to-date rewrite tally. The ❄ statusline token shows only the
+    # LAST hit, and shows it at whatever age it had when the statusline was
+    # last rendered — an idle CLI never re-renders, so a hours-old event can
+    # sit there reading "(7m)" and be mistaken for something that just
+    # happened (observed 2026-07-27). This block is generated at read time,
+    # by definition: whatever it says is true right now. A running total is
+    # also the number that answers "is this costing me anything", which a
+    # single most-recent event never does.
+    local _tally=""
+    if [ -f "$LOGFILE" ]; then
+        local _hits _hitcc
+        _hits=$(grep -c "\"k\":\"hit\".*\"s\":\"${sid}\"\|\"s\":\"${sid}\".*\"k\":\"hit\"" \
+            "$LOGFILE" 2>/dev/null) || _hits=0
+        case "${_hits:-}" in ''|*[!0-9]*) _hits=0 ;; esac
+        if [ "$_hits" -gt 0 ]; then
+            # Sum cc (tokens re-written at the write premium) across this
+            # session's hits — the felt cost, not an event count.
+            _hitcc=$(grep "\"s\":\"${sid}\"" "$LOGFILE" 2>/dev/null \
+                | grep "\"k\":\"hit\"" \
+                | sed -n 's/.*"cc":\([0-9]*\).*/\1/p' \
+                | awk '{s+=$1} END {print s+0}') || _hitcc=0
+            case "${_hitcc:-}" in ''|*[!0-9]*) _hitcc=0 ;; esac
+            _tally=" Session so far: ${_hits} rewrite(s), ~$(( _hitcc / 1000 ))k."
+        fi
+    fi
+
     local _resend
     if [ "$copied" -eq 1 ]; then
         # "prompt text" not "prompt": the UserPromptSubmit payload carries only
@@ -866,8 +893,8 @@ _cold_guard() {
     else
         _resend="To send anyway, submit the prompt again — it is echoed below."
     fi
-    printf '{"decision":"block","reason":"❄ Prompt cache likely cold: idle %dh%02dm (TTL %dmin) with ~%dk context. Sending now re-writes the whole context at the cache-write premium — cheapest moment to /compact or /clear is now. %s Warns once per gap."}' \
-        "$gap_h" "$gap_m" "$(( CACHE_GUARD_TTL / 60 ))" "$(( ctx_tok / 1000 ))" "$_resend"
+    printf '{"decision":"block","reason":"❄ Prompt cache likely cold: idle %dh%02dm (TTL %dmin) with ~%dk context. Sending now re-writes the whole context at the cache-write premium — cheapest moment to /compact or /clear is now.%s %s Warns once per gap."}' \
+        "$gap_h" "$gap_m" "$(( CACHE_GUARD_TTL / 60 ))" "$(( ctx_tok / 1000 ))" "$_tally" "$_resend"
 }
 
 # ============================================================
