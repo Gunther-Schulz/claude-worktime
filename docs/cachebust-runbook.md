@@ -213,3 +213,11 @@ it, and what was going on," just without wire-level byte-level proof.
   predates these. Still correlation, not proven cause — but the
   sample now leans injection/reorder for the `flight=true` +
   identical-`mtok` signature.
+- 2026-07-27 14:05:06 UTC (same session, **580k cc**, `mtok` 504,607,
+  `flight=false`, `ubytes=3935`): queued operator message + hook
+  persisted-output attachment inserted mid-turn; transcript shows
+  out-of-order `queue-operation`/`attachment` timestamps around the
+  divergence. Largest recorded instance of the injection class.
+  Mitigation directive: claude-code-cache-fix
+  `docs/directives/proxy-mid-history-breakpoint-ladder.md`
+  (fork branch feature/mid-history-breakpoint-ladder).
