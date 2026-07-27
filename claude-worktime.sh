@@ -1662,7 +1662,41 @@ mode_statusline() {
                         cs_lastcause="other"
                         if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
                             local _cw_diag
-                            _cw_diag=$(jq -c 'select(.type == "assistant")' "$tp_path" 2>/dev/null | tail -n 1)
+                            # ANCHOR THE READ TO THE BUSTING TURN.
+                            #
+                            # This used to be `tail -n 1` over all assistant
+                            # entries — "the newest entry is the turn that just
+                            # busted". It frequently is not: CC writes the entry
+                            # AFTER the response returns while this hook fires ON
+                            # that response, so the newest entry on disk is often
+                            # the PREVIOUS turn. That silently copied a foreign
+                            # turn's diagnostics onto this bust.
+                            #
+                            # Measured 2026-07-27, ❄ #9: recorded
+                            # cause=unavailable for a cc=245997 bust. The 245997
+                            # turn's own diagnostic was messages_changed;
+                            # "unavailable" belonged to an earlier, HEALTHY turn
+                            # (cc=5386, cr=260636) that was merely the last one
+                            # written at read time. A plausible-but-wrong cause is
+                            # worse than "other" — "other" at least announces that
+                            # it knows nothing.
+                            #
+                            # cache_creation_input_tokens identifies the turn: it
+                            # is exactly the t_cc this bust was detected on. No
+                            # match means the busting entry has not been flushed
+                            # yet, which is the honest "other" — and the
+                            # late-binding re-read below upgrades it once it lands.
+                            # Entries with no usage block cannot be matched or
+                            # excluded on cc, so they stay eligible: an entry
+                            # that carries usage must MATCH this bust's cc,
+                            # while one that carries none is accepted as before.
+                            # That keeps the anchor strict exactly where the
+                            # evidence to be strict exists.
+                            _cw_diag=$(jq -c --argjson cc "${t_cc:-0}" \
+                                'select(.type == "assistant")
+                                 | select((.message.usage | not)
+                                          or (.message.usage.cache_creation_input_tokens == $cc))' \
+                                "$tp_path" 2>/dev/null | tail -n 1)
                             if [ -n "$_cw_diag" ]; then
                                 _cw_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_diag" 2>/dev/null)
                                 _cw_miss_tok=$(jq -r '.message.diagnostics.cache_miss_reason.cache_missed_input_tokens // 0' <<< "$_cw_diag" 2>/dev/null)
@@ -1737,7 +1771,18 @@ mode_statusline() {
                     && [ $(( now - cs_lasthit_t )) -le "$_cw_lb" ] \
                     && [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
                     local _cw_late
-                    _cw_late=$(jq -c 'select(.type == "assistant")' "$tp_path" 2>/dev/null | tail -n 1)
+                    # Anchored to the busting turn by its cache-creation count
+                    # (cs_lastcc, persisted when the hit was booked) — same
+                    # reason as the read above: the newest assistant entry is
+                    # frequently a DIFFERENT turn, and copying its cause is how
+                    # ❄ #9 came to read "unavailable" for a messages_changed
+                    # bust. Waiting for the right entry is correct; adopting the
+                    # wrong one is not.
+                    _cw_late=$(jq -c --argjson cc "${cs_lastcc:-0}" \
+                        'select(.type == "assistant")
+                         | select((.message.usage | not)
+                                  or (.message.usage.cache_creation_input_tokens == $cc))' \
+                        "$tp_path" 2>/dev/null | tail -n 1)
                     if [ -n "$_cw_late" ]; then
                         local _cw_late_cause
                         _cw_late_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_late" 2>/dev/null)
