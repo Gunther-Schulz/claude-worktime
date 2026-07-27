@@ -221,3 +221,6 @@ it, and what was going on," just without wire-level byte-level proof.
   Mitigation directive: claude-code-cache-fix
   `docs/directives/proxy-mid-history-breakpoint-ladder.md`
   (fork branch feature/mid-history-breakpoint-ladder).
+
+(Cost context for any event you investigate here: `token-cost-model.md`, same directory — what warm turns, busts, and pings actually bill.)
+
