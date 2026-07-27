@@ -2585,11 +2585,16 @@ mode_cold() {
     # residual, the API's cache_miss_reason.type verbatim (messages_changed /
     # tools_changed / model_changed / unavailable / other when no diagnostics
     # were available) — widened to 17 to fit "messages_changed" unquoted.
-    printf '%-19s %8s  %-17s %8s  %s\n' "when" "size" "cause" "idle" "model"
+    # UTC on purpose: every downstream forensic source (snapshot ledgers,
+    # transcripts, journalctl --utc per the runbook) timestamps in UTC, and
+    # a local-time column here forces an error-prone conversion at exactly
+    # the moment someone is hunting a bust (2026-07-28: a "00:13 local"
+    # bust was hunted in the 22:13Z ledger rows).
+    printf '%-19s %8s  %-17s %8s  %s\n' "when (UTC)" "size" "cause" "idle" "model"
     local t cc cause gap mdl s total=0 sum=0
     while IFS=$'\t' read -r t cc cause gap mdl s; do
         [ -z "$t" ] && continue
-        local when; when=$(date -d "@$t" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -r "$t" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
+        local when; when=$(date -u -d "@$t" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -u -r "$t" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
         local k=$(( (cc + 500) / 1000 ))
         # Idle gap as compact duration
         local gtxt

@@ -123,8 +123,17 @@ which is the actual mechanism of a cache miss (the API keys the cache off
 byte-identical prefixes).
 
 ```
-journalctl --user -u cache-fix-proxy --since "-30min" --no-pager | grep prefix-diff
+journalctl --user -u cache-fix-proxy --utc --since "-30min" --no-pager | grep prefix-diff
 ```
+
+**Always pass `--utc`** (and `TZ=UTC` to `systemctl show`, `date`, and any
+ad-hoc script): the snapshot ledgers and transcripts timestamp in UTC, and
+one 2026-07-28 session burned time hunting a "00:13 local" bust in the
+22:13Z ledger rows. The convention for this whole procedure is: every
+command that prints a timestamp prints UTC. The one exception you cannot
+flip is `claude-worktime` itself, which prints local — convert its bust
+time to UTC (`date -u -d '<local time>'`) before touching any other
+source.
 
 Each `prefix-diff` line reports which windows changed (`head=X,
 markers=Y, tail=Z`) plus a **`cause=`** field naming the culprit
@@ -182,10 +191,12 @@ PY
 ```
 
 Confirm the match by reading a hit's `params`: the `model` there must be
-the one your session runs. Note these ledgers timestamp in **UTC** while
-`claude-worktime` and `journalctl` print local time — convert before
-comparing, or the window looks empty and you conclude "no diagnostics"
-when the record is right there.
+the one your session runs. These ledgers timestamp in **UTC**; if you
+followed the `--utc` convention above, everything already matches. The
+trap only reopens through `claude-worktime`'s local-time output — convert
+that one value at the boundary and stay in UTC everywhere else, or the
+window looks empty and you conclude "no diagnostics" when the record is
+right there.
 
 **One key can carry several conversations — and this WILL fool you.**
 The key follows the session header, so a main session, every subagent it
