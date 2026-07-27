@@ -32,14 +32,20 @@ expected and you can stop here:
   full rewrite is unavoidable.
 - A **deliberate opt-in config flip** made mid-session (each toggle busts
   the cache exactly once — expected, not a bug).
-- **A `cache-fix-proxy` restart while the session was live** — measured
-  at 225k (2026-07-27 00:15), surfacing as `tools_changed`: the fresh
-  process sends a different tools array than the old one. Check
-  `systemctl --user show cache-fix-proxy -p ActiveEnterTimestamp`
-  against the hit's timestamp before investigating further. **Don't
-  restart the proxy to investigate a bust — that causes one.** The
-  `<key>-events.jsonl` ledger is append-only so post-mortems need no
-  live intervention.
+- **A `cache-fix-proxy` restart while the session was live** — one
+  measured incident at 225k (2026-07-27 00:15), surfacing as
+  `tools_changed`. Check `systemctl --user show cache-fix-proxy -p
+  ActiveEnterTimestamp` against the hit's timestamp before investigating
+  further. **Status: no longer reliably a bust.** A restart at
+  2026-07-27 19:01 produced none — `cache_read` climbed straight
+  through it (35990 → 42475) and the first post-restart prefix-diff
+  logged `tools=match, system=match`. The mechanism once given for the
+  225k incident ("the fresh process sends a different tools array") was
+  never demonstrated against wire bytes; the diagnostics that could have
+  shown it postdate it. Treat a restart as a candidate to CHECK, not an
+  established cause to accept. Still avoid restarting mid-session as the
+  cautious default — but the `<key>-events.jsonl` ledger is append-only,
+  so a post-mortem never needs one anyway.
 - **`/rc` (rewind/compact) mid-session** — a known, avoidable cache-buster;
   if it shows up here, note it, but there's nothing further to trace.
 
