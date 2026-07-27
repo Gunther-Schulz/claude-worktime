@@ -1776,7 +1776,15 @@ mode_statusline() {
                 # line is a claim nobody can audit, and the audit trail is the
                 # point. Numbers are parsed back out of that record so popup and
                 # ledger cannot drift.
-                if [ -n "$_cw_committed" ] && command -v notify-send >/dev/null 2>&1; then
+                # COLD_NOTIFY=false suppresses the popup entirely. The test
+                # suites drive this same code path with synthetic fixtures,
+                # and without an opt-out they fire REAL desktop
+                # notifications indistinguishable from live busts — two
+                # were mistaken for unexplained production events on
+                # 2026-07-27 and sent an investigation after a phantom
+                # "160k bust" that was only ever a fixture value.
+                if [ "${COLD_NOTIFY:-true}" != "false" ] \
+                   && [ -n "$_cw_committed" ] && command -v notify-send >/dev/null 2>&1; then
                     local _cw_n_cc _cw_n_cause _cw_n_sid
                     _cw_n_cc=${_cw_committed##*\"cc\":}; _cw_n_cc=${_cw_n_cc%%,*}
                     case "${_cw_n_cc:-}" in ''|*[!0-9]*) _cw_n_cc=0 ;; esac

@@ -206,6 +206,11 @@
 # 0 disables pruning and keeps everything.
 #ARCHIVE_RETAIN_DAYS=730
 
+# Desktop notification on a cold-cache hit (needs notify-send). Set false
+# to log busts silently. The test suites set this internally so a replay
+# of synthetic fixtures cannot raise popups that look like live busts.
+#COLD_NOTIFY=true
+
 # ---------------------------------------------------------------------------
 # Projections
 # ---------------------------------------------------------------------------

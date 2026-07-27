@@ -34,7 +34,7 @@ turn() {
     local d=$1 cr=$2 cc=$3 ui=$4
     printf '{"session_id":"%s","workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"input_tokens":%d,"output_tokens":10}}}\n' \
         "$SID" "$cr" "$cc" "$ui" \
-        | CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
     # grep -c prints the count (0 included) and exits 1 when it's 0 — swallow
     # that exit, don't append a second 0.
     grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null || true
@@ -46,7 +46,7 @@ turn_model() {
     local d=$1 mdl=$2 cr=$3 cc=$4 ui=$5
     printf '{"session_id":"%s","model":{"id":"%s"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"input_tokens":%d,"output_tokens":10}}}\n' \
         "$SID" "$mdl" "$cr" "$cc" "$ui" \
-        | CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
     grep '"k":"hit"' "$d/activity.jsonl" 2>/dev/null | jq -r '.cause' 2>/dev/null | tail -1
 }
 
@@ -81,7 +81,7 @@ checkcause_tp() {
     local got
     printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"%s"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"input_tokens":%d,"output_tokens":10}}}\n' \
         "$SID" "$tp" "$mdl" "$cr" "$cc" "$ui" \
-        | CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
     got=$(grep '"k":"hit"' "$d/activity.jsonl" 2>/dev/null | jq -r '.cause' 2>/dev/null | tail -1)
     if [ "$got" = "$want" ]; then
         printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
@@ -181,7 +181,7 @@ resume_check() {
     printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' > "$tp"
     printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":0,"cache_creation_input_tokens":130000,"input_tokens":100,"output_tokens":10}}}\n' \
         "$SID" "$tp" \
-        | CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
     local hit_count resume_count
     hit_count=$(grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null)
     resume_count=$(grep -c '"k":"resume"' "$d/activity.jsonl" 2>/dev/null)

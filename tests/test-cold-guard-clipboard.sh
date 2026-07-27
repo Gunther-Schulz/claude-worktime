@@ -71,7 +71,7 @@ run_guard() {
         '{session_id:"sid",transcript_path:"'"$tp"'",prompt:$p}')
     out=$(printf '%s\n' "$stdin" \
         | CLIP_OUT="$CLIP_OUT" PATH="$STUBBIN:$PATH" \
-          CLAUDE_WORKTIME_DATA="$dir/data" CLAUDE_WORKTIME_CONFIG="$dir/cfg" \
+          COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$dir/data" CLAUDE_WORKTIME_CONFIG="$dir/cfg" \
           bash "$SCRIPT" log --prompt 2>/dev/null)
 
     # Wait for the backgrounded copy to flush (bounded — never hang the test).

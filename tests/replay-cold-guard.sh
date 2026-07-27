@@ -102,7 +102,7 @@ replay_one() {
 
     local out
     out=$(printf '{"session_id":"%s","transcript_path":"%s"}\n' "$sid" "$tp" \
-        | CLAUDE_WORKTIME_DATA="$dir" CLAUDE_WORKTIME_CONFIG="$WORK/cfg" \
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$dir" CLAUDE_WORKTIME_CONFIG="$WORK/cfg" \
           bash "$SCRIPT" log --prompt 2>/dev/null)
 
     case "$out" in
