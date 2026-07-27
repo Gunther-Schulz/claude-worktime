@@ -88,6 +88,20 @@ no diagnostics** for that request, so worktime had nothing to classify.
 Step 2 below usually still names the culprit; `other` is a gap in the
 API's reporting, not in the evidence.
 
+An `other` in the statusline does not even mean the diagnostics are
+missing from the TRANSCRIPT. The classifier reads `cache_miss_reason`
+from the LAST assistant entry (`claude-worktime.sh:1662`), which is not
+the busting turn, so it degrades to `other` while the real cause sits in
+the transcript. Always grep the transcript for the busting timestamp
+before concluding the cause is unavailable — a 2026-07-27 event showed
+`other` in the statusline and `tools_changed` in the transcript.
+
+**Scope: main sessions only.** State files are keyed by main-session id
+(`.cold_<session-id>`); every one maps to a main transcript, and
+subagents produce none. So these counts EXCLUDE subagent cache spend —
+dispatching work moves tokens somewhere this counter cannot see. Don't
+read a session's `❄` total as the cost of everything it did.
+
 ### 2. Where the prefix diverged (wire-level)
 
 **Precondition:** requires the `claude-code-cache-fix` proxy with
@@ -143,6 +157,58 @@ jq -c 'select(.causes|length>0) | {ts, causes}' \
 Keys prefixed `s-` are derived from the session-id header; a bare hex
 key means the request had no session header and fell back to a content
 hash.
+
+**Finding YOUR session's key.** The `s-` key is a hash of the session
+id, not the id itself — `ls | grep <session-id>` finds nothing, and the
+mapping is recorded nowhere. Don't hunt by name; select by TIME. Given
+the bust timestamp from step 1:
+
+```sh
+python3 - <<'PY'
+import json, glob, os
+WINDOW = "2026-07-27T17:17"          # UTC, minute precision
+for p in glob.glob(os.path.expanduser("~/.claude/cache-fix-snapshots/*-events.jsonl")):
+    if "insertion" in p or "ladder" in p: continue   # per-extension ledgers
+    rows = [json.loads(l) for l in open(p) if l.strip()]
+    hits = [r for r in rows if str(r.get("ts", "")).startswith(WINDOW)]
+    if hits: print(os.path.basename(p), len(hits))
+PY
+```
+
+Confirm the match by reading a hit's `params`: the `model` there must be
+the one your session runs. Note these ledgers timestamp in **UTC** while
+`claude-worktime` and `journalctl` print local time — convert before
+comparing, or the window looks empty and you conclude "no diagnostics"
+when the record is right there.
+
+**One key can carry several conversations — and this WILL fool you.**
+The key follows the session header, so a main session, every subagent it
+dispatches, and Claude Code's own small background calls land on ONE
+key. The ledger compares each request to whichever request preceded it
+on that key, regardless of which conversation it came from, so co-tenant
+traffic renders as violent prefix churn:
+
+```
+17:10:03 msgs: 80->82    (main advancing)
+17:10:03 msgs: 82->40    model: opus-5 -> sonnet-5   <- subagent's turn
+17:10:14 msgs: 40->43    (subagent advancing)
+17:10:34 msgs: 43->2     (a third, tiny call)
+17:10:34 msgs: 2->84     model: sonnet-5 -> opus-5   <- back to main
+```
+
+Nothing is wrong here. Two conversations are each advancing normally;
+only the interleaving makes it look like the prefix is thrashing. This
+is a **diagnostic-only artifact** — the upstream proxy tracks it as
+"prefix-diff sidecar sub-keying, diagnostic-only residual"
+(claude-code-cache-fix commit `1906e94`).
+
+**Refute it before you attribute a bust to it:** read `cache_read` across
+the same turns in the transcript. If `cr` keeps climbing (e.g.
+129587 → 132861 → 133283 → 135247), nothing was evicted and the churn
+cost nothing — whatever busted the cache, it was not the interleaving.
+Only a COLLAPSE in `cr` indicates real eviction. Attributing a bust to
+subagent interleaving on the strength of the `msgs:` oscillation alone
+is a known wrong turn; it has been made and corrected (2026-07-27).
 
 If this service isn't installed or isn't running, skip this step — it's
 a bonus signal, not a requirement for the other three steps.
