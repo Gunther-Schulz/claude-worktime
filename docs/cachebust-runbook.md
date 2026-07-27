@@ -224,3 +224,17 @@ it, and what was going on," just without wire-level byte-level proof.
 
 (Cost context for any event you investigate here: `token-cost-model.md`, same directory — what warm turns, busts, and pings actually bill.)
 
+- 2026-07-27 15:36:55 UTC (same session, **766k cc**, `mtok` 666,929,
+  cause `tools_changed`, gap 21s): a previously ToolSearch-loaded
+  deferred tool (`CronCreate`, loaded 13:30) was REMOVED from tools[]
+  plus sibling schema/reorder diffs (`CronCreate:removed,
+  DeferredToolPlaceholder:reordered, …:schema`), coinciding with a
+  harness `system` transcript event at 15:36:34/15:36:54 (a
+  skills-availability update landed in this window). No ToolSearch
+  call near the bust — the harness re-derived the tools array itself.
+  Class-6 variant: deferred-tool UNLOAD/re-serialization, not load.
+  Same mitigation family (tools[] must stay byte-stable;
+  deferred-tool-rewrite Phase A covers additions — REMOVALS need the
+  same treatment: candidate extension of the rewrite to hold removed
+  tools in place until session end, they cost nothing inert).
+  Day total now ~1.83M uncontrolled write-tokens across 5 events.
