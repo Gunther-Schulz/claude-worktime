@@ -1707,6 +1707,43 @@ mode_statusline() {
                         cs_lasthit_t=$now
                     fi
                 fi
+                # Late-binding upgrade for a raced read.
+                #
+                # CC writes the assistant transcript entry AFTER the API
+                # response returns, and this hook fires on that same response,
+                # so the entry carrying cache_miss_reason routinely lands
+                # milliseconds later. Measured 2026-07-27: a bust at
+                # 19:04:57.321 persisted cause=other at 19:04:57 while the
+                # transcript held tools_changed(49153) all along — a knowable
+                # cause frozen as "unknown", which then misled an
+                # investigation and put a wrong claim in a threat matrix.
+                #
+                # A genuine no-diagnostics bust and a raced read are
+                # indistinguishable at write time, so this does not guess:
+                # "other" simply stays re-checkable for a bounded window, and
+                # a cause found later replaces it. A settled cause is never
+                # rewritten. Genuinely causeless busts stay "other" forever,
+                # which is correct — no sentinel promises an upgrade that
+                # cannot come.
+                #
+                # Window-bounded (COLD_LATE_BIND_SECS, default 120s) because
+                # the diagnostics reads are otherwise gated behind the hit
+                # branch so the common path never pays for them; the race
+                # closes in seconds, so a couple of minutes covers it without
+                # putting a jq on every render for the rest of the session.
+                local _cw_lb=${COLD_LATE_BIND_SECS:-120}
+                if [ "$cs_lastcause" = "other" ] && [ -z "$cold_hit" ] \
+                    && [ "$cs_lasthit_t" -gt 0 ] \
+                    && [ $(( now - cs_lasthit_t )) -le "$_cw_lb" ] \
+                    && [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
+                    local _cw_late
+                    _cw_late=$(jq -c 'select(.type == "assistant")' "$tp_path" 2>/dev/null | tail -n 1)
+                    if [ -n "$_cw_late" ]; then
+                        local _cw_late_cause
+                        _cw_late_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_late" 2>/dev/null)
+                        [ -n "$_cw_late_cause" ] && cs_lastcause="$_cw_late_cause"
+                    fi
+                fi
                 echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc} ${cs_lasthit_t} ${cs_lastcause} ${cur_model}" > "$cold_state" 2>/dev/null
                 # The hit record is written inside the lock below; the desktop
                 # notification is then derived FROM that record rather than
