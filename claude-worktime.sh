@@ -1305,7 +1305,18 @@ mode_statusline() {
             if [ "$cold_lastcc" -gt 0 ]; then
                 # Round to nearest k so 130098 → 130k, 54344 → 54k
                 local _cold_k=$(( (cold_lastcc + 500) / 1000 ))
-                local _cold_txt="❄ ${_cold_k}k"
+                # Session index, PREFIXED. A suffixed count (`… idle (17m) ×3`)
+                # reads as a multiplier on the event it follows — "this 263k
+                # idle bust, three times" — which is the opposite of the truth.
+                # As a leading ordinal it frames what follows: "bust #3 this
+                # session; the latest was 263k, idle, 17m ago". Omitted at N=1.
+                # The index is also the only part of the token that stays honest
+                # on a frozen statusline: an idle CLI never re-renders, so the
+                # age can sit at "(4m)" for hours (observed 2026-07-27), but a
+                # monotonic count can only under-report, never mislead.
+                local _cold_txt="❄ "
+                [ "$cold_count" -gt 1 ] && _cold_txt="❄ #${cold_count} "
+                _cold_txt="${_cold_txt}${_cold_k}k"
                 # Cause (skip the legacy "-" placeholder)
                 [ -n "$cold_lastcause" ] && [ "$cold_lastcause" != "-" ] && _cold_txt="${_cold_txt} ${cold_lastcause}"
                 # Age since the rewrite, parenthesised (2m, 1h3m); omit if unknown
@@ -1320,14 +1331,6 @@ mode_statusline() {
                     # Dim once it's no longer "just now"
                     [ "$_cold_age" -ge "${COLD_FRESH_SECS:-900}" ] && _cold_color=$'\033[38;5;246m'
                 fi
-                # Session tally, appended as ×N and omitted at N=1. The size and
-                # age describe ONE event; three rewrites in a session read as a
-                # single incident without this. It is also the one part of the
-                # token that stays true on a frozen statusline: an idle CLI
-                # never re-renders, so the age can sit at "(4m)" for hours
-                # (observed 2026-07-27), but a count only ever grows — stale, it
-                # under-reports rather than misleads.
-                [ "$cold_count" -gt 1 ] && _cold_txt="${_cold_txt} ×${cold_count}"
                 tok_cold="${_cold_color}${_cold_txt}${COLOR_DEFAULT}"
             fi
         fi
