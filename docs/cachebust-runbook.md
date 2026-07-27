@@ -193,3 +193,23 @@ depend on optional infrastructure (the cache-fix proxy, request
 mirroring) that may not be present in every environment — when they're
 missing, steps 1 and 4 alone still answer "did this happen, how big was
 it, and what was going on," just without wire-level byte-level proof.
+
+## Recorded pattern datapoints (append-only)
+
+- 2026-07-27 12:44:41 + 12:44:50 UTC (session f4d154fc, fable-5,
+  ~153k cc each): identical `mtok` 126,243 on both — same divergence
+  index hit twice, 9s apart. `flight=true`, `pblk=["tool_use"]`; the
+  window immediately follows a Skill launch (19.7KB injected) plus a
+  burst of PARALLEL Read results (3 arriving within 2s). Reading:
+  in-flight history reordering — two successive requests both saw the
+  history diverge at the same mid-history message.
+- 2026-07-27 12:47:56 UTC (same session, 175k cc): `flight=false`,
+  `ubytes=1263`; a teammate-message idle-notification (829B envelope)
+  was injected as a user turn 7s earlier (12:47:49), mid-working-turn.
+  Reading: injected-message class.
+- Aggregate: all three same-day `messages_changed` threshold hits
+  coincide with mid-flight injections (parallel tool-result races or
+  teammate notifications); the 6-event no-correlation note above
+  predates these. Still correlation, not proven cause — but the
+  sample now leans injection/reorder for the `flight=true` +
+  identical-`mtok` signature.
