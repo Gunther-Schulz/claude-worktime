@@ -321,3 +321,83 @@ it, and what was going on," just without wire-level byte-level proof.
   same treatment: candidate extension of the rewrite to hold removed
   tools in place until session end, they cost nothing inert).
   Day total now ~1.83M uncontrolled write-tokens across 5 events.
+
+- 2026-07-28 09:47:31 + 09:53:21 UTC (session 35d72503, opus-5[1m],
+  252,905 + 266,422 cc = **519k**; `mtok` 205,814 / 217,025; cause
+  `messages_changed`, `flight=true`, `pblk=["tool_use"]`, `concur=0`
+  on both). **New class: hook-reminder re-anchoring.** Both diverge at
+  a user message carrying an Agent-dispatch `tool_result`
+  (prefix-diff `messages@465(user)` / `messages@503(user)`,
+  `systemMatch=true`, `toolsMatch=true` — so nothing in system or
+  tools moved).
+
+  Mechanism, from the wire bytes
+  (`~/.claude/cache-fix-captures/s-<sid>-requests.jsonl`): the
+  `PreToolUse:Agent` and `PostToolUse:Agent` hook reminders are first
+  sent as two extra `text` blocks appended INSIDE the Agent
+  `tool_result` user message; on a later request the harness
+  re-serializes them as their own standalone message. The blocks are
+  stripped from the tool_result and everything after it shifts by one
+  index — 26 messages "differ" positionally though the conversation
+  only advanced. Confirmed by content: `[503] prev
+  list[tool_result,SYSREM(387),SYSREM(313)] → now list[tool_result]`,
+  and `[504] prev list[thinking,text,tool_use:Read] → now
+  str('PreToolUse:Agent hook additional context…')`, with every
+  subsequent pair showing prev[i] == now[i+1].
+
+  Trigger, all three same-day instances: a user-role message landing
+  mid-flight (09:47:31 an operator interrupt, 09:53:21 an operator
+  pushback, 09:03:09 a teammate-message delivery). The
+  re-serialization rides the request that carries the new user turn.
+
+  Refutation probes run (both passed): eviction is real — `cache_read`
+  collapses 275,152 → 23,077 and 287,492 → 23,077 in the transcript,
+  not the diagnostic-only interleaving artifact. And a scan of all 342
+  main-chain requests that day found exactly THREE mid-history
+  divergences; the two that dropped Agent hook blocks are exactly the
+  two busts. The third (09:03:09, same insertion class from a Stop-hook
+  reminder) cost only 2,663 cc and did NOT bust — divergence index 95
+  of 133 while `cache_read` climbed 100,247 → 101,234. So position and
+  the surviving cached prefix, not the insertion alone, set the
+  magnitude; why 23,077 was the floor on both busts (rather than a
+  prefix ending near index 464) is NOT established — the breakpoint
+  ledger shows a single tail `cache_control` marker per request
+  (`[491]`, `[531]`), so there may be no intermediate boundary to fall
+  back to, but that was not proven against wire bytes.
+
+  **Attribution: CC's, not ours** — the standing rule from HANDOFF
+  §10.3b (classify every divergence pre vs post) is satisfied here.
+  These bytes come from `request-capture` (order 60); the only
+  extension ahead of it is `bootstrap-defense` (order 45), which
+  deletes top-level prompt keys and never touches `messages[]`
+  (`bootstrap-defense.mjs:262-268`), and `runOnRequest` awaits each
+  extension in sequence (`pipeline.mjs:105-113`) while capture
+  `JSON.stringify`s inside its own hook (`request-capture.mjs:136-142`),
+  so no later extension can alias into the captured bytes. The flip is
+  in what Claude Code sent.
+
+  **This is the same class as HANDOFF §10.2/§10.2b (2026-07-27, 135k +
+  182k), with a new shape.** There the reminder alternated
+  present/absent INSIDE a user message. Here it MIGRATES: stripped from
+  the user `tool_result` and re-emitted as a standalone `system`-role
+  message with STRING content. That shape escapes the phase-3 pin,
+  whose volatile classifier is scoped to user-role block arrays
+  (`isVolatileBlock` returns false for a string-content system message —
+  verified by running the real classifier against these captured bytes).
+
+  Mitigation status — **built, dormant, and only PARTIAL against this
+  variant.** `CACHE_FIX_VOLATILE_PIN=1` (cache-fix `10d1440`, inside
+  `insertion-normalization.mjs`) is absent from the live service unit.
+  Replayed over a 40-request corpus cut from this window
+  (`tools/replay.mjs`, real pipeline offline): pin OFF → 14
+  `not-subsequence` resets including both busts; pin ON → 3 resets.
+  Bust 2 (09:53:21) is absorbed. **Bust 1 (09:47:31) still resets**,
+  reclassified `edit-shaped` — it carried an operator interrupt
+  (`STIOP SUBAGNET!`) in the same request, i.e. drop+splice together,
+  which the directive explicitly resets on. So the pin would have
+  covered roughly half this day's damage, not all of it; a claim that
+  it closes the class would be wrong. Note `tools/cache-sim.mjs` is
+  NOT a valid probe on raw captures — it prices against markers in the
+  previous body, and CC's own bodies carry none (`bestMarker=-1` on
+  every pair), so every pair reads as a bust.
+  Day total ~519k uncontrolled write-tokens across 2 events.
