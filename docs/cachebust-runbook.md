@@ -5,6 +5,19 @@ like "hey, investigate this cache miss" or "check the last ❄ event." This
 doc is self-contained — it does not assume you've read any other file
 first. Follow the four steps in order; total time is a couple of minutes.
 
+> **Different task? Read a different file.** This one is for INVESTIGATING a
+> bust that already happened. If you are about to CHANGE the proxy —
+> extensions, normalization, anything under `proxy/` — read
+> `~/dev/vendor/claude-code-cache-fix/docs/dev-loop.md` first: the replay
+> gates that must pass, the standing rules, and the check-design lessons.
+> Six self-inflicted defects shipped and stayed live for months because that
+> procedure did not exist; every one was found the day it did.
+>
+> Worth knowing before you attribute anything here: a divergence present in
+> `~/.claude/cache-fix-captures/` is Claude Code's, one absent there is OURS
+> (captures are recorded pre-pipeline). On 2026-07-28 five of six defects
+> that looked like CC turned out to be ours.
+
 ## What's normal vs. what's an event
 
 A **partial cache miss** fires on nearly every turn — the API's own
