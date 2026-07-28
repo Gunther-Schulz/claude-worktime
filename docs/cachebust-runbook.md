@@ -385,19 +385,41 @@ it, and what was going on," just without wire-level byte-level proof.
   (`isVolatileBlock` returns false for a string-content system message —
   verified by running the real classifier against these captured bytes).
 
-  Mitigation status — **built, dormant, and only PARTIAL against this
-  variant.** `CACHE_FIX_VOLATILE_PIN=1` (cache-fix `10d1440`, inside
-  `insertion-normalization.mjs`) is absent from the live service unit.
-  Replayed over a 40-request corpus cut from this window
-  (`tools/replay.mjs`, real pipeline offline): pin OFF → 14
-  `not-subsequence` resets including both busts; pin ON → 3 resets.
-  Bust 2 (09:53:21) is absorbed. **Bust 1 (09:47:31) still resets**,
-  reclassified `edit-shaped` — it carried an operator interrupt
-  (`STIOP SUBAGNET!`) in the same request, i.e. drop+splice together,
-  which the directive explicitly resets on. So the pin would have
-  covered roughly half this day's damage, not all of it; a claim that
-  it closes the class would be wrong. Note `tools/cache-sim.mjs` is
-  NOT a valid probe on raw captures — it prices against markers in the
-  previous body, and CC's own bodies carry none (`bestMarker=-1` on
-  every pair), so every pair reads as a bust.
+  **RESOLVED same day — this class is closed, and closing it exposed
+  five more defects that were OURS.** `CACHE_FIX_VOLATILE_PIN=1` is
+  live as of 2026-07-28 17:08 along with `CACHE_FIX_TOOL_REWRITE=1`
+  and `CACHE_FIX_UPSTREAM_DETECTION=1`. Both corpora now replay with
+  0 stability, 0 safety, 0 sequence and 0 canonical-order violations.
+
+  The pin alone was NOT enough, and the first assessment above (half
+  the damage) was right to doubt it. What the rest turned out to be:
+
+  - `thinking-block-sanitize` forwarded a byte-identical message one
+    way while it was the tail and another once a turn landed after it
+    (133 + 76 violations across the two corpora) — OURS;
+  - `insertion-normalization` keyed canonical state on
+    (session-id, system-prompt), which every subagent shares, so 72 of
+    83 resets were a keying artifact — OURS;
+  - its canonical filed new entries in ARRIVAL order while they sat
+    mid-history on the wire, and phase 2 relocated a system message
+    past three real turns: a live conversation CORRUPTION — OURS;
+  - `edit-shaped` fired on any drop plus any splice, so an operator
+    interrupt pruning the tail while a reminder migrated 24 indices
+    away read as an edit — OURS;
+  - `deferred-tool-rewrite` keyed on the bare session-id, so enabling
+    it RAISED tools[] churn — OURS.
+
+  The two 2026-07-28 busts above remain genuinely CC's (proven
+  pre-pipeline). Almost everything else that looked like CC was not.
+  Procedure that found them: `docs/dev-loop.md` in the cache-fix fork.
+
+  Two corrections to the paragraph above, kept because the reasoning
+  errors matter more than the conclusions: `tools/cache-sim.mjs` is
+  now streaming + `--pipeline` + conversation-grouped, but its
+  absolute totals are STILL not trustworthy (it models one-request
+  cache memory; the API keeps every entry in the TTL window). And
+  "restarts are byte-free" — offline-verified, live-UNTESTED: the one
+  live restart flipped three gates simultaneously and paid the pin's
+  documented one-time canon mode change (678k), so it proves nothing
+  either way.
   Day total ~519k uncontrolled write-tokens across 2 events.
