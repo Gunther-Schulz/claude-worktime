@@ -42,10 +42,28 @@ expected and you can stop here:
   logged `tools=match, system=match`. The mechanism once given for the
   225k incident ("the fresh process sends a different tools array") was
   never demonstrated against wire bytes; the diagnostics that could have
-  shown it postdate it. Treat a restart as a candidate to CHECK, not an
-  established cause to accept. Still avoid restarting mid-session as the
-  cautious default — but the `<key>-events.jsonl` ledger is append-only,
-  so a post-mortem never needs one anyway.
+  shown it postdate it.
+
+  **SETTLED 2026-07-28: a restart alone costs NOTHING — stop treating it
+  as a suspect.** Two independent lines agree. Offline, `replay.mjs
+  --restart-at N` (fresh module registry, state directory intact — what
+  a real restart is) is byte-identical to no restart, while
+  `--wipe-state-at N` (state directory GONE — a different event) costs
+  one violation; conflating the two measures a disaster and calls it a
+  restart. Live, a restart at 19:38 on a ~805k-deep session showed
+  `cache_read` 805,801 → 809,920 with `cc=383`, climbing straight
+  through, and no `--cold` hit. The reason is structural: every
+  cache-relevant decision (insertion-normalization's canonical,
+  deferred-tool-rewrite's tool baseline) is persisted and re-read per
+  request, so a fresh process reproduces byte-identical output.
+
+  **The trap is a CONFIG change flipped in the same restart.** A restart
+  at 17:08 the same day did bust — 678k — but that was
+  `CACHE_FIX_VOLATILE_PIN` being switched on, whose canon identity
+  scheme differs and costs one documented reset per conversation. Two
+  variables changed, and attributing the result to the restart would
+  have been wrong. When a bust brackets a restart, check whether the
+  UNIT changed too before blaming the process.
 - **`/rc` (rewind/compact) mid-session** — a known, avoidable cache-buster;
   if it shows up here, note it, but there's nothing further to trace.
 
