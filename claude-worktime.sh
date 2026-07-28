@@ -2548,6 +2548,38 @@ _do_rotate() {
 # List cold-cache rewrites (type=cold, k=hit) — the history behind the ❄
 # statusline token, which only shows the most recent one. Defaults to the
 # current session; --today/--week/--since/--session widen or retarget.
+# Read the activity log LINE-TOLERANTLY.
+#
+# `jq FILTER file` parses the whole file as one stream: a single malformed
+# line aborts it and every later record is lost. The log is append-only from
+# concurrent hooks, so partial writes happen — 46 of 423,106 lines were
+# corrupt on 2026-07-28.
+#
+# That is not a hypothetical. `--cold` used the whole-file form with stderr
+# sent to /dev/null, so a parse error at line 6326 produced an empty result
+# and it printed "No cold rewrites recorded" while 26 real cold-rewrite
+# records sat in the file — including the 484k event being investigated at
+# that very moment. Absence of evidence rendered as evidence of absence, in
+# the instrument used to check everything else.
+#
+# `-R` reads raw lines and `fromjson? // empty` drops only the lines that
+# fail, so one bad line costs one record instead of the rest of the file.
+# The idiom was already used in seven other places in this file; the readers
+# that mattered most did not have it.
+_log_json() {
+    jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null
+}
+
+# How many lines the reader had to skip. Callers that report a "none" result
+# use this to say "none, and N lines were unreadable" rather than a bare none.
+_log_corrupt_count() {
+    local total valid
+    [ -f "$LOGFILE" ] || { echo 0; return; }
+    total=$(wc -l < "$LOGFILE")
+    valid=$(_log_json | wc -l)
+    echo $(( total - valid ))
+}
+
 mode_cold() {
     local raw=$1 since=$2 session_filter=${3:-}
     # Scope: an explicit --session wins; otherwise, with no time filter, the
@@ -2557,27 +2589,34 @@ mode_cold() {
     elif [ "$since" -eq 0 ]; then scope_sid="$(_current_session_id)"; fi
 
     local rows
-    rows=$(jq -rc --argjson since "$since" --arg sid "$scope_sid" '
+    rows=$(_log_json | jq -rc --argjson since "$since" --arg sid "$scope_sid" '
         select((.type // "") == "cold" and .k == "hit")
         | select($since == 0 or .t >= $since)
         | select($sid == "" or .s == $sid)
         | [.t, (.cc // .ctx // 0), (.cause // "-"), (.gap // 0), (.mdl // "-"), (.s[0:8])]
-        | @tsv' "$LOGFILE" 2>/dev/null | sort -n) || rows=""
+        | @tsv' 2>/dev/null | sort -n) || rows=""
 
     if [ -z "$rows" ]; then
+        # "none" must be distinguishable from "could not read". A silent empty
+        # result is what hid 26 real records on 2026-07-28.
+        local _corrupt; _corrupt=$(_log_corrupt_count)
+        local _note=""
+        [ "${_corrupt:-0}" -gt 0 ] && _note=" (${_corrupt} unreadable line(s) skipped — run: claude-worktime --info)"
         if $raw; then echo '[]'
-        elif [ -n "$scope_sid" ]; then echo "No cold rewrites recorded for this session"
-        else echo "No cold rewrites recorded"; fi
+        elif [ -n "$scope_sid" ]; then echo "No cold rewrites recorded for this session${_note}"
+        else echo "No cold rewrites recorded${_note}"; fi
         return
     fi
 
     if $raw; then
         # Emit a JSON array of the filtered events straight from the log
-        jq -sc --argjson since "$since" --arg sid "$scope_sid" '
+        # Same tolerant read as the table branch — a --raw consumer must not
+        # get [] because of one malformed line elsewhere in the file.
+        _log_json | jq -sc --argjson since "$since" --arg sid "$scope_sid" '
             map(select((.type // "") == "cold" and .k == "hit")
                 | select($since == 0 or .t >= $since)
                 | select($sid == "" or .s == $sid))
-            | sort_by(.t)' "$LOGFILE" 2>/dev/null
+            | sort_by(.t)' 2>/dev/null
         return
     fi
 
