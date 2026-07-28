@@ -2645,7 +2645,14 @@ Statusline token reference:
     total 8h30m    all-time total for this project
     🤖 total       all-time Claude work for this project
     👤 total       all-time your work for this project
-    08:22 ▪▪··▪▪ 17:30  day timeline with start/end times (▪=present ·=away)
+    08:22 ▪▪··▪▪ 17:30  day timeline (▪=present ·=away) between today's
+                   first event and the {today_now} render stamp
+    17:30          clock time at the last statusline render — the staleness
+                   anchor. The statusline only re-renders on activity, so an
+                   idle CLI freezes every duration on the line; how far this
+                   lags your actual clock is how old the rest of it is.
+                   Ships inside TIMELINE; give it GROUP_NOW="{today_now}"
+                   to place it elsewhere (e.g. line 3, beside ❄ and ctx)
     ▶1h12m         presence streak since last break (yellow >1.5h, red >2.5h)
     ⏸ 20m          last break duration (after first break)
     45m            current session active time

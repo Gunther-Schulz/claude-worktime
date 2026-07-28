@@ -74,9 +74,22 @@ Total productive time, split into Claude's work and yours. Scoped to the current
 |---------|---------|
 | `▪▪··▪▪▪` | Day timeline — ▪ = present, · = away |
 | `08:22` | Start time (first event today) |
-| `17:30` | Current time |
+| `17:30` | Time of the last statusline render — how far it lags your actual clock is how stale the session is |
 | `▶ 1h12m` | Presence streak since last break (yellow >1.5h, red >2.5h) |
 | `⏸ 20m` | Duration of most recent break |
+
+The end time is the **staleness anchor**. A statusline only re-renders when something happens, so an idle CLI freezes the whole line — every duration on screen keeps the value it had at the last event, however long ago that was. `{today_now}` is stamped at render, so comparing it against your actual clock reads off exactly how old everything else is: `17:30` on screen at 19:40 means nothing here has updated in over two hours. This is the same trap the `❄` token fell into (see [cold-cache](#configuration)) — an hours-old rewrite still reading `(7m)`.
+
+It is deliberately absolute rather than relative. An `idle 40m` token would be computed at render too, so it would freeze at `idle 3m` and read as fresh forever — confidently wrong. A clock time can go stale but cannot misreport; you supply the "now" it is compared against.
+
+By default it ships only inside `GROUP_TIMELINE`, so trimming `STATUSLINE_2` removes the anchor. To keep it while dropping the timeline — or to sit it on line 3 next to `❄` and `ctx`, where a frozen value is most misleading — give it its own group:
+
+```bash
+GROUP_NOW="{today_now}"
+STATUSLINE_3="MODEL RATE_5H CONTEXT COLD NOW"
+```
+
+Resolution is `%H:%M`, enough for "is this session stale" but not for "did that bust just happen".
 
 **Line 3 — Model & limits**:
 ```
@@ -188,7 +201,7 @@ A commented-out template with all options is created on install.
 | `{today}` | Today's total active time (all sessions, all projects) |
 | `{today_wall}` | Wall clock span of today (first event to now) |
 | `{today_start}` | Start time today (e.g. `08:22`) |
-| `{today_now}` | Current time (e.g. `19:25`) |
+| `{today_now}` | Clock time at the last render (e.g. `19:25`) — the staleness anchor, see below |
 | `{today_project}` | Today's total for current project (Claude + You) |
 | `{today_claude}` | Today's Claude work time for current project |
 | `{today_you}` | Today's your active time for current project |
