@@ -481,3 +481,15 @@ it, and what was going on," just without wire-level byte-level proof.
   breakpoint-sparsity question, still unproven against wire bytes.
   Full record: cache-fix threat-matrix Row 4 datapoint 2026-07-30
   (commit 8cd4e1c).
+  CORRECTION (same day, builder-measured; cache-fix fixture 090a110):
+  the census over-reported the migrations 2x — a blockUnits phantom
+  (any message shrunk to one block reads as standalone), only 92->94
+  is real; the flap stands as ONE reminder block flipping. And the
+  suppression-coverage reading was wrong: both matchable standalones
+  already hash-match — the escape is an edit-shaped reset firing
+  BEFORE suppression, triggered by a novel cross-message join. The
+  "per-block standalone match" successor named above is withdrawn
+  (already built since #76606); the real mitigation is a design
+  decision, parked with its safety questions in the fork BACKLOG.
+  Corrected record: threat-matrix Row 4 correction (cache-fix
+  cd29e34).
