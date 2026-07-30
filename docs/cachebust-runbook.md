@@ -157,6 +157,11 @@ byte-identical prefixes).
 journalctl --user -u cache-fix-proxy --utc --since "-30min" --no-pager | grep prefix-diff
 ```
 
+An empty grep here while the proxy is active is expected on current
+builds — prefix-diff writes to the snapshot ledgers only (below), not
+to the journal (observed 2026-07-30: journal empty across a window
+whose ledgers carried every diff). Go straight to the ledger files.
+
 **Always pass `--utc`** (and `TZ=UTC` to `systemctl show`, `date`, and any
 ad-hoc script): the snapshot ledgers and transcripts timestamp in UTC, and
 one 2026-07-28 session burned time hunting a "00:13 local" bust in the
@@ -334,7 +339,8 @@ it, and what was going on," just without wire-level byte-level proof.
   divergence. Largest recorded instance of the injection class.
   Mitigation directive: claude-code-cache-fix
   `docs/directives/proxy-mid-history-breakpoint-ladder.md`
-  (fork branch feature/mid-history-breakpoint-ladder).
+  (directive on fork main; no implementation branch exists as of
+  2026-07-30 — an earlier note here named one that was never cut).
 
 (Cost context for any event you investigate here: `token-cost-model.md`, same directory — what warm turns, busts, and pings actually bill.)
 
@@ -454,3 +460,24 @@ it, and what was going on," just without wire-level byte-level proof.
   documented one-time canon mode change (678k), so it proves nothing
   either way.
   Day total ~519k uncontrolled write-tokens across 2 events.
+
+- 2026-07-30 16:57:14 UTC (session 0d6f38ba, fable-5, **221k cc**,
+  `mtok` 201,434, cause `messages_changed`, gap 9s, `flight=false`,
+  `ubytes=4248`, `concur=1`): first measured OSCILLATION of the
+  block-migration class — the Agent hook-reminder pair flipped
+  inline->standalone->inline->standalone across four consecutive
+  main-thread requests in 11 s (census: n=102->104, 104->105,
+  105->108, each edit@86, anchor -10..-14, ~31-37 kB per flip).
+  Trigger window: a ~4.2 kB teammate report landing at a clean turn
+  boundary amid mid-turn operator messages. Attribution CC's
+  (pre-pipeline capture; pipeline 0 violations, three clean
+  edit-shaped resets). The standalone legs are TWO SEPARATE
+  system-role string messages — NOT absorbed by the join-hash fix
+  (cache-fix 78940a0, serving since 08:41Z), whose match is the two
+  blocks JOINED into one; census running that code still lists the
+  flap pairs unabsorbed. Occurrence-side successor (per-block
+  standalone match) booked in the fork backlog; magnitude (85% of
+  ctx missed from edit@86) consistent with the open
+  breakpoint-sparsity question, still unproven against wire bytes.
+  Full record: cache-fix threat-matrix Row 4 datapoint 2026-07-30
+  (commit 8cd4e1c).
