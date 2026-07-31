@@ -79,17 +79,20 @@ expected and you can stop here:
   UNIT changed too before blaming the process.
 - **`/rc` (rewind/compact) mid-session** — a known, avoidable cache-buster;
   if it shows up here, note it, but there's nothing further to trace.
-- **A ❄ token showing `previous_message_not_found`** — presumptively an
-  instrument artifact until the BACKLOG late-bind fix lands: the
-  resume-split routes this cause out of the ❄ display, but a raced read
-  books the hit as "other" first and the late-bind upgrade then pastes
-  the real cause in WITHOUT the split (measured 2026-07-31,
-  s-f94e53ce: a post-`/compact` first write — 51k, unavoidable, cache
-  healthy — displayed as a 51k bust; the same event also defeated the
-  idle classifier and the compact-skip via a zero-usage tokens entry
-  logged at compact completion, see BACKLOG.md). Before investigating:
-  check the transcript for a `compact_boundary` or resume near the hit
-  timestamp; if present, it was never a live bust.
+- **A ❄ token showing `previous_message_not_found`** — should no longer
+  occur (fixed 2026-07-31, same day it was measured on s-f94e53ce: a
+  post-`/compact` first write — 51k, unavoidable, cache healthy —
+  displayed as a 51k bust). Two defects conspired: a zero-usage tokens
+  entry logged at compact completion reset the idle clock and zeroed
+  prev-ctx (defeating the idle classifier and the compact-skip), and
+  the late-bind cause upgrade pasted the resume-class cause into the ❄
+  display without the resume-split, leaving a false `k:"hit"` booked.
+  Now: zero-usage renders are never persisted, a late-found
+  `previous_message_not_found` retracts the booked hit (`k:"hit-retract"`
+  marker; `--cold` and the guard tally drop retracted hits). If this
+  cause ever shows in ❄ again, that is a regression — check the
+  transcript for a `compact_boundary` or resume near the hit timestamp,
+  then the detector tests (`tests/replay-cold-detect.sh`).
 
 Everything else — an API `cause` like `messages_changed`,
 `tools_changed`, `previous_message_not_found`, `unavailable`, or the

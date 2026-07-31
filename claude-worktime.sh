@@ -869,14 +869,29 @@ _cold_guard() {
         _hits=$(grep -c "\"k\":\"hit\".*\"s\":\"${sid}\"\|\"s\":\"${sid}\".*\"k\":\"hit\"" \
             "$LOGFILE" 2>/dev/null) || _hits=0
         case "${_hits:-}" in ''|*[!0-9]*) _hits=0 ;; esac
+        # k:"hit-retract" markers cancel their matching hits (late-bind
+        # resume-split); the tally must not report a retracted hit as cost.
+        local _rt
+        _rt=$(grep -c "\"k\":\"hit-retract\".*\"s\":\"${sid}\"\|\"s\":\"${sid}\".*\"k\":\"hit-retract\"" \
+            "$LOGFILE" 2>/dev/null) || _rt=0
+        case "${_rt:-}" in ''|*[!0-9]*) _rt=0 ;; esac
+        _hits=$(( _hits - _rt )); [ "$_hits" -lt 0 ] && _hits=0
         if [ "$_hits" -gt 0 ]; then
             # Sum cc (tokens re-written at the write premium) across this
-            # session's hits — the felt cost, not an event count.
+            # session's hits — the felt cost, not an event count — minus the
+            # cc carried on each retract marker.
             _hitcc=$(grep "\"s\":\"${sid}\"" "$LOGFILE" 2>/dev/null \
                 | grep "\"k\":\"hit\"" \
                 | sed -n 's/.*"cc":\([0-9]*\).*/\1/p' \
                 | awk '{s+=$1} END {print s+0}') || _hitcc=0
             case "${_hitcc:-}" in ''|*[!0-9]*) _hitcc=0 ;; esac
+            local _rtcc
+            _rtcc=$(grep "\"s\":\"${sid}\"" "$LOGFILE" 2>/dev/null \
+                | grep "\"k\":\"hit-retract\"" \
+                | sed -n 's/.*"cc":\([0-9]*\).*/\1/p' \
+                | awk '{s+=$1} END {print s+0}') || _rtcc=0
+            case "${_rtcc:-}" in ''|*[!0-9]*) _rtcc=0 ;; esac
+            _hitcc=$(( _hitcc - _rtcc )); [ "$_hitcc" -lt 0 ] && _hitcc=0
             _tally=" Session so far: ${_hits} rewrite(s), ~$(( _hitcc / 1000 ))k."
         fi
     fi
@@ -1586,7 +1601,16 @@ mode_statusline() {
             local token_prev="${LOGDIR}/.token_prev"
             local tp_cr=0 tp_cc=0
             [ -f "$token_prev" ] && read -r tp_cr tp_cc < "$token_prev" 2>/dev/null
-            if [ -n "${sid:-}" ] && [ "${sid:-}" != "" ] && ([ "${t_cr:-0}" != "$tp_cr" ] || [ "${t_cc:-0}" != "$tp_cc" ]); then
+            # cr+cc+ui == 0 is "no usage data yet", never a measurement — no
+            # API response bills zero tokens everywhere. Compact/clear
+            # completion renders report exactly that, and persisting one as a
+            # real turn resets the idle clock and zeroes prev-ctx, defeating
+            # both the idle classifier and the /compact skip (measured
+            # 2026-07-31, s-f94e53ce: a post-compact 51k first write booked as
+            # a false hit against prev=0 with a 10h idle gap read as 32min).
+            if [ -n "${sid:-}" ] && [ "${sid:-}" != "" ] \
+                && [ $(( ${t_cr:-0} + ${t_cc:-0} + ${t_ui:-0} )) -gt 0 ] \
+                && ([ "${t_cr:-0}" != "$tp_cr" ] || [ "${t_cc:-0}" != "$tp_cc" ]); then
                 echo "${t_cr:-0} ${t_cc:-0}" > "$token_prev" 2>/dev/null
                 # Cold-rewrite detection for the ❄ token: this request wrote
                 # (cc) most of the previous context while reading (cr) almost
@@ -1786,7 +1810,33 @@ mode_statusline() {
                     if [ -n "$_cw_late" ]; then
                         local _cw_late_cause
                         _cw_late_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_late" 2>/dev/null)
-                        [ -n "$_cw_late_cause" ] && cs_lastcause="$_cw_late_cause"
+                        if [ "$_cw_late_cause" = "previous_message_not_found" ]; then
+                            # The resume-split, applied late. The booking-time
+                            # split (change 2) only sees causes available at
+                            # write time; a raced read books the hit as "other"
+                            # first, and adopting this cause here would render
+                            # it in the ❄ token — the exact display the split
+                            # forbids (measured 2026-07-31, s-f94e53ce: a
+                            # post-/compact first write shown as a 51k bust).
+                            # Retract instead: un-inflate the count, zero the ❄
+                            # state (the token hides), and append k:"resume"
+                            # for the audit trail plus a k:"hit-retract" marker
+                            # keyed (s, hit_t) so the append-only ledger
+                            # self-corrects and every k:"hit" reader can drop
+                            # the matching record.
+                            local _cw_rt_t=$cs_lasthit_t _cw_rt_cc=$cs_lastcc
+                            [ "$cs_count" -gt 0 ] && cs_count=$(( cs_count - 1 ))
+                            cs_lastcc=0; cs_lasthit_t=0; cs_lastcause="-"
+                            (
+                                flock -w 2 9 2>/dev/null || true
+                                printf '{"type":"cold","t":%d,"s":"%s","k":"resume","gap":0,"ctx":%d,"cc":%d,"cause":"previous_message_not_found","mdl":"%s"}\n' \
+                                    "$now" "$sid" "${ctx_tok:-0}" "$_cw_rt_cc" "$cur_model" >> "$LOGFILE"
+                                printf '{"type":"cold","t":%d,"s":"%s","k":"hit-retract","hit_t":%d,"cc":%d}\n' \
+                                    "$now" "$sid" "$_cw_rt_t" "$_cw_rt_cc" >> "$LOGFILE"
+                            ) 9>"${LOGFILE}.lock"
+                        elif [ -n "$_cw_late_cause" ]; then
+                            cs_lastcause="$_cw_late_cause"
+                        fi
                     fi
                 fi
                 echo "${cs_count} ${ctx_tok} ${now} ${cs_lastcc} ${cs_lasthit_t} ${cs_lastcause} ${cur_model}" > "$cold_state" 2>/dev/null
@@ -2588,9 +2638,16 @@ mode_cold() {
     if [ -n "$session_filter" ]; then scope_sid="$session_filter"
     elif [ "$since" -eq 0 ]; then scope_sid="$(_current_session_id)"; fi
 
+    # Retract-aware: a k:"hit-retract" record (keyed s + hit_t, appended when
+    # the late-bind read finds previous_message_not_found after the hit was
+    # already booked from a raced "other") cancels its matching k:"hit" —
+    # the append-only ledger self-corrects, so readers must honor it.
     local rows
-    rows=$(_log_json | jq -rc --argjson since "$since" --arg sid "$scope_sid" '
-        select((.type // "") == "cold" and .k == "hit")
+    rows=$(_log_json | jq -src --argjson since "$since" --arg sid "$scope_sid" '
+        ([.[] | select((.type // "") == "cold" and .k == "hit-retract") | "\(.s)#\(.hit_t)"]) as $rt
+        | .[]
+        | select((.type // "") == "cold" and .k == "hit")
+        | select("\(.s)#\(.t)" as $key | ($rt | index($key)) | not)
         | select($since == 0 or .t >= $since)
         | select($sid == "" or .s == $sid)
         | [.t, (.cc // .ctx // 0), (.cause // "-"), (.gap // 0), (.mdl // "-"), (.s[0:8])]
@@ -2613,7 +2670,9 @@ mode_cold() {
         # Same tolerant read as the table branch — a --raw consumer must not
         # get [] because of one malformed line elsewhere in the file.
         _log_json | jq -sc --argjson since "$since" --arg sid "$scope_sid" '
-            map(select((.type // "") == "cold" and .k == "hit")
+            ([.[] | select((.type // "") == "cold" and .k == "hit-retract") | "\(.s)#\(.hit_t)"]) as $rt
+            | map(select((.type // "") == "cold" and .k == "hit")
+                | select("\(.s)#\(.t)" as $key | ($rt | index($key)) | not)
                 | select($since == 0 or .t >= $since)
                 | select($sid == "" or .s == $sid))
             | sort_by(.t)' 2>/dev/null

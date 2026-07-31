@@ -195,6 +195,97 @@ resume_check() {
 resume_check
 
 echo
+echo "❄ zero-usage render (compact completion) must not poison state or log:"
+# Measured 2026-07-31 (s-f94e53ce): a 355k session sat idle ~10h, the operator
+# resumed and ran /compact first; the compact-completion statusline render
+# reported cr=cc=ui=0, and its logged tokens entry (a) reset the idle clock —
+# the post-compact first write measured a 32min gap, not 10h — and (b) zeroed
+# the state's prev-ctx, so the compact-skip predicate (cc >= 0.6*prev) fired
+# against prev=0 and booked the unavoidable 51k first write as a false hit.
+# A zero-total render carries no API usage (no response bills zero tokens
+# everywhere) and must be treated as "no data": nothing logged, state kept.
+zero_render_check() {
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
+    : > "$d/config.sh"
+    printf '%s\n' "0 355000 $((now-36000)) 0 0 - claude-fable-5" > "$d/.cold_$SID"
+    # token_prev differs from (0,0) so only the zero-total rule can skip it
+    printf '350000 5000\n' > "$d/.token_prev"
+    turn "$d" 0 0 0 >/dev/null                      # the compact-completion render
+    local ztok; ztok=$(grep -c '"type":"tokens"' "$d/activity.jsonl" 2>/dev/null) || ztok=0
+    local st_ctx st_t
+    read -r _ st_ctx st_t _ < "$d/.cold_$SID" 2>/dev/null
+    local hits; hits=$(turn "$d" 0 51000 100)       # post-compact first write
+    if [ "$ztok" -eq 0 ] && [ "$st_ctx" = "355000" ] && [ "$hits" -eq 0 ]; then
+        printf '  \033[32m✓\033[0m %s\n' "zero render logs nothing, keeps state; 51k compact write books no hit"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m zero render poisons (tokens=%s prev_ctx=%s hits=%s; want 0/355000/0)\n' "$ztok" "$st_ctx" "$hits"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+zero_render_check
+
+echo
+echo "❄ late-bind upgrade honors the resume-split (retract, never adopt):"
+# Same event, second defect: at detection the busting turn's transcript entry
+# was not yet flushed -> cause "other" -> the resume-split could not fire and
+# a hit was booked; the late-bind window then read the flushed entry and wrote
+# previous_message_not_found straight into the display state — a cause the
+# split's contract says the ❄ token never renders. The fix retracts: count
+# un-inflates, ❄ state zeroes, and k:"resume" + k:"hit-retract" records land.
+late_bind_check() {
+    local label=$1 diag=$2 want_count=$3 want_cause=$4 want_retract=$5
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
+    printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":49,"ctx":130000,"cc":130000,"cause":"other","mdl":"claude-fable-5","mtok":0,"pblk":[],"flight":null,"ubytes":0,"concur":0}\n' \
+        "$((now-30))" "$SID" >> "$d/activity.jsonl"
+    : > "$d/config.sh"
+    printf '%s\n' "1 130000 $((now-30)) 130000 $((now-30)) other claude-fable-5" > "$d/.cold_$SID"
+    local tp="$d/transcript.jsonl"
+    printf '{"type":"assistant","message":{"usage":{"cache_creation_input_tokens":130000},"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"%s"}}}}\n' "$diag" > "$tp"
+    printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":130000,"cache_creation_input_tokens":500,"input_tokens":100,"output_tokens":10}}}\n' \
+        "$SID" "$tp" \
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+    local got_count got_cause got_retract
+    read -r got_count _ _ _ _ got_cause _ < "$d/.cold_$SID" 2>/dev/null
+    got_retract=$(grep -c '"k":"hit-retract"' "$d/activity.jsonl" 2>/dev/null) || got_retract=0
+    if [ "$got_count" = "$want_count" ] && [ "$got_cause" = "$want_cause" ] && [ "$got_retract" -eq "$want_retract" ]; then
+        printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m %s (count=%s cause=%s retract=%s; want %s/%s/%s)\n' \
+            "$label" "$got_count" "$got_cause" "$got_retract" "$want_count" "$want_cause" "$want_retract"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+late_bind_check "previous_message_not_found late -> hit retracted" previous_message_not_found 0 - 1
+late_bind_check "real cause late (messages_changed) still adopted" messages_changed 1 messages_changed 0
+
+echo
+echo "❄ --cold readers drop retracted hits:"
+cold_reader_check() {
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    {
+        printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":10,"ctx":51000,"cc":51000,"cause":"other","mdl":"m"}\n' "$((now-600))" "$SID"
+        printf '{"type":"cold","t":%d,"s":"%s","k":"hit-retract","hit_t":%d,"cc":51000}\n' "$((now-500))" "$SID" "$((now-600))"
+        printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":10,"ctx":90000,"cc":90000,"cause":"idle","mdl":"m"}\n' "$((now-300))" "$SID"
+    } > "$d/activity.jsonl"
+    : > "$d/config.sh"
+    local n first_cc
+    n=$(CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --cold --raw --session "$SID" 2>/dev/null | jq 'length' 2>/dev/null)
+    first_cc=$(CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --cold --raw --session "$SID" 2>/dev/null | jq '.[0].cc' 2>/dev/null)
+    if [ "$n" = "1" ] && [ "$first_cc" = "90000" ]; then
+        printf '  \033[32m✓\033[0m %s\n' "--cold shows 1 of 2 hits (retracted one dropped)"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m --cold retract filter (rows=%s first_cc=%s; want 1/90000)\n' "$n" "$first_cc"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+cold_reader_check
+
+echo
 if [ "$fail" -eq 0 ]; then
     printf '  \033[32mall %d cases pass\033[0m\n' "$pass"; exit 0
 else
