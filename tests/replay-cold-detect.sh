@@ -167,32 +167,115 @@ checkcause_tp "no diagnostics field -> falls back to other" other \
     '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn"}}'
 
 echo
-echo "❄ previous_message_not_found routes to k:\"resume\", not the hit ledger:"
-# A resume/fork artifact must NOT count as a live bust: no k:"hit" line, and
-# the ❄ statusline state (cs_lastcc/cs_lasthit_t) must not advance either —
-# checked here via the resume-tagged log line and the absence of a hit line.
+echo "❄ previous_message_not_found is a COST class: labeled, displayed, never a hit:"
+# A resume/fork/compact artifact is a REAL cache miss the user should see
+# (feedback: this action cost this much) — but never a bust: no k:"hit",
+# no bust-count advance. It books k:"cost" with an honest cause label and
+# advances the ❄ display fields so the token shows e.g. "❄ 130k resume".
+# The label is "compact" when a compact_boundary transcript entry explains
+# it, else "resume".
 resume_check() {
+    local label=$1 tbody=$2 want_cause=$3
     local d; d=$(mktemp -d)
     local now; now=$(date +%s)
     printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
     : > "$d/config.sh"
     printf '%s\n' "3 130000 $((NOW-49)) 128000 0 - claude-fable-5" > "$d/.cold_$SID"
     local tp="$d/transcript.jsonl"
-    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' > "$tp"
+    printf '%s\n' "$tbody" > "$tp"
     printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":0,"cache_creation_input_tokens":130000,"input_tokens":100,"output_tokens":10}}}\n' \
         "$SID" "$tp" \
         | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
-    local hit_count resume_count
-    hit_count=$(grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null)
-    resume_count=$(grep -c '"k":"resume"' "$d/activity.jsonl" 2>/dev/null)
-    if [ "$hit_count" -eq 0 ] && [ "$resume_count" -eq 1 ]; then
-        printf '  \033[32m✓\033[0m %s\n' "previous_message_not_found tags k:resume, not k:hit"; pass=$(( pass + 1 ))
+    local hit_count cost_cause st_count st_lastcc st_cause
+    hit_count=$(grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null) || hit_count=0
+    cost_cause=$(grep '"k":"cost"' "$d/activity.jsonl" 2>/dev/null | jq -r '.cause' | tail -1)
+    read -r st_count _ _ st_lastcc _ st_cause _ < "$d/.cold_$SID" 2>/dev/null
+    if [ "$hit_count" -eq 0 ] && [ "$cost_cause" = "$want_cause" ] \
+        && [ "$st_count" = "3" ] && [ "$st_lastcc" = "130000" ] && [ "$st_cause" = "$want_cause" ]; then
+        printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
     else
-        printf '  \033[31m✗\033[0m previous_message_not_found tags k:resume, not k:hit (hit=%s resume=%s)\n' "$hit_count" "$resume_count"; fail=$(( fail + 1 ))
+        printf '  \033[31m✗\033[0m %s (hit=%s cost_cause=%s state=%s/%s/%s; want 0/%s/3/130000/%s)\n' \
+            "$label" "$hit_count" "${cost_cause:-none}" "$st_count" "$st_lastcc" "$st_cause" "$want_cause" "$want_cause"; fail=$(( fail + 1 ))
     fi
     rm -rf "$d"
 }
-resume_check
+resume_check "no boundary -> k:cost cause=resume, display advances, count does not" \
+    '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' \
+    resume
+resume_check "compact_boundary present -> k:cost cause=compact" \
+    "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"timestamp\":\"$(date -u -d @$((NOW-20)) +%Y-%m-%dT%H:%M:%S.100Z)\"}
+{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\"}],\"stop_reason\":\"end_turn\",\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"previous_message_not_found\"}}}}" \
+    compact
+
+echo
+echo "❄ post-compact first write (hit predicate not met) displays as compact cost:"
+# The state-preserved case: prev ctx 355k, compact to ~51k; the 51k first
+# write is far under 0.6*prev so no hit fires — but it is a real 51k miss
+# the user acted to cause. With a compact_boundary newer than the last real
+# turn, it books k:"cost" cause=compact and shows in ❄; without the
+# boundary evidence, it stays silent (nothing speculative).
+compact_display_check() {
+    local label=$1 with_boundary=$2 want_cost=$3 want_cause=$4
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
+    : > "$d/config.sh"
+    printf '%s\n' "0 355000 $((now-36000)) 0 0 - claude-fable-5" > "$d/.cold_$SID"
+    printf '350000 5000\n' > "$d/.token_prev"
+    local tp="$d/transcript.jsonl"
+    if [ "$with_boundary" = "yes" ]; then
+        printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s"}\n' \
+            "$(date -u -d @$((now-120)) +%Y-%m-%dT%H:%M:%S.500Z)" > "$tp"
+    else
+        : > "$tp"
+    fi
+    printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":10,"current_usage":{"cache_read_input_tokens":0,"cache_creation_input_tokens":51000,"input_tokens":100,"output_tokens":10}}}\n' \
+        "$SID" "$tp" \
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
+    local hit_count cost_count cost_cause st_cause
+    hit_count=$(grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null) || hit_count=0
+    cost_count=$(grep -c '"k":"cost"' "$d/activity.jsonl" 2>/dev/null) || cost_count=0
+    cost_cause=$(grep '"k":"cost"' "$d/activity.jsonl" 2>/dev/null | jq -r '.cause' | tail -1)
+    read -r _ _ _ _ _ st_cause _ < "$d/.cold_$SID" 2>/dev/null
+    local ok=1
+    [ "$hit_count" -eq 0 ] || ok=0
+    [ "$cost_count" -eq "$want_cost" ] || ok=0
+    if [ "$want_cost" -gt 0 ]; then
+        { [ "$cost_cause" = "$want_cause" ] && [ "$st_cause" = "$want_cause" ]; } || ok=0
+    fi
+    if [ "$ok" -eq 1 ]; then
+        printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m %s (hit=%s cost=%s cause=%s state_cause=%s)\n' \
+            "$label" "$hit_count" "$cost_count" "${cost_cause:-none}" "${st_cause:-none}"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+compact_display_check "boundary evidence -> k:cost cause=compact" yes 1 compact
+compact_display_check "no boundary -> silent (no speculation)" no 0 -
+
+echo
+echo "❄ render: cost classes show without the #N bust index:"
+render_check() {
+    local label=$1 cause=$2 want=$3 notwant=$4
+    local d; d=$(mktemp -d)
+    local now; now=$(date +%s)
+    printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
+    : > "$d/config.sh"
+    printf '%s\n' "3 120000 $now 51000 $now $cause claude-fable-5" > "$d/.cold_$SID"
+    printf '100000 200\n' > "$d/.token_prev"      # matches the turn -> logger skips
+    local out
+    out=$(printf '{"session_id":"%s","workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":100000,"cache_creation_input_tokens":200,"input_tokens":1,"output_tokens":10}}}\n' "$SID" \
+        | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline 2>/dev/null)
+    if printf '%s' "$out" | grep -qF "$want" && ! printf '%s' "$out" | grep -qF "$notwant"; then
+        printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
+    else
+        printf '  \033[31m✗\033[0m %s (output: %s)\n' "$label" "$(printf '%s' "$out" | grep -o '❄[^·]*' | head -1)"; fail=$(( fail + 1 ))
+    fi
+    rm -rf "$d"
+}
+render_check "cause=compact renders '❄ 51k compact', no #3" compact "51k compact" "#3"
+render_check "cause=idle keeps the '#3' bust index" idle "#3 51k idle" "NEVERMATCHES"
 
 echo
 echo "❄ zero-usage render (compact completion) must not poison state or log:"
@@ -248,20 +331,24 @@ late_bind_check() {
     printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":130000,"cache_creation_input_tokens":500,"input_tokens":100,"output_tokens":10}}}\n' \
         "$SID" "$tp" \
         | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
-    local got_count got_cause got_retract
-    read -r got_count _ _ _ _ got_cause _ < "$d/.cold_$SID" 2>/dev/null
+    local got_count got_lastcc got_cause got_retract
+    read -r got_count _ _ got_lastcc _ got_cause _ < "$d/.cold_$SID" 2>/dev/null
     got_retract=$(grep -c '"k":"hit-retract"' "$d/activity.jsonl" 2>/dev/null) || got_retract=0
-    if [ "$got_count" = "$want_count" ] && [ "$got_cause" = "$want_cause" ] && [ "$got_retract" -eq "$want_retract" ]; then
+    if [ "$got_count" = "$want_count" ] && [ "$got_cause" = "$want_cause" ] && [ "$got_retract" -eq "$want_retract" ] \
+        && [ "$got_lastcc" = "130000" ]; then
         printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
     else
-        printf '  \033[31m✗\033[0m %s (count=%s cause=%s retract=%s; want %s/%s/%s)\n' \
-            "$label" "$got_count" "$got_cause" "$got_retract" "$want_count" "$want_cause" "$want_retract"; fail=$(( fail + 1 ))
+        printf '  \033[31m✗\033[0m %s (count=%s lastcc=%s cause=%s retract=%s; want %s/130000/%s/%s)\n' \
+            "$label" "$got_count" "$got_lastcc" "$got_cause" "$got_retract" "$want_count" "$want_cause" "$want_retract"; fail=$(( fail + 1 ))
     fi
     rm -rf "$d"
 }
-late_bind_check "previous_message_not_found late -> hit retracted" \
+# Retraction un-books the hit but KEEPS the display (lastcc/lasthit_t): the
+# event was a real miss the user should still see, relabeled as its cost
+# class (resume — no compact_boundary in these transcripts).
+late_bind_check "previous_message_not_found late -> retracted, relabeled resume" \
     '{"type":"assistant","message":{"usage":{"cache_creation_input_tokens":130000},"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' \
-    0 - 1
+    0 resume 1
 late_bind_check "real cause late (messages_changed) still adopted" \
     '{"type":"assistant","message":{"usage":{"cache_creation_input_tokens":130000},"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"messages_changed"}}}}' \
     1 messages_changed 0
@@ -283,15 +370,17 @@ cold_reader_check() {
         printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":10,"ctx":51000,"cc":51000,"cause":"other","mdl":"m"}\n' "$((now-600))" "$SID"
         printf '{"type":"cold","t":%d,"s":"%s","k":"hit-retract","hit_t":%d,"cc":51000}\n' "$((now-500))" "$SID" "$((now-600))"
         printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":10,"ctx":90000,"cc":90000,"cause":"idle","mdl":"m"}\n' "$((now-300))" "$SID"
+        printf '{"type":"cold","t":%d,"s":"%s","k":"cost","gap":0,"ctx":45000,"cc":45000,"cause":"compact","mdl":"m"}\n' "$((now-100))" "$SID"
     } > "$d/activity.jsonl"
     : > "$d/config.sh"
-    local n first_cc
+    local n first_cc n_all
     n=$(CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --cold --raw --session "$SID" 2>/dev/null | jq 'length' 2>/dev/null)
     first_cc=$(CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --cold --raw --session "$SID" 2>/dev/null | jq '.[0].cc' 2>/dev/null)
-    if [ "$n" = "1" ] && [ "$first_cc" = "90000" ]; then
-        printf '  \033[32m✓\033[0m %s\n' "--cold shows 1 of 2 hits (retracted one dropped)"; pass=$(( pass + 1 ))
+    n_all=$(CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --cold --raw --all --session "$SID" 2>/dev/null | jq 'length' 2>/dev/null)
+    if [ "$n" = "1" ] && [ "$first_cc" = "90000" ] && [ "$n_all" = "2" ]; then
+        printf '  \033[32m✓\033[0m %s\n' "--cold: busts only by default (retracted dropped); --all adds cost rows"; pass=$(( pass + 1 ))
     else
-        printf '  \033[31m✗\033[0m --cold retract filter (rows=%s first_cc=%s; want 1/90000)\n' "$n" "$first_cc"; fail=$(( fail + 1 ))
+        printf '  \033[31m✗\033[0m --cold retract/all filter (rows=%s first_cc=%s all=%s; want 1/90000/2)\n' "$n" "$first_cc" "$n_all"; fail=$(( fail + 1 ))
     fi
     rm -rf "$d"
 }

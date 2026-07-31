@@ -34,7 +34,8 @@
 #   claude-worktime --breakdown [--today]   # phase breakdown (Claude/You)
 #   claude-worktime --gaps [--today]        # gap distribution (tune threshold)
 #   claude-worktime --cost [--today]        # cost analysis
-#   claude-worktime --cold [--today]        # cold-cache rewrites (❄ history)
+#   claude-worktime --cold [--today] [--all]  # cold-cache rewrites (❄ history;
+#                                             # --all adds compact/resume cost)
 #   claude-worktime --summary [--today]     # per-project breakdown
 #   claude-worktime --csv [--today]         # export as CSV
 #   claude-worktime --statusline            # compact for status bar (reads stdin)
@@ -1330,7 +1331,13 @@ mode_statusline() {
                 # age can sit at "(4m)" for hours (observed 2026-07-27), but a
                 # monotonic count can only under-report, never mislead.
                 local _cold_txt="❄ "
-                [ "$cold_count" -gt 1 ] && _cold_txt="❄ #${cold_count} "
+                # #N counts BUSTS; when the displayed event is a controlled
+                # cost class (compact/resume) the index would misread as that
+                # class's count, so it shows only on bust-class causes.
+                case "$cold_lastcause" in
+                    compact|resume) ;;
+                    *) [ "$cold_count" -gt 1 ] && _cold_txt="❄ #${cold_count} " ;;
+                esac
                 _cold_txt="${_cold_txt}${_cold_k}k"
                 # Cause (skip the legacy "-" placeholder)
                 [ -n "$cold_lastcause" ] && [ "$cold_lastcause" != "-" ] && _cold_txt="${_cold_txt} ${cold_lastcause}"
@@ -1629,7 +1636,7 @@ mode_statusline() {
                 # switch from an idle expiry. Old 4-field files: the three new
                 # fields read empty and default cleanly.
                 local cold_state="${LOGDIR}/.cold_${sid}"
-                local cs_count=0 cs_prev=0 cs_prev_t=0 cs_lastcc=0 cs_lasthit_t=0 cs_lastcause="-" cs_prevmodel="-" cold_hit="" cold_resume="" cold_gap=0
+                local cs_count=0 cs_prev=0 cs_prev_t=0 cs_lastcc=0 cs_lasthit_t=0 cs_lastcause="-" cs_prevmodel="-" cold_hit="" cold_cost="" cold_gap=0
                 local _cw_cause="" _cw_miss_tok=0 _cw_prev_blocks="[]" _cw_prev_stop="" _cw_user_bytes=0 _cw_concur=0
                 [ -f "$cold_state" ] && read -r cs_count cs_prev cs_prev_t cs_lastcc cs_lasthit_t cs_lastcause cs_prevmodel < "$cold_state" 2>/dev/null
                 # Validate the numeric fields only; strings default below.
@@ -1751,19 +1758,46 @@ mode_statusline() {
                             fi
                         fi
                     fi
-                    # previous_message_not_found is a session-resume/fork
-                    # artifact, not a live cache bust — split it out of the hit
-                    # ledger (change 2), tagged k:"resume" below, so `--cold`'s
-                    # hit history and the ❄ statusline token (which reads
-                    # cs_lastcc/cs_lasthit_t) stay a record of live busts only.
+                    # previous_message_not_found is a resume/fork/compact
+                    # artifact — a REAL miss the user should see (feedback:
+                    # what did my action cost?), but never a bust. It books
+                    # k:"cost" below with an honest label (compact when a
+                    # compact_boundary newer than the last real turn explains
+                    # it, else resume) and advances the ❄ display, while the
+                    # bust count and `--cold`'s default hit history stay a
+                    # record of prevention targets only.
                     if [ "$cs_lastcause" = "previous_message_not_found" ]; then
-                        cold_resume=1
+                        cold_cost=1
+                        cs_lastcause="resume"
+                        if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ] \
+                            && [ "$(_cw_compact_boundary_epoch "$tp_path")" -gt "$cs_prev_t" ]; then
+                            cs_lastcause="compact"
+                        fi
+                        cs_lastcc=${t_cc:-0}
+                        cs_lasthit_t=$now
                     else
                         cs_count=$(( cs_count + 1 ))
                         cold_hit=1
                         cs_lastcc=${t_cc:-0}
                         cs_lasthit_t=$now
                     fi
+                elif [ "$cs_prev_t" -gt 0 ] && [ "${ctx_tok:-0}" -gt 0 ] \
+                    && [ "${t_cc:-0}" -ge $(( ctx_tok * 6 / 10 )) ] \
+                    && [ "${t_cr:-0}" -le $(( ctx_tok / 5 )) ] \
+                    && [ -n "${tp_path:-}" ] && [ -r "$tp_path" ] \
+                    && [ "$(_cw_compact_boundary_epoch "$tp_path")" -gt "$cs_prev_t" ]; then
+                    # Post-compact first write with the hit predicate NOT met
+                    # (prev ctx much larger than the compacted context): a
+                    # full fresh write of the CURRENT context, evidenced by a
+                    # compact_boundary newer than the last real turn. A real
+                    # miss the user deliberately caused — displayed as compact
+                    # cost, never booked as a hit. Without the boundary
+                    # evidence this shape stays silent (no speculation).
+                    cold_cost=1
+                    cold_gap=$(( now - cs_prev_t ))
+                    cs_lastcause="compact"
+                    cs_lastcc=${t_cc:-0}
+                    cs_lasthit_t=$now
                 fi
                 # Late-binding upgrade for a raced read.
                 #
@@ -1831,19 +1865,28 @@ mode_statusline() {
                             # it in the ❄ token — the exact display the split
                             # forbids (measured 2026-07-31, s-f94e53ce: a
                             # post-/compact first write shown as a 51k bust).
-                            # Retract instead: un-inflate the count, zero the ❄
-                            # state (the token hides), and append k:"resume"
-                            # for the audit trail plus a k:"hit-retract" marker
-                            # keyed (s, hit_t) so the append-only ledger
-                            # self-corrects and every k:"hit" reader can drop
-                            # the matching record.
+                            # Retract instead: un-inflate the count, and
+                            # append a k:"cost" record for the audit trail
+                            # plus a k:"hit-retract" marker keyed (s, hit_t)
+                            # so the append-only ledger self-corrects and
+                            # every k:"hit" reader can drop the matching
+                            # record. The DISPLAY stays (lastcc/lasthit_t
+                            # kept): the event was a real miss the user should
+                            # still see — relabeled as its cost class, compact
+                            # only when a boundary sits within 2h before the
+                            # booked hit (further back cannot be the proximate
+                            # cause), else resume.
                             local _cw_rt_t=$cs_lasthit_t _cw_rt_cc=$cs_lastcc
                             [ "$cs_count" -gt 0 ] && cs_count=$(( cs_count - 1 ))
-                            cs_lastcc=0; cs_lasthit_t=0; cs_lastcause="-"
+                            cs_lastcause="resume"
+                            local _cw_bnd; _cw_bnd=$(_cw_compact_boundary_epoch "$tp_path")
+                            if [ "$_cw_bnd" -gt $(( _cw_rt_t - 7200 )) ] && [ "$_cw_bnd" -le $(( now + 60 )) ]; then
+                                cs_lastcause="compact"
+                            fi
                             (
                                 flock -w 2 9 2>/dev/null || true
-                                printf '{"type":"cold","t":%d,"s":"%s","k":"resume","gap":0,"ctx":%d,"cc":%d,"cause":"previous_message_not_found","mdl":"%s"}\n' \
-                                    "$now" "$sid" "${ctx_tok:-0}" "$_cw_rt_cc" "$cur_model" >> "$LOGFILE"
+                                printf '{"type":"cold","t":%d,"s":"%s","k":"cost","gap":0,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
+                                    "$now" "$sid" "${ctx_tok:-0}" "$_cw_rt_cc" "$cs_lastcause" "$cur_model" >> "$LOGFILE"
                                 printf '{"type":"cold","t":%d,"s":"%s","k":"hit-retract","hit_t":%d,"cc":%d}\n' \
                                     "$now" "$sid" "$_cw_rt_t" "$_cw_rt_cc" >> "$LOGFILE"
                             ) 9>"${LOGFILE}.lock"
@@ -1899,11 +1942,10 @@ mode_statusline() {
                         # what the parent notifies from.
                         printf '%s\n' "$_cw_rec" >> "$LOGFILE" && printf '%s' "$_cw_rec"
                     fi
-                    # previous_message_not_found: a resume/fork artifact, not a
-                    # live bust (change 2) — logged under k:"resume" so it never
-                    # enters the hit ledger `--cold` reads, but is still on
-                    # record for anyone auditing resume behavior.
-                    [ -n "$cold_resume" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"resume","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
+                    # Controlled-cost classes (compact/resume): real misses,
+                    # never busts — logged under k:"cost" so `--cold` keeps a
+                    # bust-only default history; `--cold --all` includes them.
+                    [ -n "$cold_cost" ] && printf '{"type":"cold","t":%d,"s":"%s","k":"cost","gap":%d,"ctx":%d,"cc":%d,"cause":"%s","mdl":"%s"}\n' \
                         "$now" "$sid" "$cold_gap" "$ctx_tok" "${t_cc:-0}" "$cs_lastcause" "$cur_model" >> "$LOGFILE"
                     :
                 ) 9>"${LOGFILE}.lock"
@@ -2633,6 +2675,19 @@ _log_json() {
     jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null
 }
 
+# Epoch of the newest compact_boundary entry in a transcript, 0 if none.
+# CC writes {"type":"system","subtype":"compact_boundary","timestamp":ISO}
+# at each /compact; a boundary newer than the last real turn is the evidence
+# that a following full fresh write is compaction cost, not a bust.
+_cw_compact_boundary_epoch() {
+    local _e
+    _e=$(jq -r 'select(.type == "system" and .subtype == "compact_boundary")
+                | .timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdate' \
+        "$1" 2>/dev/null | tail -n 1)
+    case "${_e:-}" in ''|*[!0-9]*) _e=0 ;; esac
+    printf '%s' "$_e"
+}
+
 # How many lines the reader had to skip. Callers that report a "none" result
 # use this to say "none, and N lines were unreadable" rather than a bare none.
 _log_corrupt_count() {
@@ -2644,7 +2699,9 @@ _log_corrupt_count() {
 }
 
 mode_cold() {
-    local raw=$1 since=$2 session_filter=${3:-}
+    local raw=$1 since=$2 session_filter=${3:-} include_cost=${4:-false}
+    local _all_json=false
+    [ "$include_cost" = "true" ] && _all_json=true
     # Scope: an explicit --session wins; otherwise, with no time filter, the
     # current session; a time filter alone means "all sessions since then".
     local scope_sid=""
@@ -2655,11 +2712,14 @@ mode_cold() {
     # the late-bind read finds previous_message_not_found after the hit was
     # already booked from a raced "other") cancels its matching k:"hit" —
     # the append-only ledger self-corrects, so readers must honor it.
+    # --all additionally lists controlled-cost events (k:"cost", plus legacy
+    # k:"resume" records) — the full cost picture; default stays busts-only.
     local rows
-    rows=$(_log_json | jq -src --argjson since "$since" --arg sid "$scope_sid" '
+    rows=$(_log_json | jq -src --argjson since "$since" --arg sid "$scope_sid" --argjson all "$_all_json" '
         ([.[] | select((.type // "") == "cold" and .k == "hit-retract") | "\(.s)#\(.hit_t)"]) as $rt
         | .[]
-        | select((.type // "") == "cold" and .k == "hit")
+        | select((.type // "") == "cold"
+                 and (.k == "hit" or ($all and (.k == "cost" or .k == "resume"))))
         | select("\(.s)#\(.t)" as $key | ($rt | index($key)) | not)
         | select($since == 0 or .t >= $since)
         | select($sid == "" or .s == $sid)
@@ -2682,9 +2742,10 @@ mode_cold() {
         # Emit a JSON array of the filtered events straight from the log
         # Same tolerant read as the table branch — a --raw consumer must not
         # get [] because of one malformed line elsewhere in the file.
-        _log_json | jq -sc --argjson since "$since" --arg sid "$scope_sid" '
+        _log_json | jq -sc --argjson since "$since" --arg sid "$scope_sid" --argjson all "$_all_json" '
             ([.[] | select((.type // "") == "cold" and .k == "hit-retract") | "\(.s)#\(.hit_t)"]) as $rt
-            | map(select((.type // "") == "cold" and .k == "hit")
+            | map(select((.type // "") == "cold"
+                         and (.k == "hit" or ($all and (.k == "cost" or .k == "resume"))))
                 | select("\(.s)#\(.t)" as $key | ($rt | index($key)) | not)
                 | select($since == 0 or .t >= $since)
                 | select($sid == "" or .s == $sid))
@@ -2828,10 +2889,12 @@ FILTER_PATH=""
 FILTER_BRANCH=""
 FILTER_SESSION=""
 SINCE_TS=0
+COLD_ALL=false
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --raw) RAW=true ;;
+        --all) COLD_ALL=true ;;
         --summary) MODE="summary" ;;
         --breakdown) MODE="breakdown" ;;
         --gaps) MODE="gaps" ;;
@@ -2864,7 +2927,7 @@ case "$MODE" in
     breakdown)  mode_breakdown "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     gaps)       mode_gaps "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     cost)       mode_cost "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
-    cold)       mode_cold "$RAW" "$SINCE_TS" "$FILTER_SESSION" ;;
+    cold)       mode_cold "$RAW" "$SINCE_TS" "$FILTER_SESSION" "$COLD_ALL" ;;
     summary)    mode_summary "$RAW" "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     csv)        mode_csv "$SINCE_TS" "$FILTER_PATH" "$FILTER_BRANCH" "$FILTER_SESSION" ;;
     statusline) mode_statusline ;;

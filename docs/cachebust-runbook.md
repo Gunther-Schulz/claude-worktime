@@ -79,6 +79,14 @@ expected and you can stop here:
   UNIT changed too before blaming the process.
 - **`/rc` (rewind/compact) mid-session** — a known, avoidable cache-buster;
   if it shows up here, note it, but there's nothing further to trace.
+- **`compact` / `resume` ❄ labels** — controlled-cost classes, expected by
+  construction (since 2026-07-31): the ❄ token is a cost meter, not just a
+  bug alarm, so the real miss a `/compact` or a resume/fork causes displays
+  with its honest label instead of hiding. These are logged `k:"cost"`,
+  never `k:"hit"` — they don't advance the `#N` bust index, don't fire the
+  desktop notification, and don't appear in `--cold` unless `--all` is
+  given. Nothing to investigate: the label already names the user action
+  that caused the cost.
 - **A ❄ token showing `previous_message_not_found`** — should no longer
   occur (fixed 2026-07-31, same day it was measured on s-f94e53ce: a
   post-`/compact` first write — 51k, unavoidable, cache healthy —
