@@ -79,9 +79,10 @@ expected and you can stop here:
   UNIT changed too before blaming the process.
 - **`/rc` (rewind/compact) mid-session** — a known, avoidable cache-buster;
   if it shows up here, note it, but there's nothing further to trace.
-- **`compact` / `resume` ❄ labels** — controlled-cost classes, expected by
-  construction (since 2026-07-31): the ❄ token is a cost meter, not just a
-  bug alarm, so the real miss a `/compact` or a resume/fork causes displays
+- **`compact` / `auto-compact` / `resume` ❄ labels** — controlled-cost
+  classes, expected by construction (since 2026-07-31): the ❄ token is a
+  cost meter, not just a bug alarm, so the real miss a `/compact`, an
+  auto-compact at the context ceiling, or a resume/fork causes displays
   with its honest label instead of hiding. These are logged `k:"cost"`,
   never `k:"hit"` — they don't advance the `#N` bust index, don't fire the
   desktop notification, and don't appear in `--cold` unless `--all` is

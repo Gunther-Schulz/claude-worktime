@@ -1335,7 +1335,7 @@ mode_statusline() {
                 # cost class (compact/resume) the index would misread as that
                 # class's count, so it shows only on bust-class causes.
                 case "$cold_lastcause" in
-                    compact|resume) ;;
+                    compact|auto-compact|resume) ;;
                     *) [ "$cold_count" -gt 1 ] && _cold_txt="❄ #${cold_count} " ;;
                 esac
                 _cold_txt="${_cold_txt}${_cold_k}k"
@@ -1769,9 +1769,14 @@ mode_statusline() {
                     if [ "$cs_lastcause" = "previous_message_not_found" ]; then
                         cold_cost=1
                         cs_lastcause="resume"
-                        if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ] \
-                            && [ "$(_cw_compact_boundary_epoch "$tp_path")" -gt "$cs_prev_t" ]; then
-                            cs_lastcause="compact"
+                        if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
+                            local _cw_bi _cw_bep _cw_btr
+                            _cw_bi=$(_cw_compact_boundary_info "$tp_path")
+                            _cw_bep=${_cw_bi%% *}; _cw_btr=${_cw_bi##* }
+                            if [ "$_cw_bep" -gt "$cs_prev_t" ]; then
+                                cs_lastcause="compact"
+                                [ "$_cw_btr" = "auto" ] && cs_lastcause="auto-compact"
+                            fi
                         fi
                         cs_lastcc=${t_cc:-0}
                         cs_lasthit_t=$now
@@ -1784,20 +1789,26 @@ mode_statusline() {
                 elif [ "$cs_prev_t" -gt 0 ] && [ "${ctx_tok:-0}" -gt 0 ] \
                     && [ "${t_cc:-0}" -ge $(( ctx_tok * 6 / 10 )) ] \
                     && [ "${t_cr:-0}" -le $(( ctx_tok / 5 )) ] \
-                    && [ -n "${tp_path:-}" ] && [ -r "$tp_path" ] \
-                    && [ "$(_cw_compact_boundary_epoch "$tp_path")" -gt "$cs_prev_t" ]; then
+                    && [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
                     # Post-compact first write with the hit predicate NOT met
                     # (prev ctx much larger than the compacted context): a
                     # full fresh write of the CURRENT context, evidenced by a
                     # compact_boundary newer than the last real turn. A real
-                    # miss the user deliberately caused — displayed as compact
-                    # cost, never booked as a hit. Without the boundary
-                    # evidence this shape stays silent (no speculation).
-                    cold_cost=1
-                    cold_gap=$(( now - cs_prev_t ))
-                    cs_lastcause="compact"
-                    cs_lastcc=${t_cc:-0}
-                    cs_lasthit_t=$now
+                    # miss the user (or the auto-compact ceiling) caused —
+                    # displayed as compact/auto-compact cost, never booked as
+                    # a hit. Without the boundary evidence this shape stays
+                    # silent (no speculation).
+                    local _cw_bi2 _cw_bep2 _cw_btr2
+                    _cw_bi2=$(_cw_compact_boundary_info "$tp_path")
+                    _cw_bep2=${_cw_bi2%% *}; _cw_btr2=${_cw_bi2##* }
+                    if [ "$_cw_bep2" -gt "$cs_prev_t" ]; then
+                        cold_cost=1
+                        cold_gap=$(( now - cs_prev_t ))
+                        cs_lastcause="compact"
+                        [ "$_cw_btr2" = "auto" ] && cs_lastcause="auto-compact"
+                        cs_lastcc=${t_cc:-0}
+                        cs_lasthit_t=$now
+                    fi
                 fi
                 # Late-binding upgrade for a raced read.
                 #
@@ -1872,16 +1883,26 @@ mode_statusline() {
                             # every k:"hit" reader can drop the matching
                             # record. The DISPLAY stays (lastcc/lasthit_t
                             # kept): the event was a real miss the user should
-                            # still see — relabeled as its cost class, compact
-                            # only when a boundary sits within 2h before the
-                            # booked hit (further back cannot be the proximate
-                            # cause), else resume.
+                            # still see — relabeled as its cost class. compact
+                            # only when the boundary sits inside the booked
+                            # hit's OWN idle gap (read from its ledger record;
+                            # a boundary outside that gap belongs to an
+                            # earlier, unrelated compact), else resume. Gap
+                            # unreadable -> 2h fallback window.
                             local _cw_rt_t=$cs_lasthit_t _cw_rt_cc=$cs_lastcc
                             [ "$cs_count" -gt 0 ] && cs_count=$(( cs_count - 1 ))
                             cs_lastcause="resume"
-                            local _cw_bnd; _cw_bnd=$(_cw_compact_boundary_epoch "$tp_path")
-                            if [ "$_cw_bnd" -gt $(( _cw_rt_t - 7200 )) ] && [ "$_cw_bnd" -le $(( now + 60 )) ]; then
+                            local _cw_hit_gap
+                            _cw_hit_gap=$(grep "\"s\":\"${sid}\"" "$LOGFILE" 2>/dev/null \
+                                | grep '"k":"hit"' \
+                                | jq -r --argjson ht "$_cw_rt_t" 'select(.t == $ht) | .gap // empty' 2>/dev/null | tail -n 1)
+                            case "${_cw_hit_gap:-}" in ''|*[!0-9]*) _cw_hit_gap=7200 ;; esac
+                            local _cw_bi3 _cw_bnd _cw_btr3
+                            _cw_bi3=$(_cw_compact_boundary_info "$tp_path")
+                            _cw_bnd=${_cw_bi3%% *}; _cw_btr3=${_cw_bi3##* }
+                            if [ "$_cw_bnd" -gt $(( _cw_rt_t - _cw_hit_gap - 60 )) ] && [ "$_cw_bnd" -le $(( now + 60 )) ]; then
                                 cs_lastcause="compact"
+                                [ "$_cw_btr3" = "auto" ] && cs_lastcause="auto-compact"
                             fi
                             (
                                 flock -w 2 9 2>/dev/null || true
@@ -2675,17 +2696,22 @@ _log_json() {
     jq -Rc 'fromjson? // empty' "$LOGFILE" 2>/dev/null
 }
 
-# Epoch of the newest compact_boundary entry in a transcript, 0 if none.
-# CC writes {"type":"system","subtype":"compact_boundary","timestamp":ISO}
-# at each /compact; a boundary newer than the last real turn is the evidence
-# that a following full fresh write is compaction cost, not a bust.
-_cw_compact_boundary_epoch() {
-    local _e
-    _e=$(jq -r 'select(.type == "system" and .subtype == "compact_boundary")
-                | .timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdate' \
+# "epoch trigger" of the newest compact_boundary entry in a transcript
+# ("0 -" if none). CC writes {"type":"system","subtype":"compact_boundary",
+# "timestamp":ISO,"compactMetadata":{"trigger":"manual"|"auto",…}} at each
+# compaction; a boundary newer than the last real turn is the evidence that
+# a following full fresh write is compaction cost, not a bust, and the
+# trigger tells the operator's /compact from an auto-compact at the context
+# ceiling — different feedback, different label.
+_cw_compact_boundary_info() {
+    local _l _e
+    _l=$(jq -r 'select(.type == "system" and .subtype == "compact_boundary")
+                | ((.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdate | tostring)
+                   + " " + (.compactMetadata.trigger // "manual"))' \
         "$1" 2>/dev/null | tail -n 1)
-    case "${_e:-}" in ''|*[!0-9]*) _e=0 ;; esac
-    printf '%s' "$_e"
+    _e=${_l%% *}
+    case "${_e:-}" in ''|*[!0-9]*) _l="0 -" ;; esac
+    printf '%s' "$_l"
 }
 
 # How many lines the reader had to skip. Callers that report a "none" result

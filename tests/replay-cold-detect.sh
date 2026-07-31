@@ -203,9 +203,16 @@ resume_check "no boundary -> k:cost cause=resume, display advances, count does n
     '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' \
     resume
 resume_check "compact_boundary present -> k:cost cause=compact" \
-    "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"timestamp\":\"$(date -u -d @$((NOW-20)) +%Y-%m-%dT%H:%M:%S.100Z)\"}
+    "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"timestamp\":\"$(date -u -d @$((NOW-20)) +%Y-%m-%dT%H:%M:%S.100Z)\",\"compactMetadata\":{\"trigger\":\"manual\"}}
 {\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\"}],\"stop_reason\":\"end_turn\",\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"previous_message_not_found\"}}}}" \
     compact
+# CC's compactMetadata.trigger distinguishes the operator's /compact from an
+# auto-compact at the context ceiling — different feedback (a command's cost
+# vs "you hit the limit"), so different labels.
+resume_check "trigger=auto -> k:cost cause=auto-compact" \
+    "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"timestamp\":\"$(date -u -d @$((NOW-20)) +%Y-%m-%dT%H:%M:%S.100Z)\",\"compactMetadata\":{\"trigger\":\"auto\"}}
+{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\"}],\"stop_reason\":\"end_turn\",\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"previous_message_not_found\"}}}}" \
+    auto-compact
 
 echo
 echo "❄ post-compact first write (hit predicate not met) displays as compact cost:"
@@ -224,7 +231,10 @@ compact_display_check() {
     printf '350000 5000\n' > "$d/.token_prev"
     local tp="$d/transcript.jsonl"
     if [ "$with_boundary" = "yes" ]; then
-        printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s"}\n' \
+        printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s","compactMetadata":{"trigger":"manual"}}\n' \
+            "$(date -u -d @$((now-120)) +%Y-%m-%dT%H:%M:%S.500Z)" > "$tp"
+    elif [ "$with_boundary" = "auto" ]; then
+        printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s","compactMetadata":{"trigger":"auto"}}\n' \
             "$(date -u -d @$((now-120)) +%Y-%m-%dT%H:%M:%S.500Z)" > "$tp"
     else
         : > "$tp"
@@ -252,6 +262,7 @@ compact_display_check() {
     rm -rf "$d"
 }
 compact_display_check "boundary evidence -> k:cost cause=compact" yes 1 compact
+compact_display_check "auto trigger -> k:cost cause=auto-compact" auto 1 auto-compact
 compact_display_check "no boundary -> silent (no speculation)" no 0 -
 
 echo
@@ -275,6 +286,7 @@ render_check() {
     rm -rf "$d"
 }
 render_check "cause=compact renders '❄ 51k compact', no #3" compact "51k compact" "#3"
+render_check "cause=auto-compact suppresses #3 too" auto-compact "51k auto-compact" "#3"
 render_check "cause=idle keeps the '#3' bust index" idle "#3 51k idle" "NEVERMATCHES"
 
 echo
@@ -318,12 +330,12 @@ echo "❄ late-bind upgrade honors the resume-split (retract, never adopt):"
 # split's contract says the ❄ token never renders. The fix retracts: count
 # un-inflates, ❄ state zeroes, and k:"resume" + k:"hit-retract" records land.
 late_bind_check() {
-    local label=$1 tentry=$2 want_count=$3 want_cause=$4 want_retract=$5
+    local label=$1 tentry=$2 want_count=$3 want_cause=$4 want_retract=$5 hit_gap=${6:-49}
     local d; d=$(mktemp -d)
     local now; now=$(date +%s)
     printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
-    printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":49,"ctx":130000,"cc":130000,"cause":"other","mdl":"claude-fable-5","mtok":0,"pblk":[],"flight":null,"ubytes":0,"concur":0}\n' \
-        "$((now-30))" "$SID" >> "$d/activity.jsonl"
+    printf '{"type":"cold","t":%d,"s":"%s","k":"hit","gap":%d,"ctx":130000,"cc":130000,"cause":"other","mdl":"claude-fable-5","mtok":0,"pblk":[],"flight":null,"ubytes":0,"concur":0}\n' \
+        "$((now-30))" "$SID" "$hit_gap" >> "$d/activity.jsonl"
     : > "$d/config.sh"
     printf '%s\n' "1 130000 $((now-30)) 130000 $((now-30)) other claude-fable-5" > "$d/.cold_$SID"
     local tp="$d/transcript.jsonl"
@@ -360,6 +372,18 @@ late_bind_check "real cause late (messages_changed) still adopted" \
 late_bind_check "usage-less resume entry -> no retract, no adopt" \
     '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' \
     1 other 0
+# The compact label at retract time anchors to the booked hit's OWN idle gap
+# (read from its ledger record): a boundary OUTSIDE that gap belongs to an
+# earlier, unrelated compact and must not relabel a resume as compact.
+NOW_LB=$(date +%s)
+late_bind_check "boundary outside the hit's 49s gap -> resume, not compact" \
+    "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"timestamp\":\"$(date -u -d @$((NOW_LB-3630)) +%Y-%m-%dT%H:%M:%S.100Z)\",\"compactMetadata\":{\"trigger\":\"manual\"}}
+{\"type\":\"assistant\",\"message\":{\"usage\":{\"cache_creation_input_tokens\":130000},\"content\":[{\"type\":\"text\"}],\"stop_reason\":\"end_turn\",\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"previous_message_not_found\"}}}}" \
+    0 resume 1 49
+late_bind_check "boundary inside the hit's 5000s gap -> compact" \
+    "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"timestamp\":\"$(date -u -d @$((NOW_LB-3030)) +%Y-%m-%dT%H:%M:%S.100Z)\",\"compactMetadata\":{\"trigger\":\"manual\"}}
+{\"type\":\"assistant\",\"message\":{\"usage\":{\"cache_creation_input_tokens\":130000},\"content\":[{\"type\":\"text\"}],\"stop_reason\":\"end_turn\",\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"previous_message_not_found\"}}}}" \
+    0 compact 1 5000
 
 echo
 echo "❄ --cold readers drop retracted hits:"
