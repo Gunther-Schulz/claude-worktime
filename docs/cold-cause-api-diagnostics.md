@@ -19,7 +19,8 @@ item is self-contained.
 Every assistant turn's transcript entry carries
 `message.diagnostics.cache_miss_reason` from the API itself:
 `{type: messages_changed | tools_changed | system_changed |
-previous_message_not_found | unavailable, cache_missed_input_tokens: N}`.
+model_changed | previous_message_not_found | unavailable,
+cache_missed_input_tokens: N}`.
 
 Value set re-derived 2026-07-31 from 1,137 events across all local
 transcripts (2026-07-27 → 07-31): `messages_changed` 999,
@@ -27,7 +28,14 @@ transcripts (2026-07-27 → 07-31): `messages_changed` 999,
 `system_changed` 6. Two corrections that pass made, both of which this
 line had wrong: `model_changed` was listed here but occurs in ZERO of
 the 1,137 — it was assumed, never observed; `system_changed` does occur
-and was absent. Shape note, load-bearing for any parser: `unavailable`
+and was absent. OBSERVED same day, hours later (2026-07-31T13:43:54Z,
+session 77fe2779, 4 entries, `mtok=49784`): a live mid-session model
+switch (opus→fable via `/model`) produced real `model_changed`
+diagnostics — so the value exists, it just needs an actual model switch
+to fire, which the 1,137-event corpus happened not to contain. It
+carries `cache_missed_input_tokens` (not bare). Value set with it:
+`messages_changed | tools_changed | system_changed | model_changed |
+previous_message_not_found | unavailable`. Shape note, load-bearing for any parser: `unavailable`
 and `previous_message_not_found` arrive BARE — no
 `cache_missed_input_tokens` key at all — so a naive read yields null,
 not 0. Treat the set as observed, not exhaustive: `system_changed` at 6
