@@ -1921,6 +1921,32 @@ mode_statusline() {
                             ) 9>"${LOGFILE}.lock"
                         elif [ -n "$_cw_late_cause" ]; then
                             cs_lastcause="$_cw_late_cause"
+                            # The upgrade must reach the LEDGER, not only the
+                            # display state written below. Until it did, the
+                            # raced-read cause was corrected on screen while the
+                            # record kept "other" forever — and the record is
+                            # the artifact every later analysis reads (measured:
+                            # a messages_changed bust displayed correctly and
+                            # booked as "other", the ❄ token and `--cold`
+                            # disagreeing about the same event). "other" is a
+                            # degraded default meaning "no cause available";
+                            # left standing it reads as a genuinely causeless
+                            # bust and silently under-reports every knowable
+                            # class. Append-only, same shape as the retract
+                            # marker above: k:"hit-cause" keyed (s, hit_t) so
+                            # k:"hit" readers apply it without the ledger ever
+                            # being rewritten in place. The outer guard
+                            # (cs_lastcause = "other") is what makes this fire
+                            # exactly once — the next render sees the adopted
+                            # cause and skips the whole branch.
+                            local _cw_late_mtok
+                            _cw_late_mtok=$(jq -r '.message.diagnostics.cache_miss_reason.cache_missed_input_tokens // 0' <<< "$_cw_late" 2>/dev/null)
+                            case "${_cw_late_mtok:-}" in ''|*[!0-9]*) _cw_late_mtok=0 ;; esac
+                            (
+                                flock -w 2 9 2>/dev/null || true
+                                printf '{"type":"cold","t":%d,"s":"%s","k":"hit-cause","hit_t":%d,"cc":%d,"cause":"%s","mtok":%d}\n' \
+                                    "$now" "$sid" "$cs_lasthit_t" "${cs_lastcc:-0}" "$_cw_late_cause" "$_cw_late_mtok" >> "$LOGFILE"
+                            ) 9>"${LOGFILE}.lock"
                         fi
                     fi
                 fi
@@ -2746,18 +2772,26 @@ mode_cold() {
     # the late-bind read finds previous_message_not_found after the hit was
     # already booked from a raced "other") cancels its matching k:"hit" —
     # the append-only ledger self-corrects, so readers must honor it.
+    # Cause-aware, same principle: a k:"hit-cause" record (also keyed
+    # s + hit_t) carries the cause the late-bind read recovered after the hit
+    # was booked "other", and overrides it here. Without this the display and
+    # the ledger disagreed about the same event — the screen showing the real
+    # cause, the record keeping the degraded default that every later analysis
+    # reads. Last marker wins, so a repeated append is harmless.
     # --all additionally lists controlled-cost events (k:"cost", plus legacy
     # k:"resume" records) — the full cost picture; default stays busts-only.
     local rows
     rows=$(_log_json | jq -src --argjson since "$since" --arg sid "$scope_sid" --argjson all "$_all_json" '
         ([.[] | select((.type // "") == "cold" and .k == "hit-retract") | "\(.s)#\(.hit_t)"]) as $rt
+        | (reduce (.[] | select((.type // "") == "cold" and .k == "hit-cause"))
+             as $c ({}; .["\($c.s)#\($c.hit_t)"] = $c.cause)) as $cu
         | .[]
         | select((.type // "") == "cold"
                  and (.k == "hit" or ($all and (.k == "cost" or .k == "resume"))))
         | select("\(.s)#\(.t)" as $key | ($rt | index($key)) | not)
         | select($since == 0 or .t >= $since)
         | select($sid == "" or .s == $sid)
-        | [.t, (.cc // .ctx // 0), (.cause // "-"), (.gap // 0), (.mdl // "-"), (.s[0:8])]
+        | [.t, (.cc // .ctx // 0), ($cu["\(.s)#\(.t)"] // .cause // "-"), (.gap // 0), (.mdl // "-"), (.s[0:8])]
         | @tsv' 2>/dev/null | sort -n) || rows=""
 
     if [ -z "$rows" ]; then
@@ -2778,18 +2812,22 @@ mode_cold() {
         # get [] because of one malformed line elsewhere in the file.
         _log_json | jq -sc --argjson since "$since" --arg sid "$scope_sid" --argjson all "$_all_json" '
             ([.[] | select((.type // "") == "cold" and .k == "hit-retract") | "\(.s)#\(.hit_t)"]) as $rt
+            | (reduce (.[] | select((.type // "") == "cold" and .k == "hit-cause"))
+                 as $c ({}; .["\($c.s)#\($c.hit_t)"] = {cause: $c.cause, mtok: $c.mtok})) as $cu
             | map(select((.type // "") == "cold"
                          and (.k == "hit" or ($all and (.k == "cost" or .k == "resume"))))
                 | select("\(.s)#\(.t)" as $key | ($rt | index($key)) | not)
                 | select($since == 0 or .t >= $since)
-                | select($sid == "" or .s == $sid))
+                | select($sid == "" or .s == $sid)
+                | ("\(.s)#\(.t)") as $key
+                | if $cu[$key] then .cause = $cu[$key].cause | .mtok = ($cu[$key].mtok // .mtok) else . end)
             | sort_by(.t)' 2>/dev/null
         return
     fi
 
     # cause is idle|model (worktime's own pre-classification) or, for the
     # residual, the API's cache_miss_reason.type verbatim (messages_changed /
-    # tools_changed / model_changed / unavailable / other when no diagnostics
+    # tools_changed / system_changed / unavailable / other when no diagnostics
     # were available) — widened to 17 to fit "messages_changed" unquoted.
     # UTC on purpose: every downstream forensic source (snapshot ledgers,
     # transcripts, journalctl --utc per the runbook) timestamps in UTC, and
