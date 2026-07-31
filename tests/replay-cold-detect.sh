@@ -235,7 +235,7 @@ echo "❄ late-bind upgrade honors the resume-split (retract, never adopt):"
 # split's contract says the ❄ token never renders. The fix retracts: count
 # un-inflates, ❄ state zeroes, and k:"resume" + k:"hit-retract" records land.
 late_bind_check() {
-    local label=$1 diag=$2 want_count=$3 want_cause=$4 want_retract=$5
+    local label=$1 tentry=$2 want_count=$3 want_cause=$4 want_retract=$5
     local d; d=$(mktemp -d)
     local now; now=$(date +%s)
     printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
@@ -244,7 +244,7 @@ late_bind_check() {
     : > "$d/config.sh"
     printf '%s\n' "1 130000 $((now-30)) 130000 $((now-30)) other claude-fable-5" > "$d/.cold_$SID"
     local tp="$d/transcript.jsonl"
-    printf '{"type":"assistant","message":{"usage":{"cache_creation_input_tokens":130000},"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"%s"}}}}\n' "$diag" > "$tp"
+    printf '%s\n' "$tentry" > "$tp"
     printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":130000,"cache_creation_input_tokens":500,"input_tokens":100,"output_tokens":10}}}\n' \
         "$SID" "$tp" \
         | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
@@ -259,8 +259,20 @@ late_bind_check() {
     fi
     rm -rf "$d"
 }
-late_bind_check "previous_message_not_found late -> hit retracted" previous_message_not_found 0 - 1
-late_bind_check "real cause late (messages_changed) still adopted" messages_changed 1 messages_changed 0
+late_bind_check "previous_message_not_found late -> hit retracted" \
+    '{"type":"assistant","message":{"usage":{"cache_creation_input_tokens":130000},"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' \
+    0 - 1
+late_bind_check "real cause late (messages_changed) still adopted" \
+    '{"type":"assistant","message":{"usage":{"cache_creation_input_tokens":130000},"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"messages_changed"}}}}' \
+    1 messages_changed 0
+# Retraction is destructive (state decrement) and must demand PROOF: the
+# anchor also admits entries with no usage block (kept loose for cause
+# adoption), but an entry that cannot prove it is the booked turn must not
+# retract — and must not adopt the resume cause either (the split forbids
+# displaying it). No action: cause stays "other", re-checkable in-window.
+late_bind_check "usage-less resume entry -> no retract, no adopt" \
+    '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"previous_message_not_found"}}}}' \
+    1 other 0
 
 echo
 echo "❄ --cold readers drop retracted hits:"

@@ -1810,7 +1810,20 @@ mode_statusline() {
                     if [ -n "$_cw_late" ]; then
                         local _cw_late_cause
                         _cw_late_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_late" 2>/dev/null)
-                        if [ "$_cw_late_cause" = "previous_message_not_found" ]; then
+                        # Retraction is destructive (the one state decrement
+                        # in this path), so it demands PROOF the entry IS the
+                        # booked turn: usage matching cs_lastcc. The anchor
+                        # above also admits usage-less entries — kept loose
+                        # for cause adoption — but an unproven resume cause
+                        # takes no action at all: no retract, and no adoption
+                        # either (the split forbids displaying it). Cause
+                        # stays "other", re-checkable within the window.
+                        local _cw_late_cc
+                        _cw_late_cc=$(jq -r '.message.usage.cache_creation_input_tokens // empty' <<< "$_cw_late" 2>/dev/null)
+                        if [ "$_cw_late_cause" = "previous_message_not_found" ] \
+                            && [ "$_cw_late_cc" != "${cs_lastcc:-0}" ]; then
+                            :   # unproven resume cause — leave "other" standing
+                        elif [ "$_cw_late_cause" = "previous_message_not_found" ]; then
                             # The resume-split, applied late. The booking-time
                             # split (change 2) only sees causes available at
                             # write time; a raced read books the hit as "other"
