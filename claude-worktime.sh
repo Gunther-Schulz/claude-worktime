@@ -1682,9 +1682,17 @@ mode_statusline() {
                         # co-occurrence strings: every assistant transcript entry
                         # carries message.diagnostics.cache_miss_reason
                         # {type, cache_missed_input_tokens} straight from the
-                        # provider. type is one of messages_changed /
-                        # tools_changed / model_changed / previous_message_not_found
-                        # / unavailable. previous_message_not_found means the
+                        # provider. Observed types (1,137 events, 2026-07-31):
+                        # messages_changed / tools_changed / system_changed /
+                        # previous_message_not_found / unavailable — the last two
+                        # arrive BARE, with no cache_missed_input_tokens key, so
+                        # the // 0 default below is what makes them read as 0
+                        # rather than null. The list is observed, not exhaustive,
+                        # and the read below passes .type through verbatim: an
+                        # unlisted value logs correctly without a code change.
+                        # (model_changed was listed here until 2026-07-31 and
+                        # occurs in none of the 1,137 — assumed, never observed.)
+                        # previous_message_not_found means the
                         # transcript resumed/forked (see below — routed out of
                         # the hit ledger, not a live bust). Read only on a hit
                         # (rare) so the statusline stays cheap; missing/older

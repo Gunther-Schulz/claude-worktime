@@ -18,8 +18,23 @@ item is self-contained.
 
 Every assistant turn's transcript entry carries
 `message.diagnostics.cache_miss_reason` from the API itself:
-`{type: messages_changed | tools_changed | model_changed |
+`{type: messages_changed | tools_changed | system_changed |
 previous_message_not_found | unavailable, cache_missed_input_tokens: N}`.
+
+Value set re-derived 2026-07-31 from 1,137 events across all local
+transcripts (2026-07-27 → 07-31): `messages_changed` 999,
+`tools_changed` 53, `unavailable` 51, `previous_message_not_found` 28,
+`system_changed` 6. Two corrections that pass made, both of which this
+line had wrong: `model_changed` was listed here but occurs in ZERO of
+the 1,137 — it was assumed, never observed; `system_changed` does occur
+and was absent. Shape note, load-bearing for any parser: `unavailable`
+and `previous_message_not_found` arrive BARE — no
+`cache_missed_input_tokens` key at all — so a naive read yields null,
+not 0. Treat the set as observed, not exhaustive: `system_changed` at 6
+events would have been missed on a smaller sample. The classifier
+itself passes `.type` through verbatim (`claude-worktime.sh:1732`), so
+an unlisted value is logged and displayed correctly regardless of this
+list — the list documents, it does not gate.
 
 The current classifier (`claude-worktime` ~lines 1600-1660) instead
 tail-greps the last 80 transcript lines for co-occurrence strings
