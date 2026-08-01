@@ -1270,6 +1270,13 @@ mode_statusline() {
         # Strip the context-window suffix (e.g. " (1M context)") from the
         # display name — redundant in the statusline.
         [[ "$mdl" == *" ("*"context)" ]] && mdl="${mdl% (*context)}"
+        # Persist the current model for external consumers (e.g. commit hooks
+        # comparing a hand-typed attribution trailer against the live runtime:
+        # the model can change MID-session, so any snapshot taken at session
+        # start goes stale silently). File mtime doubles as the freshness
+        # signal. Last-writer-wins across concurrent sessions — consumers
+        # must treat this as advisory, never as a hard gate.
+        [ -n "$mdl" ] && printf '%s\n' "$mdl" > "${LOGDIR}/.current_model" 2>/dev/null
         [ "$eff" = "_" ] && eff=""
         [ -n "$eff" ] && tok_effort="$eff"
         [ "$tp_path" = "_" ] && tp_path=""
