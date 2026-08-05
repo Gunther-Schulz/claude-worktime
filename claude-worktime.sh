@@ -811,6 +811,31 @@ _cold_guard() {
 
     [ "$met" -eq 1 ] || return 0
 
+    # A compact boundary NEWER than the last tokens entry means the context
+    # that entry describes no longer exists: compaction writes no tokens
+    # entry, so ctx_tok and gap above are pre-compact numbers. The old prefix
+    # is already discarded — the next send writes the new (small) context
+    # fresh no matter what the user does — and "compact now" was just done.
+    # Observed 2026-08-05: warned "~422k context" sixty seconds after a
+    # /compact that left ~57k. The boundary lives only in the transcript.
+    # jq is fine here — this path is only reached past both thresholds, not
+    # on every prompt (same reasoning as the clipboard block below).
+    if [ -n "${HOOK_TRANSCRIPT:-}" ] && [ -f "$HOOK_TRANSCRIPT" ]; then
+        local _bnd_info _bnd
+        _bnd_info=$(_cw_compact_boundary_info "$HOOK_TRANSCRIPT")
+        _bnd=${_bnd_info%% *}
+        if [ "$_bnd" -gt "$last_ts" ] 2>/dev/null; then
+            # Shadow entry, same rationale as the gauge one: a silent
+            # suppression must be distinguishable from a guard that never ran.
+            (
+                flock -w 2 9 2>/dev/null || true
+                printf '{"type":"cold","t":%d,"s":"%s","k":"stale-ctx","gap":%d,"ctx":%d,"bnd":%d}\n' \
+                    "$now" "$sid" "$gap" "$ctx_tok" "$_bnd" >> "$LOGFILE"
+            ) 9>"${LOGFILE}.lock"
+            return 0
+        fi
+    fi
+
     # One-shot per idle gap: a marker newer than the last API response means
     # we already warned about this gap and the user chose to resubmit.
     local marker="${LOGDIR}/.cold_guard_last"
