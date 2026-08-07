@@ -291,7 +291,7 @@ render_check "cause=idle keeps the '#3' bust index" idle "#3 51k idle" "NEVERMAT
 
 echo
 echo "❄ zero-usage render (compact completion) must not poison state or log:"
-# Measured 2026-07-31 (s-f94e53ce): a 355k session sat idle ~10h, the operator
+# Measured 2026-07-31 (capture since rotated): a 355k session sat idle ~10h, the operator
 # resumed and ran /compact first; the compact-completion statusline render
 # reported cr=cc=ui=0, and its logged tokens entry (a) reset the idle clock —
 # the post-compact first write measured a 32min gap, not 10h — and (b) zeroed

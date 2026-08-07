@@ -1661,7 +1661,7 @@ mode_statusline() {
             # completion renders report exactly that, and persisting one as a
             # real turn resets the idle clock and zeroes prev-ctx, defeating
             # both the idle classifier and the /compact skip (measured
-            # 2026-07-31, s-f94e53ce: a post-compact 51k first write booked as
+            # 2026-07-31 (capture since rotated): a post-compact 51k first write booked as
             # a false hit against prev=0 with a 10h idle gap read as 32min).
             if [ -n "${sid:-}" ] && [ "${sid:-}" != "" ] \
                 && [ $(( ${t_cr:-0} + ${t_cc:-0} + ${t_ui:-0} )) -gt 0 ] \
@@ -1930,7 +1930,7 @@ mode_statusline() {
                             # write time; a raced read books the hit as "other"
                             # first, and adopting this cause here would render
                             # it in the ❄ token — the exact display the split
-                            # forbids (measured 2026-07-31, s-f94e53ce: a
+                            # forbids (measured 2026-07-31, capture since rotated: a
                             # post-/compact first write shown as a 51k bust).
                             # Retract instead: un-inflate the count, and
                             # append a k:"cost" record for the audit trail

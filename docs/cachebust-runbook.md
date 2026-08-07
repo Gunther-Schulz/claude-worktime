@@ -89,7 +89,7 @@ expected and you can stop here:
   given. Nothing to investigate: the label already names the user action
   that caused the cost.
 - **A ❄ token showing `previous_message_not_found`** — should no longer
-  occur (fixed 2026-07-31, same day it was measured on s-f94e53ce: a
+  occur (fixed 2026-07-31, same day it was measured (capture since rotated): a
   post-`/compact` first write — 51k, unavoidable, cache healthy —
   displayed as a 51k bust). Two defects conspired: a zero-usage tokens
   entry logged at compact completion reset the idle clock and zeroed

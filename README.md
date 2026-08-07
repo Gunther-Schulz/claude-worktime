@@ -5,13 +5,19 @@ Track active working time in [Claude Code](https://claude.com/claude-code) sessi
 ```
 my-org/my-project (main ✓) · ⏱  today 2h32m 🤖55m 👤1h37m · total 12h30m
 08:22 ▪▪▪···▪▪▪▪··▪▪▪ 17:30 · ▶ 1h12m ⏸ 20m
-Opus 4.6 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77%
+Opus 5 (session) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77% · ❄ 428k resume (5m)
 ```
 
 Three lines, three perspectives on the same data:
 - **Line 1** — work done: project time with Claude/You split
 - **Line 2** — your day: presence timeline, break rhythm
-- **Line 3** — model, rate limits, token budget, context
+- **Line 3** — model, rate limits, token budget, context, and the last cold-cache rewrite
+
+The `❄` above is a FRESH one and renders **cyan** in the terminal; past
+`COLD_FRESH_SECS` (default 15min) the same token dims to gray, so an old event
+recedes instead of reading like a new one. `428k resume` is a cost class, not a
+bug: resuming a session re-writes the prefix and the number is what it cost you
+— see [the `{cold}` token](#configuration) for the full vocabulary.
 
 **Platform:** Linux is the primary target (developed and tested on it). macOS is supported as a second-class target with vanilla system bash 3.2 — no Homebrew bash or coreutils required, just `jq`. Windows is not supported.
 
