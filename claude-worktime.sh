@@ -726,8 +726,24 @@ _short_project_v() {
 _project_label_v() {
     local path="$1"
     if [ -n "$path" ] && [ "${PROJECT_GIT_ANCHOR:-false}" = true ] && command -v git &>/dev/null; then
-        local top; top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)
-        [ -n "$top" ] && path="$top"
+        # --show-toplevel is WORKTREE-scoped: inside a linked worktree it returns
+        # that worktree's own root, i.e. it anchors to the very thing this option
+        # exists to escape. The shared repo is --git-common-dir. Measured
+        # 2026-08-07 with agent worktrees live: --show-toplevel gave
+        # <repo>/.claude/worktrees/agent-<id> while --git-common-dir gave
+        # <repo>/.git, so every agent lane silently booked its time under a
+        # separate "project" that vanishes with the worktree.
+        local common; common=$(git -C "$path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+        if [ -n "$common" ] && [ "${common##*/}" = ".git" ]; then
+            path="${common%/.git}"
+        else
+            # --path-format needs git >= 2.31, and a non-standard layout may put
+            # the common dir somewhere that is not <repo>/.git. Falling back to
+            # the old behaviour is right: it is correct for subdirectories, which
+            # is the common case, and wrong only where it was always wrong.
+            local top; top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)
+            [ -n "$top" ] && path="$top"
+        fi
     fi
     _short_project_v "$path"
 }
