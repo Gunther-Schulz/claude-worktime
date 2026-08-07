@@ -46,6 +46,7 @@ Recommended next step: enable the **cold guard** — set `CACHE_GUARD_TTL=3600` 
 
 - Copies the script to `~/.local/bin/claude-worktime`
 - Creates default config at `~/.config/claude-worktime/config.sh` (preserved on reinstall)
+- Copies the cache-bust runbook to `~/.claude/cachebust-runbook.md` (refreshed every install — it is documentation, not your state)
 - Appends event hooks to `~/.claude/settings.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure) — preserves hooks from other tools
 - Verifies dependencies
 
@@ -97,20 +98,20 @@ STATUSLINE_3="MODEL RATE_5H CONTEXT COLD NOW"
 
 Resolution is `%H:%M`, enough for "is this session stale" but not for "did that bust just happen".
 
+The bar itself is one character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution. The glyphs are `TIMELINE_CHAR_WORK` / `TIMELINE_CHAR_AWAY` — how heavy the bar reads depends on the terminal font, so `▪ ■ █ ▮ ▬` are all worth a try — and they take their color from `COLOR_TIMELINE_WORK` / `COLOR_TIMELINE_BREAK` (both `green` by default, so the bar reads as one shape; set them apart to separate work from away).
+
 **Line 3 — Model & limits**:
 ```
-Opus 4.6 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77%
+Opus 5 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77% · ❄ 397k other (2m)
 ```
 
 | Element | Meaning |
 |---------|---------|
-| `Opus 4.6 (local)` | Active model + config source (local/project/global/session/default) |
+| `Opus 5 (local)` | Active model + config source (local/project/global/session/default) |
 | `⧗30% ↻3h21m →51%` | 5h rate limit: used, time to reset, projected at reset |
 | `➐ 5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77%` | Context window fullness |
 | `❄ 397k other (2m)` | Last cold-cache rewrite — size, cause, and (age); cyan when recent, gray once old. Its own `{cold}` token / `COLD` group, so it sits after `ctx` behind a normal ` · ` divider |
-
-One character per time slot (`TIMELINE_SLOT`, default: 1200 seconds / 20 minutes). Set to `1800` for 30-minute, `3600` for hourly, or `900` for 15-minute resolution. The glyphs are `TIMELINE_CHAR_WORK` / `TIMELINE_CHAR_AWAY` — how heavy the bar reads depends on the terminal font, so `▪ ■ █ ▮ ▬` are all worth a try.
 
 ### CLI queries
 
@@ -125,10 +126,13 @@ claude-worktime --summary --today     # per-project breakdown
 claude-worktime --csv --today         # export as CSV
 claude-worktime --cost --today        # cost analysis
 claude-worktime --cold                # cold-cache rewrites this session (❄ history)
+claude-worktime --cold --all          # ...including compact/resume cost classes
 claude-worktime --tokens              # statusline token legend
+claude-worktime --rotate              # archive old entries now (normally automatic)
+claude-worktime --help                # the header block, incl. the log schema
 ```
 
-All filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`) combine with any mode. Add `--raw` for JSON output.
+Filters (`--today`, `--week`, `--since`, `--filter`, `--branch`, `--session`) combine with the reporting modes — `--breakdown`, `--gaps`, `--cost`, `--summary`, `--csv`. Two exceptions: `--cold` reads only the time filters and `--session` (it has no project or branch dimension), and `--raw` produces JSON for every mode except `--csv`, which is already an export format.
 
 ### Phase breakdown
 
@@ -169,13 +173,15 @@ This shows what your session would cost at API rates. On subscription plans (Pro
 `--cold` lists the cold-cache rewrites the `❄` token only shows one of — the current session by default, or widened with `--today` / `--week` / `--since` / `--session`:
 
 ```
-when                    size  cause      idle  model
-2026-07-23 04:34:32     130k  idle       2h0m  opus-4-8
-2026-07-23 05:23:03     397k  other       49s  fable-5
+when (UTC)              size  cause                 idle  model
+2026-07-23 04:34:32     130k  idle                 2h00m  opus-4-8
+2026-07-23 05:23:03     397k  messages_changed       49s  fable-5
 total                   527k  (2 rewrites)
 ```
 
 Each row is one full-context rewrite paid at the cache-write premium: its size, cause (`idle` / `model`, or — when neither explains it — the API's own `cache_miss_reason.type` such as `messages_changed`/`tools_changed`/`unavailable`, falling back to plain `other` when no diagnostics were available), the idle gap before it, and the model in play. Add `--raw` for JSON. Cause and model are blank for events logged before that field existed.
+
+**Timestamps are UTC, deliberately.** Every downstream forensic source — transcripts, `journalctl --utc`, snapshot ledgers — stamps in UTC, and a local-time column here forces a conversion at exactly the moment someone is hunting a bust. (On 2026-07-28 a bust reported at "00:13 local" was hunted in the 22:13Z ledger rows.)
 
 ### Cache-bust investigation
 
@@ -188,6 +194,16 @@ it the notification and it starts by telling `idle`/`model`/deliberate
 causes (nothing to investigate) apart from the rest, then walks through
 `claude-worktime --cold` plus, where available, the wire-level and
 transcript layers to find out what actually happened.
+
+**Don't want the popup?** Set `COLD_NOTIFY=false`. Busts are still logged and still shown
+by `❄` and `--cold`, just silently. This notification is the only thing the tool pushes at
+you unprompted; the [cold guard](#configuration) is the only thing that *blocks*, and it
+is off by default.
+
+Two companion notes go deeper than this README:
+[`docs/cold-cause-api-diagnostics.md`](docs/cold-cause-api-diagnostics.md) — where the
+cause strings come from — and
+[`docs/token-cost-model.md`](docs/token-cost-model.md) — how a rewrite is priced.
 
 ## Configuration
 
@@ -249,13 +265,31 @@ A commented-out template with all options is created on install.
 
 Empty tokens are automatically removed along with their surrounding separators.
 
+**The project label (`{project}`):** By default the label is the last two path segments of the working directory — `my-org/my-project`. Two options reshape it:
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `HOME_ORG` | `""` | Drops a leading `org/` from the label, for the one org segment that is redundant on your machine (typically your code-host user directory). `HOME_ORG="my-org"` turns `my-org/my-project` into `my-project`. |
+| `PROJECT_GIT_ANCHOR` | `false` | Anchors the label to the git repo root, so a subdirectory or a linked worktree shows the repo instead of the directory you happen to be in. |
+
+**`PROJECT_GIT_ANCHOR` and worktrees.** Agent worktrees are when you meet this option. Since 2026-08-07 the anchor resolves through `git rev-parse --git-common-dir`, which is shared by every worktree of a repo; it previously used `--show-toplevel`, which is worktree-scoped and therefore returned the worktree's own root — the exact thing the option exists to escape. Concretely, for a worktree at `<repo>/.claude/worktrees/agent-1a2b`:
+
+| | label with the anchor off | anchored (before) | anchored (now) |
+|---|---|---|---|
+| a subdirectory of the repo | the subdirectory | the repo | the repo |
+| a linked worktree | `worktrees/agent-1a2b` | `worktrees/agent-1a2b` | the repo |
+
+Where `--git-common-dir` is unavailable (git < 2.31) or the repo has a non-standard layout, it falls back to `--show-toplevel` — still correct for subdirectories, wrong only where it was always wrong.
+
+One scope limit worth knowing: the anchor rewrites the **label** only. Totals are still aggregated on the raw logged path, so `{today_project}` and `{project_total}` count a worktree separately from its parent repo even while both display the same name.
+
 **Model source detection:** The `{model}` token shows where the active model setting comes from. The source label is only shown when the model is overridden: `local` (`.claude/settings.local.json`), `project` (`.claude/settings.json`), or `session` (`/model` or `--model` override). When the model comes from the global default (`~/.claude/settings.json`) or no setting is found, just the model name is shown without a label. The source is inferred by comparing the running model against settings files — it may be inaccurate if settings files are changed mid-session without restarting Claude Code. Context-window suffixes are stripped on both sides: `Opus 4.7 (1M context)` displays as `Opus 4.7`, and a settings value like `claude-fable-5[1m]` still matches the running `claude-fable-5`.
 
-**Per-model colors:** `MODEL_COLORS` colors the `{model}` token by model — a comma-separated list of `substring=color` pairs matched case-insensitively against the model id and display name; first match wins, unmatched models keep the group color. Default: `fable=pink`. Example pinning all families: `MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"`.
+**Per-model colors:** `MODEL_COLORS` colors the `{model}` token by model — a comma-separated list of `substring=color` pairs matched case-insensitively against the model id and display name; first match wins, unmatched models keep the group color. Default: `fable=pink,opus=cyan`. Example pinning all families: `MODEL_COLORS="fable=pink,opus=purple,sonnet=cyan,haiku=blue"`.
 
 **Cold-cache counter & guard:** After an idle gap longer than the prompt-cache TTL (~1h for Claude Code's main thread), the next request silently re-writes the entire conversation prefix at the cache-write premium. Claude Code warns about this when *resuming a closed session*, but not when a session sits open and idle in a terminal — that gap is covered here, twice.
 
-**The `{cold}` token — what it shows:** The `❄ 397k other (2m)` marker — its own `{cold}` token, rendered as a `COLD` group so a ` · ` divider sets it off from `ctx` — shows the size, cause, and age of the most recent cold rewrite this session: the tokens re-written at the write premium (the felt cost; a bare count would flatten a 500k event and a 25k one into the same number), why it went cold, and how long ago, parenthesised so it reads plainly as elapsed time (the age answers what a static value can't: did this just happen, or is it old news?). It renders cyan while recent and dims to gray after `COLD_FRESH_SECS` (default 15min) so a ghost value recedes. A session index is prefixed once there is more than one rewrite (`❄ #3 263k idle (4m)`): the size and age describe a single event, so three rewrites otherwise read as one incident. It leads rather than trails because a trailing `×3` reads as a multiplier on the event it follows — "this 263k idle bust, three times" — the opposite of the truth; as a leading ordinal it frames what comes after it ("bust #3; the latest was 263k, idle, 4m ago"). The count is also the only part of the token that survives a frozen statusline — an idle CLI never re-renders, so the age can sit at `(4m)` for hours (observed 2026-07-27, where a five-hour-old `❄ 225k tools_changed (7m)` was mistaken for a fresh overnight bust), but a monotonic count can only under-report, never mislead.
+**The `{cold}` token — what it shows:** The `❄ 397k other (2m)` marker — its own `{cold}` token, rendered as a `COLD` group so a ` · ` divider sets it off from `ctx` — shows the size, cause, and age of the most recent cold rewrite this session: the tokens re-written at the write premium (the felt cost; a bare count would flatten a 500k event and a 25k one into the same number), why it went cold, and how long ago, parenthesised so it reads plainly as elapsed time (the age answers what a static value can't: did this just happen, or is it old news?). It renders cyan while recent and dims to gray after `COLD_FRESH_SECS` (default 15min) so a ghost value recedes. A session index is prefixed once there is more than one rewrite (`❄ #3 263k idle (4m)`), on bust-class causes only — `#N` counts busts, so showing it beside a `compact` or `resume` label would misread as that class's count. It leads rather than trails because a trailing `×3` reads as a multiplier on the event it follows — "this 263k idle bust, three times" — the opposite of the truth; as a leading ordinal it frames what comes after it ("bust #3; the latest was 263k, idle, 4m ago"). The count is also the only part of the token that survives a frozen statusline (see [the staleness anchor](#statusline)): a monotonic count can only under-report, never mislead, while the age freezes.
 
 **How a rewrite is detected:** Cold rewrites are detected from usage: a request that wrote most of the previous context while reading almost none of it back from cache — so `/compact` is never mistaken for a bust — its post-boundary first write displays as its own `compact` cost class (below) — while an idle gap or a model switch that changes the cache key books a real bust. A session's *first* write looks identical (nothing cached yet, whole context written) but is skipped structurally — it's flagged only when a prior turn already exists this session, so a fresh start is never mistaken for a rewrite while a resume after the cache expired still counts. `COLD_MIN_CTX` is an optional cosmetic floor on top (default 0 — shows everything; raise it to hide small rewrites).
 
@@ -265,11 +299,11 @@ Empty tokens are automatically removed along with their surrounding separators.
 
 **Forensic fields on a hit:** On a real hit (`k:"hit"`), the log also carries per-event forensic fields (`mtok`, `pblk`, `flight`, `ubytes`, `concur`) so each occurrence is self-analyzing rather than requiring a fresh forensic pass — see [`docs/cachebust-runbook.md`](docs/cachebust-runbook.md) for what they mean and how to investigate one.
 
-**Desktop notification:** The `❄` display above is always on and passive — it never blocks, though a real hit also fires a desktop notification (via `notify-send`, if present) pointing at that runbook; set `COLD_NOTIFY=false` to log busts silently. The test suites set that flag internally — they drive the real detector with synthetic fixtures, and without it a test run raises popups indistinguishable from live busts (on 2026-07-27 a fixture's `130000` and `160287` surfaced as "Cache bust: 130k / 160k re-cached" and were investigated as unexplained production events). That notification is **derived from the ledger record that was actually committed**, not re-rendered from live variables: the append emits the record it wrote on success, and the notification parses its numbers back out of that string. If the write does not land, no popup fires. The two were previously independent renderings of one event and could disagree silently — with the ledger, the artifact you would audit, being the side nobody checks. The popup also carries the short session id, because concurrent sessions produce concurrent popups (2026-07-27: three busts in 166s across two sessions, indistinguishable at the popup level).
+**Desktop notification:** The `❄` display above is always on and passive — it never blocks, though a real hit also fires a desktop notification (via `notify-send`, if present) pointing at that runbook; `COLD_NOTIFY=false` turns the popup off, as noted under [Cache-bust investigation](#cache-bust-investigation). The test suites set that flag internally — they drive the real detector with synthetic fixtures, and without it a test run raises popups indistinguishable from live busts (on 2026-07-27 a fixture's `130000` and `160287` surfaced as "Cache bust: 130k / 160k re-cached" and were investigated as unexplained production events). That notification is **derived from the ledger record that was actually committed**, not re-rendered from live variables: the append emits the record it wrote on success, and the notification parses its numbers back out of that string. If the write does not land, no popup fires. The two were previously independent renderings of one event and could disagree silently — with the ledger, the artifact you would audit, being the side nobody checks. The popup also carries the short session id, because concurrent sessions produce concurrent popups (2026-07-27: three busts in 166s across two sessions, indistinguishable at the popup level).
 
 **Cold guard — the one feature that acts:** Separately, an opt-in **cold guard** can warn you *before* a rewrite: it runs inside the `UserPromptSubmit` hook (`claude-worktime log --prompt`, already installed) and is **off by default** (`CACHE_GUARD_TTL=0`) — not because it's second-rate, but because it is the one feature here that *acts*. Everything else in this tool observes and prints; the guard swallows a prompt you just submitted. Inheriting that from an installer would be a bad surprise, so it ships inert and you turn it on knowingly. **Turning it on is recommended** — it is the only part of the cold-cache machinery that can save a rewrite rather than report it afterwards, and the display keeps working either way.
 
-**Enabling and tuning the guard:** Set `CACHE_GUARD_TTL` to the cache TTL in seconds (e.g. `3600`) to enable it; the first prompt after an idle gap past `0.9 × CACHE_GUARD_TTL` (→ 54min at a 3600s TTL, mirroring the CLI's own `elapsed < TTL×0.9` warmth test) with at least `CACHE_GUARD_MIN_CTX` context (default 50k tokens) is then blocked with a warning — the cheapest time to `/compact` or `/clear`, since the cache is lost either way. Submitting the prompt a second time proceeds normally, and the guard warns only once per gap. The warning also carries the session's running total (`Session so far: 3 rewrite(s), ~626k.`), computed at read time from the hit ledger — unlike the `❄` token, which shows only the most recent event at whatever age it had when the statusline last rendered. An idle CLI never re-renders, so a hours-old `❄ 225k tools_changed (7m)` can sit on screen reading as though it just happened (observed 2026-07-27, mistaken for a fresh overnight bust). Anything the guard prints is true at the moment you read it, and a running total answers "is this actually costing me" in a way a single most-recent event cannot. One deliberate silence: after a `/compact`, the guard's numbers (read from the last tokens entry — compaction writes none) describe a context that no longer exists, and the old prefix is already discarded — so a `compact_boundary` newer than that entry suppresses the warning entirely (logged as `k:"stale-ctx"` so a suppression is distinguishable from a guard that never ran).
+**Enabling and tuning the guard:** Set `CACHE_GUARD_TTL` to the cache TTL in seconds (e.g. `3600`) to enable it; the first prompt after an idle gap past `0.9 × CACHE_GUARD_TTL` (→ 54min at a 3600s TTL, mirroring the CLI's own `elapsed < TTL×0.9` warmth test) with at least `CACHE_GUARD_MIN_CTX` context (default 50k tokens) is then blocked with a warning — the cheapest time to `/compact` or `/clear`, since the cache is lost either way. Submitting the prompt a second time proceeds normally, and the guard warns only once per gap. The warning also carries the session's running total (`Session so far: 3 rewrite(s), ~626k.`), computed at read time from the hit ledger — unlike the `❄` token, which shows only the most recent event at whatever age it had when the statusline last rendered (see [the staleness anchor](#statusline)). Anything the guard prints is true at the moment you read it, and a running total answers "is this actually costing me" in a way a single most-recent event cannot. One deliberate silence: after a `/compact`, the guard's numbers (read from the last tokens entry — compaction writes none) describe a context that no longer exists, and the old prefix is already discarded — so a `compact_boundary` newer than that entry suppresses the warning entirely (logged as `k:"stale-ctx"` so a suppression is distinguishable from a guard that never ran).
 
 **What happens to your blocked prompt:** To make that resend painless — especially for a long prompt — the blocked text is copied to your **system clipboard** (`wl-copy` on Wayland, `pbcopy` on macOS, `xclip`/`xsel` on X11; first one found wins, best-effort), so resending is just paste-and-submit; Claude Code also echoes it back under the warning as a fallback. Set `CACHE_GUARD_CLIPBOARD=false` to leave the clipboard untouched. Text only: the `UserPromptSubmit` payload carries just the prompt string with no image/attachment field, so a pasted image can't be copied — re-attach it by hand on resend.
 
@@ -294,13 +328,14 @@ GROUP_RATE_5H="⧗{rate_5h} ↻{rate_5h_reset} {rate_5h_proj}"
 GROUP_RATE_7D="➐ {rate_7d} ↻{rate_7d_day} {rate_7d_proj}"
 GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 GROUP_CONTEXT="ctx {context}"
+GROUP_COLD="{cold}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
 
 # Lines (space-separated group names)
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
-STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT"
+STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD"
 GROUP_DIVIDER=" · "
 ```
 
@@ -327,6 +362,8 @@ GROUP_RATE_7D_COLOR="dark-gray"
 GROUP_CONTEXT_COLOR="dark-gray"
 ```
 
+Four ship muted by default — `GROUP_RATE_7D_COLOR`, `GROUP_RATE_SCOPED_COLOR`, `GROUP_CONTEXT_COLOR` and `GROUP_BUDGET_COLOR`, all `dark-gray` — and one ships as `none`: `GROUP_COLD_COLOR`. `none` means *do not wrap this group at all* — the `❄` token colors itself (cyan fresh, gray stale), and a group wrapper would repaint over that. Use `none` for any group whose template emits its own ANSI codes.
+
 ### Colors
 
 ```bash
@@ -334,7 +371,11 @@ COLOR_NORMAL="green"              # working normally
 COLOR_RATE_WARNING="yellow"       # projected rate ≥90%
 COLOR_RATE_CRITICAL="red"         # projected rate ≥100%
 COLOR_DEFAULT="dark-gray"         # dividers and secondary text
+COLOR_TIMELINE_WORK="green"       # timeline present-slots
+COLOR_TIMELINE_BREAK="green"      # timeline away-slots (same by default)
 ```
+
+`{context}` is not a flat color: past `CTX_RAMP_START` percent (default `20`) it runs its own green → yellow → orange → red ramp, fully red at `CTX_RAMP_END` (default `90`). Below the start it keeps the group color; set `CTX_RAMP_START=""` to switch the ramp off.
 
 Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `dark-gray`, `light-gray`, `orange`, `pink`, `purple`, `bright-green`, `bright-red`, `bright-yellow`, `bright-blue`, `bright-white`, `dim`, `reset`, `none`. Raw ANSI codes also work.
 
@@ -347,6 +388,8 @@ Presets: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, 
 
 A "break" is any period where you weren't actively engaged — whether idle, quit and came back, or Claude was running a long autonomous job. Short Claude turns (up to ~5 minutes at the default 15-minute threshold) are credited as "user might be watching," but longer autonomous runs count toward absence. Set thresholds to `0` to disable.
 
+That credit is `CLAUDE_CREDIT`, in seconds. It defaults to `0`, which means *auto* — one third of `PAUSE_THRESHOLD`, hence ~5 minutes at the default. Set it explicitly to decouple the two.
+
 ### Auto-rotation
 
 Old log entries are archived on session start. Daily rotation keeps the active log small.
@@ -354,9 +397,12 @@ Old log entries are archived on session start. Daily rotation keeps the active l
 ```bash
 AUTO_ROTATE=true
 ROTATE_INTERVAL=daily    # daily, weekly, monthly
+ARCHIVE_RETAIN_DAYS=730  # prune archives older than this; 0 keeps everything
 ```
 
 Archives: `activity-2026-03-28.jsonl` (daily), `activity-2026-W13.jsonl` (weekly), `activity-2026-03.jsonl` (monthly). Summary records preserve `{project_total}` across rotations.
+
+Rotation trims the active log, but archives are only ever appended — without a horizon the directory grows linearly forever (~15MB over the first two months). The 730-day default keeps year-over-year comparison possible.
 
 ### Environment variables
 
@@ -364,9 +410,10 @@ Archives: `activity-2026-03-28.jsonl` (daily), `activity-2026-W13.jsonl` (weekly
 |----------|---------|-------------|
 | `CLAUDE_WORKTIME_CONFIG` | `~/.config/claude-worktime` | Config directory |
 | `CLAUDE_WORKTIME_DATA` | `~/.local/share/claude-worktime` | Data directory |
-| `CLAUDE_WORKTIME_PAUSE` | `900` | Idle threshold in seconds (overrides config) |
 
 Paths follow [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/).
+
+These two are the only environment variables the script reads. Everything else — including the idle threshold, `PAUSE_THRESHOLD` — is set in the config file; pointing `CLAUDE_WORKTIME_CONFIG` at a different directory is how you run an alternate configuration.
 
 ## How it works
 
@@ -433,6 +480,27 @@ JSONL at `~/.local/share/claude-worktime/activity.jsonl`:
 | `s` | Session ID |
 | `e` | Event type |
 
+Activity records carry no `type` field. The same file also holds four typed record kinds, which every reader filters on — `--repair` and the query modes skip what they don't recognise, so an unknown type is inert rather than corrupt:
+
+| `type` | Written when | Carries |
+|--------|--------------|---------|
+| `tokens` | each statusline render with fresh usage | cache-read/write, input/output, cost, context, 5h window |
+| `cost` | session cost changed | `cost`, plus the project/branch/session dimensions |
+| `summary` | rotation | per-project active/claude/user totals, so `{project_total}` survives the archive |
+| `cold` | cold-cache machinery | a `k` sub-kind, below |
+
+`type:"cold"` records are further split by `k`:
+
+| `k` | Meaning |
+|-----|---------|
+| `hit` | A real bust. Carries `cc` (tokens re-written), `gap`, `ctx`, `cause`, `mdl`, and the forensic fields `mtok`/`pblk`/`flight`/`ubytes`/`concur`. |
+| `hit-cause` | A late cause upgrade for an earlier `hit`, keyed `(s, hit_t)`. The ledger is append-only, so readers apply the correction rather than the record being rewritten — without it a bust whose diagnostics arrived late stayed `other` on disk while displaying correctly. |
+| `hit-retract` | Withdraws a `hit` booked from a raced diagnostics read, keyed the same way. Honored by every `hit` reader. |
+| `cost` | A controlled cost class (`compact` / `auto-compact` / `resume`) — a real miss, never a bust. Excluded from `--cold` unless `--all`. |
+| `stale-ctx` | The guard stayed silent because a `compact_boundary` postdates the context it would have quoted. Logged so a suppression is distinguishable from a guard that never ran. |
+| `warn` | A warning actually delivered — the guard blocked a prompt. |
+| `gauge` | Written on **every** guard evaluation, silent ones included, with `met` = "both thresholds cleared". A guard that logged only its hits could not be told apart from a guard that never ran; these make the miss rate measurable. `met:1` without a matching `warn` is the one-shot suppression working. |
+
 ### Files
 
 | Path | Purpose |
@@ -440,7 +508,9 @@ JSONL at `~/.local/share/claude-worktime/activity.jsonl`:
 | `~/.config/claude-worktime/config.sh` | Configuration |
 | `~/.local/share/claude-worktime/activity.jsonl` | Active log |
 | `~/.local/share/claude-worktime/activity-*.jsonl` | Rotated archives |
+| `~/.local/share/claude-worktime/.*` | Internal state — per-session cold counters, usage cache, budget carry-over, rotation errors. Safe to delete; all of it regenerates, though the `{cost_budget}` estimate restarts from scratch. |
 | `~/.local/bin/claude-worktime` | The script |
+| `~/.claude/cachebust-runbook.md` | The runbook the bust notification points at (refreshed on every install) |
 
 ## Dependencies
 
