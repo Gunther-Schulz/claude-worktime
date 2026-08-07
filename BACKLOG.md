@@ -13,6 +13,80 @@ hand for the same reason.
 
 ## Ready
 
+### Five gaps the 2026-08-07 README audit found in the CODE (docs were repaired; these are not)
+
+The audit repaired the README and left the script and config untouched by
+design. Five claims turned out to be defects in the code or its configuration
+rather than in the prose, and two of them need a decision before anyone builds.
+
+- **READY (small) — `--info` is printed at users and is not a handled flag.**
+  `claude-worktime.sh:2850` tells a user with a corrupt log to
+  "run: claude-worktime --info". Executed: it falls through the `*) ;;` arm and
+  silently runs the default session mode, so the hint sends people to a no-op at
+  exactly the moment they have a broken log. Fix is a real arm; `--repair` or
+  `--debug` looks like the intent, and the hint text moves with whatever it
+  becomes. Verifier, red-first: `claude-worktime --info` today prints the
+  session summary — that is the red — and after the fix prints what the corrupt
+  path promised. This is a decision only in the sense of naming the flag; the
+  defect is not in doubt.
+
+- **PARKED — the `:msg`/`:hook` cause suffix is documented twice and produced
+  nowhere.** `config.sh:108-112` and `--tokens` (`claude-worktime.sh:2966`)
+  both describe it; no code path emits it. The cause literals the script
+  actually produces are `idle`, `model`, `other`, `compact`, `auto-compact`,
+  `resume`, `-`, plus the API diagnostic type verbatim. The README was RIGHT to
+  omit it and the audit deliberately did not add it. **Missing evidence: which
+  of the two histories this is** — a feature removed while two docs kept it, or
+  one never built. That decides whether the fix is deleting two doc lines or
+  building the suffix, and it is not derivable from the current tree.
+
+- **READY (small) — `config.sh`'s token list omits 8 tokens the script
+  substitutes.** The README's table is the complete one (35: 17 always + 18
+  optional, verified as a set difference in both directions against the two
+  substitution arrays at `claude-worktime.sh:2211-2214`). A user reading the
+  config file to discover tokens sees an incomplete list. Verifier: the same set
+  difference, run against `config.sh`, must come back empty.
+
+- **PARKED — `CLAUDE_WORKTIME_PAUSE` was documented as an env override and does
+  not exist.** Removed from the README 2026-08-07 (`c5f9a9a`), proven by
+  execution with a positive control: setting it changed nothing while
+  `PAUSE_THRESHOLD` via the config file moved the same number from
+  "Away 5h18m (1)" to "Away 11h16m (74)". `claude-worktime.sh:154` is a bare
+  assignment with no env fallback. **Missing evidence: whether the env override
+  was INTENDED.** Every other knob is config-file-only, so the doc row may
+  simply have been wrong — but if env overrides are wanted, this is a code fix
+  and probably a whole class rather than one variable.
+
+- **PARKED — `PROJECT_GIT_ANCHOR` merges the LABEL but not the TOTALS.**
+  Measured 2026-08-07 while documenting it: the anchor rewrites the displayed
+  project name only (`claude-worktime.sh:1206` is its sole caller), while
+  aggregation still selects on the raw logged path
+  (`select(.p == $proj)`, `:1104-1108`). So a git worktree displays the repo's
+  name and totals separately from it — which is strictly better than before
+  (the label was wrong AND the totals were split) and is still two answers to
+  one question. **Missing evidence: whether totals SHOULD merge across
+  worktrees.** It is a product decision, not a bug: an agent worktree's time
+  arguably belongs to the repo, and arguably is worth seeing apart.
+
+- **READY (small) — the README's `❄` colour cannot be shown in a code block.**
+  The headline example carries a fresh `❄ 428k resume (5m)` and a sentence
+  saying it renders cyan, because a markdown fence is monochrome. If the colour
+  is worth showing, the artifact is an SVG or an ANSI-rendered asset committed
+  beside the README and referenced from it. Done-criterion: the example shows
+  the cyan/gray distinction without a reader having to take prose for it.
+
+- **PARKED — the tool carries no VERSION and `--version` is not a flag.**
+  Measured 2026-08-07: no version constant in `claude-worktime.sh`,
+  `install.sh` or `config.sh`, and `--version` falls through to the default
+  summary mode rather than erroring. Since `install.sh` COPIES the script into
+  `~/.local/bin`, there is no way to tell which build is installed — which bit
+  during a same-day fix, where the only check available was grepping the
+  installed copy for a function body. **Missing evidence: the operator's
+  decision** on whether this repo wants a version at all; a single-user tool
+  legitimately may not. If yes, the shape is a `VERSION=` constant, a real
+  `--version` arm, and `install.sh` printing it on completion.
+
+
 ### The cold detector — one root cause behind three entries (designed 2026-08-07, corrected same day by a fresh-context vet)
 
 The three entries below were booked separately, on separate days, from
