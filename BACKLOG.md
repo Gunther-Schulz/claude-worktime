@@ -13,6 +13,47 @@ hand for the same reason.
 
 ## Ready
 
+- **READY — `other` in the ledger is a RACED READ of the transcript, not a
+  missing cause: every one of four measured events had a real
+  `cache_miss_reason` sitting in its transcript.** Measured 2026-08-08
+  afternoon across four events (three post-`8bfc385`, one pre-fix control),
+  with a zero-instrument check run FIRST so the absence claim could not be
+  vacuous: the anchor query against a deliberately wrong session returns empty
+  while the same query against the correct session and against the control
+  returns real matches.
+
+      11:58:22Z  353k  session 1e04119a   system_changed   (cache_missed 318,507)
+      11:46:13Z  553k  session 6130449c   system_changed   (cache_missed 494,335)
+      09:59:54Z  141k  session 6130449c   messages_changed (cache_missed 124,331)
+      control 2026-08-07 09:52:42Z 212k   previous_message_not_found
+
+  All four present, all four matched. The 120 s late-bind window
+  (`k:"hit-cause"`) is the mechanism meant to catch exactly this and it DID
+  fire for a fourth event — 12:06:02Z was upgraded `other` -> `messages_changed`
+  74 s later, visible in the ledger — while 11:46:13Z and 11:58:22Z were not.
+  So the window works and its REACH is the defect: a fixed timeout racing a
+  transcript write whose latency nobody has characterised.
+  **Why this matters beyond a cosmetic label:** `other` is a DEFAULT meaning
+  "no cause available", and the standing runbook rule
+  (`docs/cachebust-runbook.md:151-157`) already tells a human to grep the
+  transcript before concluding the cause is unavailable — a manual step
+  compensating for a mechanical gap, on every bust, forever. It also poisons
+  the parked Layer-3a entry: an `other` SHARE computed over raced reads
+  measures the race, not the residue.
+  Design, and the open question is which of three: widen the late-bind window
+  (needs the measured transcript-write latency distribution first — a fixed
+  number chosen by feel re-creates the same race further out); or retry-until-
+  found on a bounded budget; or re-derive cause lazily at READ time in `--cold`
+  rather than binding it at write time. The third is the most robust and the
+  largest change.
+  Verifier, red-first, available on committed history: replay 11:46:13Z and
+  11:58:22Z — both must resolve to their real transcript cause
+  (`system_changed`) — while 12:06:02Z must stay `messages_changed`, the
+  control that already works today so the fix cannot pass by changing
+  everything. Done when a ledger `other` means the transcript genuinely has no
+  cause, and the runbook's manual grep step can be DELETED rather than
+  documented.
+
 ### Five gaps the 2026-08-07 README audit found in the CODE (docs were repaired; these are not)
 
 The audit repaired the README and left the script and config untouched by
