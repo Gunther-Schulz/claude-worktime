@@ -204,7 +204,7 @@ verifier below and is not yet designed.
 
 ---
 
-- **READY — `--rows`: a line-robust ledger query mode.** There is no
+- **DROPPED 2026-08-08 — see Departed; design retained below should a real consumer appear.** ~~READY~~ — `--rows`: a line-robust ledger query mode.** There is no
   query surface, so every investigation hand-rolls one and re-earns
   the two hazards this repo already solved: the unreadable lines (F6)
   and the 81 MB size. Measured 2026-08-07: an ad-hoc scan written
@@ -391,7 +391,7 @@ verifier below and is not yet designed.
   Done when all five have been shown red on real data and green on the
   clean fixture, and `--doctor` is wired into whatever runs daily.
 
-- **READY — the torn-line writer.** `--cold` reporting `43 unreadable
+- **OBSOLETE 2026-08-08 — see Departed; diagnosis refuted, artifact gone.** ~~READY~~ — the torn-line writer.** `--cold` reporting `43 unreadable
   line(s) skipped` is the 2026-07-28 three-answer fix working: the
   READER is fine. But the count is wallpaper, nothing classifies what
   is unreadable, and `.rotation_errors` shows 1,022 consecutive
@@ -418,7 +418,7 @@ The dotfiles statusline read `total 2204h44m`. Recomputed independently
 one gap of 2159h32m** (89.98 days). Both defects below are live, and neither
 is visible from reading the statusline.
 
-- **READY — (A) `calc_active` walks a per-project SLICE and treats
+- **BUILT 2026-08-08 (f40e104, deployed) — see Departed.** ~~READY~~ — (A) `calc_active` walks a per-project SLICE and treats
   adjacent-in-slice events as adjacent in time.** `claude-worktime.sh:1106-1109`
   computes `project_total_active` as
   `$all | map(select(.p == $proj)) | calc_active($pause)`. The gap between two
@@ -467,7 +467,7 @@ is visible from reading the statusline.
   acceptance test for (A)+(B), not merely a watchdog: it is red before and
   green after, on real data, with no fixture.
 
-- **READY — (B) `.p` is written RAW but `{project}` is displayed ANCHORED, so
+- **BUILT 2026-08-08 (f40e104, deployed) — see Departed.** ~~READY~~ — (B) `.p` is written RAW but `{project}` is displayed ANCHORED, so
   the label sits over a body it does not describe.** The log writer
   (≈986-995) uses `HOOK_CWD`/`$(pwd)` verbatim; `PROJECT_GIT_ANCHOR`
   (≈728, `_project_label_v`) anchors to the git common dir for the DISPLAY
@@ -484,7 +484,7 @@ is visible from reading the statusline.
   distinct `.p` values feed four different totals — assert label and
   aggregation key are equal for every rendered row.
 
-- **READY — (C) the plausibility invariant that would have caught this, as a
+- **BUILT 2026-08-08 (tests/project-totals-plausibility.sh) — see Departed.** ~~READY~~ — (C) the plausibility invariant that would have caught this, as a
   `--test` check.** The manual probe is the prototype; the mechanism is the
   deliverable. **Invariant: the SUM of all projects' active time cannot exceed
   the log's own first..last wall span.** Measured today: sum `20565h43m` vs
@@ -530,7 +530,7 @@ is visible from reading the statusline.
 
 ### Rotation's first run after the 2026-08-08 repair is a one-time 12-25 s stall — DECISION PENDING
 
-- **READY — operator decision, evidence gathered.** With the live log repaired
+- **SETTLED 2026-08-08, superseded by the summary-writer hold — see Departed.** ~~READY~~ — operator decision, evidence gathered. With the live log repaired
   (46 lines, 2026-08-08) rotation is unjammed for the first time in 129 days,
   and `:1003` runs it SYNCHRONOUSLY on the session-start hook. Measured on an
   83 MB synthetic corrupt log: **24.2 s wall**, `Rotated 1073862 entries
