@@ -220,9 +220,32 @@ verifier below and is not yet designed.
   naive whole-file `jq` still dies. `[vet]` reviewed: clean,
   red-first, two-sided, no objection.
 
-- **READY — per-session `token_prev` (the actual false-❄ fix). HIGHEST-MERIT
-  ITEM IN THIS CLUSTER, and the root cause is now confirmed in the data rather
-  than reasoned from one occurrence.** Scanned 2026-08-08 over all 105
+- **SHIPPED 2026-08-08 (`8bfc385`, pushed) — per-session `token_prev`.**
+  Landed as `local token_prev="${LOGDIR}/.token_prev_${sid}"`, keyed like the
+  existing `.cold_${sid}` state file. Red-first proven and INDEPENDENTLY
+  re-run by the dispatcher, not booked on the lane's word: the new test
+  `tests/replay-token-prev-session.sh` exits **1** against base `5487ec6`'s
+  script (md5 `acf2cec1220a51e470e5e6f206ec350a`, cross-checked by the
+  dispatcher against `git show 5487ec6:claude-worktime.sh`) and **0** against
+  the fix; the unmutated baseline was run first and stated green. Against the
+  old script the duplicate render books `hits=1 cc=335933` — the measured
+  01:00:55Z false ❄; against the fix, `hits=0`. Full suite 17/17 on the
+  dispatcher's own run and again in the pre-push hook.
+  **Confirming evidence gathered the same morning, worth keeping**: TWO live
+  busts, both double-booked, 2 for 2 under concurrent sessions — 638k at
+  09:48:53Z/09:49:20Z (one `message.id`, `cr=15,530 cc=638,186` on both rows)
+  and 141k at 09:59:53Z/10:00:00Z (one `message.id`, `cr=15,195 cc=140,878`).
+  Both are the predicted signature: identical `(cr,cc)` within one session,
+  let through by cross-session interleave. The operator saw the phantom render
+  as ordinal `#2` in the statusline, live, which is the nuisance this closes.
+  Residual, NOT closed by this fix and deliberately not widened into it: the
+  guard is an identity PROXY ("same `(cr,cc)` within a session"), not identity.
+  The real identity is the API call id, which `tools/cold-events.mjs` in the
+  cache-fix fork uses (`requestId`) and which is not available at the
+  statusline tap — sixteen fields extracted, none an identifier. If a duplicate
+  ever appears with genuinely differing `(cr,cc)` for one call, this proxy will
+  not catch it and the transcript-reading route is the fallback.
+  Original entry follows unchanged: Scanned 2026-08-08 over all 105
   recorded hits: **20 pairs sit less than 60 s apart within the SAME session**,
   several with an identical `cc` on both sides (119664 -> 119664,
   81917 -> 81917) — the same API call booked twice, which is exactly the
@@ -264,8 +287,26 @@ verifier below and is not yet designed.
   idle bust while (A) will class it a controlled cost, so they must
   DISAGREE there by design. Closure ranges over the 01:00 event only.
 
-- **READY — (A): consult the diagnostic BEFORE the idle
-  short-circuit.** Measured 2026-08-06 23:59:10Z: `previous_message_
+- **SHIPPED 2026-08-08 (`8bfc385`, pushed, bundled with the item above) — (A):
+  consult the diagnostic BEFORE the idle short-circuit.** The `_cw_diag` read
+  now runs whenever the hit predicate matches, ahead of the idle/model ladder;
+  `previous_message_not_found` wins outright over gap and model.
+  **The struck `gap > TTL` leg was NOT implemented**, per this entry's own
+  `[vet]` blocking note — the diagnostic leg alone catches the named cases, and
+  the leg would have silenced the whole idle class.
+  Verifier ran THREE-sided as this entry specified, red-first
+  (`tests/replay-diag-before-idle.sh`, dispatcher-re-run: exit **1** against
+  base `5487ec6`, **0** against the fix): against OLD, the 23:59:10Z and
+  03:32:02Z shapes failed as expected (`got hit/idle, want cost/resume`) while
+  BOTH over-firing controls already passed on OLD — the 18:08:32Z genuine
+  mid-history bust (`gap=7`, `messages_changed`) still books as a hit, and a
+  constructed idle expiry with `gap > TTL` and no resume diagnostic still books
+  as a hit. Those two passing on the old code is the point: it shows the red
+  came from the diagnostic-precedence cases only, not from a check that fires
+  on everything.
+  Sequencing note from this entry HELD: (A) shipped before 3b's fixture was
+  captured, so 3b's verifier has not dissolved.
+  Original entry follows unchanged: Measured 2026-08-06 23:59:10Z: `previous_message_
   not_found` booked a `k:"hit"` with cause `idle`, `cc` 215,873,
   `gap` 22,702 s — an ordinary idle expiry rendered as a ❄ bust and a
   prevention target, which the 2026-07-31 resume-split's own contract
