@@ -3076,8 +3076,20 @@ mode_cold() {
 mode_rotate() {
     [ ! -f "$LOGFILE" ] && { echo "No log file to rotate"; return; }
     _rotate_boundaries
+    # Through _safe_log, identically to _do_rotate's copy of this guard. A plain
+    # `jq FILTER "$LOGFILE"` parses the whole file as one stream and dies on the
+    # first malformed line — and the log is append-only from concurrent hooks,
+    # so a malformed line is expected, not exceptional.
+    #
+    # It was tolerant BY ACCIDENT: streaming jq emits every record it parsed
+    # before dying, so a corrupt line in the MIDDLE still yields a first
+    # timestamp. It failed only where the corrupt line PRECEDES every valid
+    # event record — nothing is emitted, the read comes back empty, and the
+    # guard below reads that as "the log holds no events" and prints "Nothing to
+    # rotate" over a log full of rotatable entries. An unreadable log rendered
+    # as an empty one: the could-not-verify answer in a pass's clothes.
     local first_event_ts
-    first_event_ts=$(jq -r 'select((.type // null) == null) | .t' "$LOGFILE" 2>/dev/null | head -1 || true)
+    first_event_ts=$(_safe_log "$LOGFILE" | jq -r 'select((.type // null) == null) | .t' 2>/dev/null | head -1 || true)
     if [ -z "$first_event_ts" ] || [ "$first_event_ts" -ge "$ROTATE_CUTOFF" ]; then
         echo "Nothing to rotate (all entries are from current $ROTATE_INTERVAL period)"
         return
