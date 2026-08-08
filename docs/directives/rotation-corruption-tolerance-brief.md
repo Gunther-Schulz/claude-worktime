@@ -5,8 +5,16 @@ cited lines rather than re-deriving it.
 
 Working copy: `/home/g/dev/Gunther-Schulz/claude-worktime`.
 Base check (two reads, both required):
-`git merge-base --is-ancestor 3546591 HEAD` and
-`git log --oneline 3546591..HEAD` — expected: base contained, nothing on top.
+`git merge-base --is-ancestor a3ec941 HEAD` and
+`git log --oneline a3ec941..HEAD` — expected: base contained, nothing on top.
+
+> Corrected 2026-08-08 after execution: this file originally named `3546591`,
+> the HEAD from before the dispatcher committed the booking that carries this
+> very brief. The executing agent ran the check, got `a3ec941` on top of the
+> stated base — the third state, "base contained WITH commits on top" — and
+> surfaced it rather than rebasing silently, which is the correct handling.
+> The brief's base ref is written AFTER the dispatcher's own commits land, not
+> before; writing it from the pre-commit HEAD is the error to avoid.
 Any other state halts as a gap (foreign commits on top, dirty tree over a
 stale base). Never rebase, never discover a base by guesswork.
 Scratch: your OWN scratchpad. Do not write under the dispatcher's.

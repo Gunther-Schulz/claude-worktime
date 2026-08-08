@@ -443,6 +443,53 @@ is visible from reading the statusline.
   Done-criterion: the check ships in `--test`, goes red on today's log, and
   goes green once (A) and (B) land.
 
+### `mode_rotate` keeps its own plain-jq copy of the guard `_do_rotate` just had fixed (found 2026-08-08 by the executing agent, outside its write boundary)
+
+- **READY (small) — `claude-worktime.sh:2931`.** `_do_rotate`'s first-event
+  guard is now `_safe_log "$LOGFILE" | jq -r … | head -1` (`:2655`, commit
+  `7a949ab`). `mode_rotate` has a second, untouched copy:
+  `first_event_ts=$(jq -r 'select((.type // null) == null) | .t' "$LOGFILE" … | head -1 || true)`.
+  It is tolerant BY ACCIDENT — streaming jq emits the first valid record before
+  dying — and fails exactly where the corrupt line PRECEDES every valid event
+  record: the read yields empty and `--rotate` prints "Nothing to rotate" over
+  a log full of rotatable entries. That is the could-not-verify answer wearing
+  a pass-shaped costume, the same shape `docs/` warns about.
+  Fix: route it through `_safe_log`, identically to `:2655`.
+  Verifier, red-first: a fixture whose FIRST line is malformed and whose
+  remaining lines are all pre-cutoff events — `--rotate` prints "Nothing to
+  rotate" today (the red); after the fix it rotates them. Note the ordinary
+  fixture (corrupt line in the middle) does NOT go red here, which is why the
+  ordering is part of the spec, not an incidental fixture detail.
+  Not covered by `tests/rotation-corrupt-log.sh` or
+  `tests/rotation-no-silent-truncation.sh` — both drive `_do_rotate`.
+
+- **READY (small) — the item-(2) refusal branch has no black-box test.**
+  `7a949ab` added a hard-error guard at the collect read (`:2662-2672`) that
+  refuses to archive on a read failure. After the `_safe_log` routing it is
+  unreachable by fixture — it needs `:2655` to succeed while `:2662` fails
+  (OOM, file vanishing mid-run). Proven by injection only (executor bite 2,
+  2026-08-08), never by a suite test. Decide: either a fault-injection seam the
+  suite can drive, or an explicit note in the test file that this branch is
+  injection-proven. Silently untested is the one option ruled out.
+
+### Rotation's first run after the 2026-08-08 repair is a one-time 12-25 s stall — DECISION PENDING
+
+- **READY — operator decision, evidence gathered.** With the live log repaired
+  (46 lines, 2026-08-08) rotation is unjammed for the first time in 129 days,
+  and `:1003` runs it SYNCHRONOUSLY on the session-start hook. Measured on an
+  83 MB synthetic corrupt log: **24.2 s wall**, `Rotated 1073862 entries
+  (24 projects)`. The synthetic carries ~1.9x the real log's line count and the
+  cost looks per-record, so the real figure is plausibly ~12 s — same order.
+  One-time; afterwards the live log is small.
+  Currently NEUTRALISED by `AUTO_ROTATE=false` in dotfiles'
+  `claude-worktime/config.sh` (hold set 2026-08-08, reason and removal
+  condition in the comment there). The hold exists for a different reason —
+  rotation would bake inflated `calc_active` totals into permanent summary
+  records — so BOTH must clear before it lifts.
+  When it lifts: prefer `claude-worktime --rotate` run manually, once, before
+  the next session start, over paying the stall on a hook. Recommendation, not
+  yet decided.
+
 ## Parked
 
 - **PARKED — Layer 1 (call identity on every cold record) and (B) (the
