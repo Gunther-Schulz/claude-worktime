@@ -1777,7 +1777,21 @@ mode_statusline() {
             [ -z "$t_out" ] && t_out=0
 
             # Log token entry (skip if no valid session context)
-            local token_prev="${LOGDIR}/.token_prev"
+            #
+            # Keyed per-session, matching the per-session .cold_<sid> state
+            # file below — NOT the old global ${LOGDIR}/.token_prev. A global
+            # file lets a foreign session's write sit between two renders of
+            # the SAME call: the duplicate re-render's (cr,cc) then compares
+            # against the OTHER session's last-seen pair instead of its own,
+            # the gate reads "changed" when it did not, and the render is
+            # re-processed as a brand-new event — compared against this
+            # session's own cs_prev from the real prior turn, which is
+            # exactly the false-❄ shape measured 2026-08-07 01:00:55Z (three
+            # renders of one API call, the third booked a 336k hit against
+            # itself). Per-session, the duplicate's own last-seen pair is
+            # always its own, so identical (cr,cc) is filtered before any
+            # hit classification runs, foreign-session interleaving or not.
+            local token_prev="${LOGDIR}/.token_prev_${sid}"
             local tp_cr=0 tp_cc=0
             [ -f "$token_prev" ] && read -r tp_cr tp_cc < "$token_prev" 2>/dev/null
             # cr+cc+ui == 0 is "no usage data yet", never a measurement — no
@@ -1835,108 +1849,122 @@ mode_statusline() {
                     && [ "${t_cc:-0}" -ge $(( cs_prev * 6 / 10 )) ] \
                     && [ "${t_cr:-0}" -le $(( cs_prev / 5 )) ]; then
                     [ "$cs_prev_t" -gt 0 ] && cold_gap=$(( now - cs_prev_t ))
-                    # Classify the cause. idle first: a gap past the cache TTL
-                    # kills the cache regardless of model. Else a model change
-                    # since the previous turn is a cache-key switch. Else
-                    # "other" — same model, no idle: an injection/eviction/race
-                    # not visible in the usage numbers alone.
+                    # Consult the transcript diagnostic BEFORE the idle/model
+                    # cause is assumed, not only in the residual bucket as
+                    # before. Moved ahead 2026-08-08: idle used to
+                    # short-circuit straight to cs_lastcause="idle" without
+                    # ever reading the transcript, so a genuine resume/fork/
+                    # compact (diagnostic previous_message_not_found) landing
+                    # on a long idle gap booked as an idle bust (measured
+                    # 2026-08-06T23:59:10Z, cc 215,873, gap 22,702s — and
+                    # recurred 2026-08-07T03:32:02Z). Ask the API itself
+                    # instead of tail-grepping for co-occurrence strings:
+                    # every assistant transcript entry carries
+                    # message.diagnostics.cache_miss_reason {type,
+                    # cache_missed_input_tokens} straight from the provider.
+                    # Observed types (1,137 events, 2026-07-31):
+                    # messages_changed / tools_changed / system_changed /
+                    # previous_message_not_found / unavailable — the last two
+                    # arrive BARE, with no cache_missed_input_tokens key, so
+                    # the // 0 default below is what makes them read as 0
+                    # rather than null. The list is observed, not exhaustive,
+                    # and the read below passes .type through verbatim: an
+                    # unlisted value logs correctly without a code change.
+                    # Read only on a hit (rare) so the statusline stays
+                    # cheap; missing/older transcripts (no diagnostics field)
+                    # degrade to empty and the gap/model ladder below runs
+                    # exactly as it did before this diagnostic existed.
+                    if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
+                        local _cw_diag
+                        # ANCHOR THE READ TO THE BUSTING TURN.
+                        #
+                        # This used to be `tail -n 1` over all assistant
+                        # entries — "the newest entry is the turn that just
+                        # busted". It frequently is not: CC writes the entry
+                        # AFTER the response returns while this hook fires ON
+                        # that response, so the newest entry on disk is often
+                        # the PREVIOUS turn. That silently copied a foreign
+                        # turn's diagnostics onto this bust.
+                        #
+                        # Measured 2026-07-27, ❄ #9: recorded
+                        # cause=unavailable for a cc=245997 bust. The 245997
+                        # turn's own diagnostic was messages_changed;
+                        # "unavailable" belonged to an earlier, HEALTHY turn
+                        # (cc=5386, cr=260636) that was merely the last one
+                        # written at read time. A plausible-but-wrong cause is
+                        # worse than "other" — "other" at least announces that
+                        # it knows nothing.
+                        #
+                        # cache_creation_input_tokens identifies the turn: it
+                        # is exactly the t_cc this bust was detected on. No
+                        # match means the busting entry has not been flushed
+                        # yet, which is the honest "other" — and the
+                        # late-binding re-read below upgrades it once it lands.
+                        # Entries with no usage block cannot be matched or
+                        # excluded on cc, so they stay eligible: an entry
+                        # that carries usage must MATCH this bust's cc,
+                        # while one that carries none is accepted as before.
+                        # That keeps the anchor strict exactly where the
+                        # evidence to be strict exists.
+                        _cw_diag=$(jq -c --argjson cc "${t_cc:-0}" \
+                            'select(.type == "assistant")
+                             | select((.message.usage | not)
+                                      or (.message.usage.cache_creation_input_tokens == $cc))' \
+                            "$tp_path" 2>/dev/null | tail -n 1)
+                        if [ -n "$_cw_diag" ]; then
+                            _cw_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_diag" 2>/dev/null)
+                            _cw_miss_tok=$(jq -r '.message.diagnostics.cache_miss_reason.cache_missed_input_tokens // 0' <<< "$_cw_diag" 2>/dev/null)
+                            case "$_cw_miss_tok" in ''|*[!0-9]*) _cw_miss_tok=0 ;; esac
+                            # Forensic fields (change 3): content-block types
+                            # of the preceding assistant turn, its stop_reason
+                            # (tool_use = the turn before the busting one was
+                            # still mid-flight), byte size of the newest
+                            # user-role entry before the bust, and how many
+                            # other transcripts in this project dir were
+                            # touched within the last 5 minutes (concurrent
+                            # subagent proxy). All cheap jq/stat, all gated
+                            # behind the hit branch so the non-hit path never
+                            # pays for them.
+                            _cw_prev_blocks=$(jq -c '[.message.content[]?.type] // []' <<< "$_cw_diag" 2>/dev/null)
+                            [ -n "$_cw_prev_blocks" ] || _cw_prev_blocks="[]"
+                            _cw_prev_stop=$(jq -r '.message.stop_reason // empty' <<< "$_cw_diag" 2>/dev/null)
+                            local _cw_last_user
+                            _cw_last_user=$(jq -c 'select(.type == "user")' "$tp_path" 2>/dev/null | tail -n 1)
+                            _cw_user_bytes=${#_cw_last_user}
+                            if [ -n "${tp_path:-}" ]; then
+                                local _cw_pdir; _cw_pdir=$(dirname "$tp_path")
+                                _cw_concur=$(find "$_cw_pdir" -maxdepth 1 -name '*.jsonl' -newermt "@$(( now - 300 ))" 2>/dev/null | wc -l | tr -d ' ')
+                                case "$_cw_concur" in ''|*[!0-9]*) _cw_concur=0 ;; esac
+                                [ "$_cw_concur" -gt 0 ] && _cw_concur=$(( _cw_concur - 1 ))
+                            fi
+                        fi
+                    fi
+                    # Classify the cause. previous_message_not_found (the
+                    # diagnostic just read) wins outright: it identifies a
+                    # resume/fork/compact artifact regardless of gap or
+                    # model, and the block below routes it to cost, never a
+                    # hit — this is what stops idle/model from
+                    # short-circuiting past it, per the gap leg being struck
+                    # (a bare gap>TTL with no diagnostic still falls through
+                    # to idle below, unchanged). Else idle: a gap past the
+                    # cache TTL kills the cache regardless of model. Else a
+                    # model change since the previous turn is a cache-key
+                    # switch. Else the diagnostic's own cause, if one was
+                    # read. Else "other" — same model, no idle, no matching
+                    # diagnostic: an injection/eviction/race not visible in
+                    # the usage numbers alone.
                     local cause_ttl=${CACHE_GUARD_TTL:-3600}
                     [ "$cause_ttl" -gt 0 ] 2>/dev/null || cause_ttl=3600
-                    if [ "$cold_gap" -ge $(( cause_ttl * 9 / 10 )) ]; then
+                    if [ "$_cw_cause" = "previous_message_not_found" ]; then
+                        cs_lastcause="previous_message_not_found"
+                    elif [ "$cold_gap" -ge $(( cause_ttl * 9 / 10 )) ]; then
                         cs_lastcause="idle"
                     elif [ "$cs_prevmodel" != "-" ] && [ "$cs_prevmodel" != "$cur_model" ]; then
                         cs_lastcause="model"
+                    elif [ -n "$_cw_cause" ]; then
+                        cs_lastcause="$_cw_cause"
                     else
-                        # Residual: idle-TTL and model-switch are already ruled
-                        # out above (both are visible from the state file alone
-                        # and cheaper to check than a transcript read). For what's
-                        # left, ask the API itself instead of tail-grepping for
-                        # co-occurrence strings: every assistant transcript entry
-                        # carries message.diagnostics.cache_miss_reason
-                        # {type, cache_missed_input_tokens} straight from the
-                        # provider. Observed types (1,137 events, 2026-07-31):
-                        # messages_changed / tools_changed / system_changed /
-                        # previous_message_not_found / unavailable — the last two
-                        # arrive BARE, with no cache_missed_input_tokens key, so
-                        # the // 0 default below is what makes them read as 0
-                        # rather than null. The list is observed, not exhaustive,
-                        # and the read below passes .type through verbatim: an
-                        # unlisted value logs correctly without a code change.
-                        # (model_changed was listed here until 2026-07-31 and
-                        # occurs in none of the 1,137 — assumed, never observed.)
-                        # previous_message_not_found means the
-                        # transcript resumed/forked (see below — routed out of
-                        # the hit ledger, not a live bust). Read only on a hit
-                        # (rare) so the statusline stays cheap; missing/older
-                        # transcripts (no diagnostics field) degrade to "other"
-                        # rather than blocking or crashing the statusline.
                         cs_lastcause="other"
-                        if [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
-                            local _cw_diag
-                            # ANCHOR THE READ TO THE BUSTING TURN.
-                            #
-                            # This used to be `tail -n 1` over all assistant
-                            # entries — "the newest entry is the turn that just
-                            # busted". It frequently is not: CC writes the entry
-                            # AFTER the response returns while this hook fires ON
-                            # that response, so the newest entry on disk is often
-                            # the PREVIOUS turn. That silently copied a foreign
-                            # turn's diagnostics onto this bust.
-                            #
-                            # Measured 2026-07-27, ❄ #9: recorded
-                            # cause=unavailable for a cc=245997 bust. The 245997
-                            # turn's own diagnostic was messages_changed;
-                            # "unavailable" belonged to an earlier, HEALTHY turn
-                            # (cc=5386, cr=260636) that was merely the last one
-                            # written at read time. A plausible-but-wrong cause is
-                            # worse than "other" — "other" at least announces that
-                            # it knows nothing.
-                            #
-                            # cache_creation_input_tokens identifies the turn: it
-                            # is exactly the t_cc this bust was detected on. No
-                            # match means the busting entry has not been flushed
-                            # yet, which is the honest "other" — and the
-                            # late-binding re-read below upgrades it once it lands.
-                            # Entries with no usage block cannot be matched or
-                            # excluded on cc, so they stay eligible: an entry
-                            # that carries usage must MATCH this bust's cc,
-                            # while one that carries none is accepted as before.
-                            # That keeps the anchor strict exactly where the
-                            # evidence to be strict exists.
-                            _cw_diag=$(jq -c --argjson cc "${t_cc:-0}" \
-                                'select(.type == "assistant")
-                                 | select((.message.usage | not)
-                                          or (.message.usage.cache_creation_input_tokens == $cc))' \
-                                "$tp_path" 2>/dev/null | tail -n 1)
-                            if [ -n "$_cw_diag" ]; then
-                                _cw_cause=$(jq -r '.message.diagnostics.cache_miss_reason.type // empty' <<< "$_cw_diag" 2>/dev/null)
-                                _cw_miss_tok=$(jq -r '.message.diagnostics.cache_miss_reason.cache_missed_input_tokens // 0' <<< "$_cw_diag" 2>/dev/null)
-                                case "$_cw_miss_tok" in ''|*[!0-9]*) _cw_miss_tok=0 ;; esac
-                                [ -n "$_cw_cause" ] && cs_lastcause="$_cw_cause"
-                                # Forensic fields (change 3): content-block types
-                                # of the preceding assistant turn, its stop_reason
-                                # (tool_use = the turn before the busting one was
-                                # still mid-flight), byte size of the newest
-                                # user-role entry before the bust, and how many
-                                # other transcripts in this project dir were
-                                # touched within the last 5 minutes (concurrent
-                                # subagent proxy). All cheap jq/stat, all gated
-                                # behind the hit branch so the non-hit path never
-                                # pays for them.
-                                _cw_prev_blocks=$(jq -c '[.message.content[]?.type] // []' <<< "$_cw_diag" 2>/dev/null)
-                                [ -n "$_cw_prev_blocks" ] || _cw_prev_blocks="[]"
-                                _cw_prev_stop=$(jq -r '.message.stop_reason // empty' <<< "$_cw_diag" 2>/dev/null)
-                                local _cw_last_user
-                                _cw_last_user=$(jq -c 'select(.type == "user")' "$tp_path" 2>/dev/null | tail -n 1)
-                                _cw_user_bytes=${#_cw_last_user}
-                                if [ -n "${tp_path:-}" ]; then
-                                    local _cw_pdir; _cw_pdir=$(dirname "$tp_path")
-                                    _cw_concur=$(find "$_cw_pdir" -maxdepth 1 -name '*.jsonl' -newermt "@$(( now - 300 ))" 2>/dev/null | wc -l | tr -d ' ')
-                                    case "$_cw_concur" in ''|*[!0-9]*) _cw_concur=0 ;; esac
-                                    [ "$_cw_concur" -gt 0 ] && _cw_concur=$(( _cw_concur - 1 ))
-                                fi
-                            fi
-                        fi
                     fi
                     # previous_message_not_found is a resume/fork/compact
                     # artifact — a REAL miss the user should see (feedback:
