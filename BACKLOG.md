@@ -220,7 +220,22 @@ verifier below and is not yet designed.
   naive whole-file `jq` still dies. `[vet]` reviewed: clean,
   red-first, two-sided, no objection.
 
-- **READY — per-session `token_prev` (the actual false-❄ fix).**
+- **READY — per-session `token_prev` (the actual false-❄ fix). HIGHEST-MERIT
+  ITEM IN THIS CLUSTER, and the root cause is now confirmed in the data rather
+  than reasoned from one occurrence.** Scanned 2026-08-08 over all 105
+  recorded hits: **20 pairs sit less than 60 s apart within the SAME session**,
+  several with an identical `cc` on both sides (119664 -> 119664,
+  81917 -> 81917) — the same API call booked twice, which is exactly the
+  signature this item predicts. One pair disagrees with itself about class
+  (`other` / `messages_changed`), the "two duplicates that cannot even be
+  recognised as one event" case. And 44 of 105 hits (42%) sit in the degraded
+  `other` bucket.
+  It is also the only item here attached to a LIVE operator-facing nuisance:
+  the ❄ notifications still fire (operator-confirmed 2026-08-08), so a share
+  of them are false, and a checker that fires on a non-defect trains its
+  reader to discount the real one. **Bundle with the diagnostic-ordering item
+  (A) below** — same code region, and (A) attacks that same 42% `other`
+  bucket; splitting them buys nothing but a second round.
   Root cause, 2026-08-07 01:00:55Z: the predicate
   (`cc >= 0.6 x prev_ctx` AND `cr <= prev_ctx / 5`, ≈1694) compared a
   render against another render of the SAME call. `[vet]` verified the
@@ -289,7 +304,20 @@ verifier below and is not yet designed.
   captured and 3b's verifier dissolves. The freeze above covers the
   ledger rows; the stdin sequences it needs are still missing.
 
-- **READY — Layer 3a: a fourth answer, "the cache was fine."** The
+- **PARKED 2026-08-08 (was READY) — Layer 3a: a fourth answer, "the cache
+  was fine."** Design below is intact and unchallenged; what changed is the
+  SEQUENCING. Its motivating population is false fires forced to render as
+  unknown-cause busts — and the per-session `token_prev` item is the fix for
+  the false fires themselves. Building the honest fourth answer first means
+  building it for a population that item is about to remove.
+  **Named missing evidence: the `other`-cause hit count after `token_prev`
+  ships.** Today 44 of 105 recorded hits (42%) are `other`. If that collapses,
+  this item shrinks to a genuine could-not-verify answer for a rare residue
+  and may not earn a ladder rung; if it holds near 42%, the false fires were
+  not the driver and this becomes READY again on stronger grounds than it has
+  now. Either outcome flips the verdict, which is what makes this a park
+  rather than a deferral.
+  Original entry follows unchanged: The
   ladder runs idle → model → residual, assuming a cold rewrite
   happened and only asking why; the residual names a real cause only
   when `cache_miss_reason` is readable, and at 01:00:55Z the
@@ -317,6 +345,21 @@ verifier below and is not yet designed.
 
 - **READY — a DOCTOR verdict over the ledger's own health. There is
   none, and that is the emptiest cell in the instrument matrix.**
+  **RE-SCOPED 2026-08-08, and the first verdict is now named.** The argument
+  below (nothing asks whether the ledger is SOUND) is right and its inventory
+  stands. What it lacked was a proven blind spot to aim at first, and one
+  arrived: rotation failed **1,052 consecutive times over 129 days** and
+  nothing noticed — `.rotation_errors` grew all the while and is printed only
+  by `--info`, which nobody runs unprompted. That is this item's thesis with
+  an execution attached, so build THAT verdict first: rotation staleness.
+  Computable, near-zero false fires — `AUTO_ROTATE` is true AND the newest
+  `activity-*.jsonl` archive is older than N rotation periods AND the live log
+  holds records older than the cutoff. Note the deliberate `AUTO_ROTATE` guard:
+  without it the check fires on every machine that has rotation switched off
+  on purpose, which is the guard-fires-on-a-non-defect shape.
+  Red-first is free and needs no fixture: the live state was red for 129 days
+  and the archives on disk still prove it (newest `activity-2026-03-31.jsonl`).
+  The broader ledger-health verdicts below stay in scope after it.
   Measured 2026-08-07 by an inventory across all three repos: 100
   instruments, and `worktime_ledger` is read by 14 of them — the most
   of any data source — of which 10 are QUERY and **0 are DOCTOR**.
@@ -631,6 +674,51 @@ is visible from reading the statusline.
   The operator decision in (1) is the cheapest and unblocks the most.
 
 ## Departed
+
+- 2026-08-08: **the torn-line writer — OBSOLETE, its diagnosis refuted.**
+  The item asked to classify the unreadable lines and then fix the writer
+  producing them. Both halves are answered, neither the way it expected.
+  All 46 were classified (commit a3ec941): each is a valid event record whose
+  closing brace was consumed by a spliced `,"cst":{"<k>":"<v>"` fragment. Its
+  named first suspect — "a rotation that REWRITES the live file" — is
+  REFUTED: rotation had not succeeded once since 2026-04-01, so it never
+  rewrote anything; the corrupt lines were what JAMMED rotation, i.e. the item
+  had cause and effect inverted. All three of its shape hypotheses (truncated
+  prefix / two records concatenated / interleaved bytes from two writers) are
+  wrong, and with them the premise that this was a CONCURRENCY defect — so its
+  verifier ("a concurrency probe adds zero new unreadable lines against the
+  fixed writer") would have exercised a mechanism that was never the cause.
+  The writer was already fixed on 2026-04-01 by 910a6c4, seventeen minutes
+  after 6f91aa5 introduced it; no corrupt line exists after that date. The
+  artifact it was written about is gone: unreadable lines 0, down from 43-46.
+  Lesson worth keeping: this item carried a DIAGNOSIS rather than a symptom,
+  and a diagnosis rots while the entry stays plausible — it survived a
+  fresh-context vet with the wrong hypothesis intact, because the vet checked
+  the reasoning and not the world.
+
+- 2026-08-08: **`--rows` — DROPPED on re-reading its own grounding.** Its
+  evidence was that an ad-hoc scan "was killed at 120 s having answered
+  nothing". But that scan ran one `jq` process per line over an 81 MB file:
+  it proves the scan was written badly, not that a query surface is missing.
+  Half a dozen equivalent queries were run against the same log in Python in
+  under a second each during the 2026-08-08 investigation. Outside the cold
+  cluster the mode has no consumer, and it is cheaper to write when something
+  actually needs it than to carry as standing scope.
+
+- 2026-08-08: **(A), (B) and (C) of the `{project_total}` inflation item —
+  BUILT.** commit f40e104, deployed via dotfiles `dot apply` the same day.
+  The statusline reads `total 29h14m` where it read `2204h44m`; verified
+  against an independent reimplementation of the settled rule, agreeing to the
+  minute, and at the deployed-binary altitude rather than from the repo. (C)
+  went red->green on the real log with no fixture: 5.36x wall-clock before,
+  0.31x after, 190 projects. Full suite 10 passed / 0 failed.
+
+- 2026-08-08: **the rotation-stall decision — SETTLED, superseded.** The
+  12-25 s first-rotation stall is real but is no longer the binding
+  constraint: `AUTO_ROTATE` is held for the summary-writer defect instead, and
+  the same measurement pass showed the stall's own cause (an 83 MB log) is
+  what the writer fix removes. Recommendation preserved in the writer item:
+  when the hold lifts, rotate once by hand rather than on a hook.
 
 - 2026-07-31: both founding items — zero-usage write skip and
   late-bind resume-split retract — built same day they were booked,
