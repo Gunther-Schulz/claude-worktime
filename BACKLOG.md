@@ -503,6 +503,43 @@ is visible from reading the statusline.
   the next session start, over paying the stall on a hook. Recommendation, not
   yet decided.
 
+### Two findings from the runner/lint dispatch, both outside its write boundary (2026-08-08)
+
+- **READY (small) — one suite's sandbox rests on an environment variable
+  happening to be unset.** `tests/replay-cold-corrupt-log.sh` sets
+  `XDG_DATA_HOME` and stops there. But `CLAUDE_WORKTIME_DATA` takes precedence
+  over XDG (`claude-worktime.sh:151`), so on a machine exporting it that suite
+  reads and writes the operator's REAL log. It holds today only because
+  nothing exports it — a sandbox whose correctness is a property of the
+  ambient environment, not of the test.
+  **Audit completed by the dispatcher — the hazard is confined to this ONE
+  suite**, which is worth recording because the executing agent could only
+  report the gap as unaudited: `rotation-corrupt-log.sh` and
+  `rotation-no-silent-truncation.sh` set XDG *and* `unset
+  CLAUDE_WORKTIME_DATA CLAUDE_WORKTIME_CONFIG`; `replay-cold-detect.sh`,
+  `replay-cold-guard.sh`, `replay-cold-guard-compact.sh` and
+  `test-cold-guard-clipboard.sh` pass `CLAUDE_WORKTIME_DATA=` explicitly on
+  every invocation, which is stronger than the XDG route and immune to the
+  ambient value; `label-git-anchor.sh` awk-extracts two functions and never
+  runs the script at all.
+  Fix: give `replay-cold-corrupt-log.sh` the same `unset` line the rotation
+  suites carry. Verifier, red-first: `CLAUDE_WORKTIME_DATA=/tmp/decoy
+  bash tests/replay-cold-corrupt-log.sh` — today the suite escapes its sandbox
+  into that path (assert against a decoy, never the real log); after the fix
+  it stays in its own. Do NOT red-test this against the real log.
+  Generalisable: prefer the per-invocation `CLAUDE_WORKTIME_DATA=` form over
+  `XDG_DATA_HOME`, since it cannot be overridden by a higher-precedence
+  variable the test never mentions.
+
+- **READY (trivial) — `install.sh:101` `MARKER_END` is assigned and never
+  read.** The `awk` two lines below hardcodes the literal
+  `/^<!-- claude-worktime:end -->/`, so the variable and the string it stands
+  for can drift apart silently; `uninstall.sh` does not define it at all. The
+  one shellcheck finding of the 33 that is a real defect rather than an
+  indirect-expansion false positive. It sits inside the legacy "Remove old
+  CLAUDE.md section (no longer used)" block, so severity is low — fix is
+  either to use the variable in the awk or drop it.
+
 ## Parked
 
 - **PARKED — Layer 1 (call identity on every cold record) and (B) (the
