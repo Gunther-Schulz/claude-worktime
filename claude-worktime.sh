@@ -340,6 +340,74 @@ def calc_split($pause):
       elif is_idle($a; $i; $pause) then .
       elif is_user_turn($a; $i) then .user += $gap
       else .claude += $gap
+      end);
+
+# --- Per-project active time ------------------------------------------------
+#
+# THE RULE, settled 2026-08-08: walk the FULL sorted event stream and credit
+# each gap to the project of its EARLIER endpoint — the project the clock was
+# running in when the gap opened — subject to the same is_idle suppression
+# calc_active uses. Every gap is therefore credited exactly once, which is what
+# makes the sum over all projects bounded by the log wall span.
+#
+# Do NOT go back to walking a per-project SLICE (`map(select(.p == $proj))`).
+# Two events adjacent IN THE SLICE are not adjacent in time: the interval
+# between them is every second the session spent in OTHER repos, and slicing
+# bills all of it here. The bug hides because is_idle only suppresses a gap
+# whose predecessor is `response` or `start`, and `tool_start`/`tool_end`/
+# `prompt` can never be idle by construction — so a session that moves away
+# mid-tool bills its whole absence to the project it left. Measured on the
+# live log 2026-08-08: dotfiles read 2205h24m, of which a single 90-day
+# gap (session 00e18b84, 2026-04-28 -> 2026-07-27) was 97.9%. Under this rule
+# the same data reads 29h01m, and the all-projects sum falls from 6.6x the wall
+# span to 0.31x.
+#
+# A gap that STRADDLES a project switch goes to the PREDECESSOR. Rejected:
+# requiring BOTH endpoints to match, which drops straddling gaps entirely and
+# under-counts a session interleaving repos rapidly — 19h11m on the same data,
+# a floor rather than an answer; and splitting the gap, which would invent a
+# boundary the log does not record.
+#
+# $root is the aggregation key. $fold additionally claims every path BELOW the
+# root, which is what makes the key equal the label PROJECT_GIT_ANCHOR renders:
+# the anchor folds subdirectories and linked worktrees into the repo root for
+# the DISPLAY token, so the total must fold the same way or the label sits over
+# a body it does not describe. $fold is only ever true for a resolved repo root
+# (see _project_root_v) — an empty root must never fold, since "" + "/" is a
+# prefix of every absolute path.
+# The `// ""` is not decoration: startswith() raises on a null input, and this
+# predicate is applied to summary records straight off disk. One summary
+# without a .p would abort the whole statusline query and blank the display,
+# which the mode goes out of its way never to do. The exact-match form it
+# replaces was null-safe by accident; this one is null-safe on purpose.
+def in_project($root; $fold):
+  (.p // "") as $p
+  | ($p == $root) or ($fold and ($p | startswith($root + "/")));
+
+# Returns {claude, user, active} for $root in one pass — active is the sum, so
+# this replaces a calc_active and a calc_split walk with a single traversal.
+def active_in($pause; $root; $fold):
+  . as $a | reduce range(1; $a|length) as $i (
+    {claude: 0, user: 0};
+    ($a[$i].t - $a[$i-1].t) as $gap
+    | if $gap <= 0 then .
+      elif is_idle($a; $i; $pause) then .
+      elif (($a[$i-1] | in_project($root; $fold)) | not) then .
+      elif is_user_turn($a; $i) then .user += $gap
+      else .claude += $gap
+      end)
+  | .active = (.claude + .user);
+
+# Same rule, every project at once: {path: seconds}. Seeded with a zero for
+# every path present, so a project that is never a gap predecessor still gets a
+# row — dropping it would silently change what --summary lists.
+def active_by_project($pause):
+  . as $a | reduce range(1; $a|length) as $i (
+    (reduce $a[] as $e ({}; .[$e.p] = 0));
+    ($a[$i].t - $a[$i-1].t) as $gap
+    | if $gap <= 0 then .
+      elif is_idle($a; $i; $pause) then .
+      else .[$a[$i-1].p] += $gap
       end);'
 
 # Phase breakdown — five categories
@@ -747,6 +815,30 @@ _project_label_v() {
     fi
     _short_project_v "$path"
 }
+# Statusline AGGREGATION KEY: the path a project's time is counted under.
+# Sets _V (the root path) and _V_ANCHORED (true when the git anchor actually
+# resolved — which is what licenses folding the paths BELOW the root into it).
+#
+# The git resolution is a deliberate second copy of _project_label_v's, not a
+# shared call: tests/label-git-anchor.sh extracts _project_label_v verbatim with
+# awk and sources it on its own, so delegating from there would leave the
+# extracted function calling a name that is not in the extract. The copy is
+# pinned against the original on the same cases by tests/project-total-fold.sh,
+# so a divergence goes red rather than drifting quietly.
+_project_root_v() {
+    local path="$1"
+    _V_ANCHORED=false
+    if [ -n "$path" ] && [ "${PROJECT_GIT_ANCHOR:-false}" = true ] && command -v git &>/dev/null; then
+        local common; common=$(git -C "$path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+        if [ -n "$common" ] && [ "${common##*/}" = ".git" ]; then
+            path="${common%/.git}"; _V_ANCHORED=true
+        else
+            local top; top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)
+            [ -n "$top" ] && { path="$top"; _V_ANCHORED=true; }
+        fi
+    fi
+    _V="$path"
+}
 
 # ============================================================
 # Cold-cache guard — runs on UserPromptSubmit (log --prompt)
@@ -1089,7 +1181,10 @@ mode_statusline() {
         | [.[] | select((.type // null) == null)] as \$all
         | (\$all | map(select(.s == \$sid)) | sort_by(.t)) as \$session
         | (\$all | map(select(.t >= \$since)) | sort_by(.t)) as \$today
-        | (\$session | if length > 0 then ([.[] | .p] | last) else \"\" end) as \$proj
+        | (\$all | sort_by(.t)) as \$stream
+        | (\$today | active_in(\$pause; \$proot; \$pfold)) as \$tp
+        | (\$stream | active_in(\$pause; \$proot; \$pfold)) as \$tot
+        | [\$raw[] | select(.type == \"summary\") | select(in_project(\$proot; \$pfold))] as \$sums
         | (\$today | away_spans(\$pause; \$credit)) as \$away
         | {
             session_active: (\$session | calc_active(\$pause)),
@@ -1097,23 +1192,17 @@ mode_statusline() {
             last_break: (\$away | if length > 0 then last | (.to_t - .from_t) else 0 end),
             since_break: (if (\$away | length) > 0 then \$today[\$away[-1].return_idx:] | calc_active(\$pause)
                   else \$today | calc_active(\$pause) end),
-            project: \$proj,
+            project: \$proot,
             branch: (\$session | [.[] | .b // empty] | if length > 0 then last else \"\" end),
             today_first_t: (\$today | if length > 0 then .[0].t else 0 end),
             today_active: (\$today | calc_active(\$pause)),
-            today_project_active: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause)),
-            today_project_split: (\$today | map(select(.p == \$proj)) | sort_by(.t) | calc_split(\$pause)),
-            project_total_active: (
-                (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_active(\$pause))
-                + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .active] | add // 0)
-            ),
-            project_total_split: (
-                (\$all | map(select(.p == \$proj)) | sort_by(.t) | calc_split(\$pause)) as \$current
-                | {
-                    claude: (\$current.claude + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .claude // 0] | add // 0)),
-                    user: (\$current.user + ([\$raw[] | select(.type == \"summary\" and .p == \$proj) | .user // 0] | add // 0))
-                }
-            ),
+            today_project_active: \$tp.active,
+            today_project_split: {claude: \$tp.claude, user: \$tp.user},
+            project_total_active: (\$tot.active + ([\$sums[] | .active] | add // 0)),
+            project_total_split: {
+                claude: (\$tot.claude + ([\$sums[] | .claude // 0] | add // 0)),
+                user: (\$tot.user + ([\$sums[] | .user // 0] | add // 0))
+            },
             timeline: (if (\$today | length) > 0 then
                 # One character per time slot (configurable via TIMELINE_SLOT)
                 # \$tlwork = present (worked more than half the slot), \$tlaway = away
@@ -1153,7 +1242,22 @@ mode_statusline() {
     # A glyph pair that collides would make every slot read as "present" and
     # break the leading-away trim below; fall back rather than lie.
     [ "$_tl_work" = "$_tl_away" ] && { _tl_work="▪"; _tl_away="·"; }
-    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson credit "$_credit" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson slot "${TIMELINE_SLOT:-1800}" --arg tlwork "$_tl_work" --arg tlaway "$_tl_away")
+    # The AGGREGATION KEY for every per-project number below, resolved from the
+    # same expression the log writer stamps into .p (see cmd_log), through the
+    # same git anchor the label uses. That is the point: before 2026-08-08 the
+    # key was the RAW logged cwd while the label was the ANCHORED one, so the
+    # statusline showed "dotfiles" over a total that counted one exact cwd and
+    # treated every subdirectory and agent worktree of the same repo as a
+    # separate project. Deriving both from one value makes them equal by
+    # construction rather than by convention.
+    local _proot _pfold
+    _project_root_v "${HOOK_CWD:-$(pwd)}"; _proot="$_V"; _pfold="$_V_ANCHORED"
+    # Folding claims every path BELOW the root, which is only meaningful once a
+    # real repo root resolved. With the anchor off the root is the raw cwd and
+    # exact match is the whole rule; an empty root must never fold, since
+    # "" + "/" is a prefix of every absolute path.
+    [ -n "$_proot" ] || _pfold=false
+    local _jq_args=(--argjson pause "$PAUSE_THRESHOLD" --argjson credit "$_credit" --argjson since "$today_start" --arg sid "$sid" --argjson now "$now" --argjson slot "${TIMELINE_SLOT:-1800}" --arg tlwork "$_tl_work" --arg tlaway "$_tl_away" --arg proot "$_proot" --argjson pfold "$_pfold")
 
     # Fast path: direct read. Fallback: skip corrupt lines.
     all_info=$(jq -sr "${_jq_args[@]}" "$_jq_query" "$LOGFILE" 2>/dev/null) \
@@ -1203,7 +1307,11 @@ mode_statusline() {
     _fmt_short_v "$project_total_active"; tok_project_total="$_V"
     _fmt_short_v "${total_claude_active:-0}"; local tok_total_claude="$_V"
     _fmt_short_v "${total_you_active:-0}"; local tok_total_you="$_V"
-    _project_label_v "$project"; tok_project="$_V"
+    # $project is already the anchored root (jq echoes back $proot), so only the
+    # shortening is left — anchoring it twice would be the same work, and going
+    # through _project_label_v here would let the label drift from the key the
+    # totals were computed under.
+    _short_project_v "$project"; tok_project="$_V"
     tok_branch="$branch"
     # since_break always shows (continuous work streak); last_break only after first break
     # Streak color warning: yellow at STREAK_WARNING, red at STREAK_CRITICAL
@@ -2435,9 +2543,9 @@ mode_summary() {
     local result
     result=$(echo "$entries" | jq -s --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
-        group_by(.p) | map({
-            project: (.[0].p | split(\"/\") | if length >= 2 then [.[-2], .[-1]] | join(\"/\") else last end),
-            active: (sort_by(.t) | calc_active(\$pause))
+        sort_by(.t) | active_by_project(\$pause) | to_entries | map({
+            project: (.key | split(\"/\") | if length >= 2 then [.[-2], .[-1]] | join(\"/\") else last end),
+            active: .value
         }) | sort_by(-.active)
     ")
 
