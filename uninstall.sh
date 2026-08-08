@@ -12,7 +12,7 @@ else
 fi
 
 BIN_DIR="${HOME}/.local/bin"
-CLAUDE_DIR="${HOME}/.claude"
+CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 SETTINGS="${CLAUDE_DIR}/settings.json"
 
 echo "Uninstalling claude-worktime..."
@@ -38,7 +38,7 @@ if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
     ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
     # Remove statusline if it's ours
     if jq -e '.statusLine.command' "$SETTINGS" 2>/dev/null | grep -q 'claude-worktime'; then
-        jq 'del(.statusLine)' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+        jq 'del(.statusLine)' "$SETTINGS" > "${SETTINGS}.tmp" && cp "${SETTINGS}.tmp" "$SETTINGS" && rm -f "${SETTINGS}.tmp"
         echo "  Removed statusline"
     fi
     echo "  Removed worktime hooks from settings.json"

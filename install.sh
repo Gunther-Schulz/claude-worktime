@@ -22,7 +22,7 @@ else
 fi
 
 BIN_DIR="${HOME}/.local/bin"
-CLAUDE_DIR="${HOME}/.claude"
+CLAUDE_DIR="${CLAUDE_DIR:-${HOME}/.claude}"
 SETTINGS="${CLAUDE_DIR}/settings.json"
 SCRIPT_NAME="claude-worktime"
 SCRIPT_URL="https://raw.githubusercontent.com/Gunther-Schulz/claude-worktime/main/claude-worktime.sh"
@@ -79,12 +79,15 @@ fi
 # points here. Always refreshed (like the script itself), not preserved
 # like config.sh: it's documentation, not user state to protect from
 # overwrite.
-if [ -f "docs/cachebust-runbook.md" ]; then
+if [ -f "docs/cachebust-runbook.md" ] && [ "docs/cachebust-runbook.md" -ef "$CLAUDE_DIR/cachebust-runbook.md" ]; then
+    echo "  Runbook already linked to this repo at $CLAUDE_DIR/cachebust-runbook.md (left in place)"
+elif [ -f "docs/cachebust-runbook.md" ]; then
     cp "docs/cachebust-runbook.md" "$CLAUDE_DIR/cachebust-runbook.md"
+    echo "  Installed cache-bust runbook at $CLAUDE_DIR/cachebust-runbook.md"
 else
     curl -fsSL "$RUNBOOK_URL" -o "$CLAUDE_DIR/cachebust-runbook.md"
+    echo "  Installed cache-bust runbook at $CLAUDE_DIR/cachebust-runbook.md"
 fi
-echo "  Installed cache-bust runbook at $CLAUDE_DIR/cachebust-runbook.md"
 
 # Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -q "$BIN_DIR"; then
@@ -129,7 +132,7 @@ if $FORCE || ! jq -e '.hooks.SessionStart[]? | select(.hooks[0].command | contai
       .hooks.PostToolUse += [{"hooks": [{"type": "command", "command": ($cw + " log --tool-end"), "timeout": 2}]}] |
       .hooks.Stop += [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}] |
       .hooks.StopFailure += [{"hooks": [{"type": "command", "command": ($cw + " log --response"), "timeout": 2}]}]
-    ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+    ' "$SETTINGS" > "${SETTINGS}.tmp" && cp "${SETTINGS}.tmp" "$SETTINGS" && rm -f "${SETTINGS}.tmp"
     echo "  Added hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure)"
 else
     echo "  Hooks already exist (use --force to overwrite)"
@@ -139,7 +142,7 @@ fi
 if $ENABLE_STATUSLINE; then
     jq --arg cmd "${CW} --statusline" \
         '.statusLine = {"type": "command", "command": $cmd}' \
-        "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+        "$SETTINGS" > "${SETTINGS}.tmp" && cp "${SETTINGS}.tmp" "$SETTINGS" && rm -f "${SETTINGS}.tmp"
     echo "  Enabled statusline"
 fi
 
