@@ -358,6 +358,34 @@ verifier below and is not yet designed.
   not the driver and this becomes READY again on stronger grounds than it has
   now. Either outcome flips the verdict, which is what makes this a park
   rather than a deferral.
+  **MEASURED 2026-08-08 afternoon — NOT DECIDABLE YET, n=4. The park STANDS,
+  with its trigger now carrying a real baseline instead of a remembered one.**
+  Run against the installed binary itself
+  (`claude-worktime --cold --since …`, retract- and cause-aware, cross-checked
+  against a hand-rolled jq replicating the same correction logic — both give
+  108 rewrites / 35 `other`):
+
+      window                      total hits   other   share
+      BEFORE (< 10:52:27Z)            104        33     31.7%
+      AFTER  (>= 10:52:27Z)             4         2     50.0%
+
+  Neither named outcome is selected. One more or fewer `other` in the after
+  window swings it between 25% and 75%, so the 50% is noise, and the honest
+  read is that the fix has not yet been given enough traffic to judge. Re-run
+  the same command once the after-window reaches a usable n; the corrected
+  BEFORE baseline is **31.7%**, not the 42% this entry quoted from raw
+  `k:"hit"` records — that figure predates the retract/cause corrections
+  `--cold` itself applies.
+  **Deploy instant, and it is a methodological point worth keeping:** the split
+  is at **10:52:27Z**, the mtime of `/home/g/.local/bin/claude-worktime` — the
+  INSTALLED copy the statusline actually runs, byte-identical to the repo copy
+  at `8bfc385`. Not the commit time (10:10:11Z). The installed copy landed 42
+  minutes after the commit, and using commit time instead misclassifies one
+  event. A before/after split on a deployed tool anchors to the deploy, never
+  to the commit.
+  **And the `other` label itself is a RACED READ, not an absence** — measured
+  the same afternoon and this is the sharper finding, booked separately below.
+
   Original entry follows unchanged: The
   ladder runs idle → model → residual, assuming a cold rewrite
   happened and only asking why; the residual names a real cause only
