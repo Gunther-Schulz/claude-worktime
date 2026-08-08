@@ -3017,9 +3017,17 @@ mode_cold() {
     if [ -z "$rows" ]; then
         # "none" must be distinguishable from "could not read". A silent empty
         # result is what hid 26 real records on 2026-07-28.
+        #
+        # --debug, not --info: there is no --info arm, so that hint fell through
+        # the argument loop's `*) ;;` and ran the default session mode — a no-op
+        # aimed at a user who has just been told their log is unreadable.
+        # --debug prints the count of corrupt lines and chains on to --repair,
+        # which is the right order: --repair rewrites the log, and nobody should
+        # be sent to a mutation before they have seen what is wrong.
+        # tests/printed-flags-are-handled.sh keeps the class shut.
         local _corrupt; _corrupt=$(_log_corrupt_count)
         local _note=""
-        [ "${_corrupt:-0}" -gt 0 ] && _note=" (${_corrupt} unreadable line(s) skipped — run: claude-worktime --info)"
+        [ "${_corrupt:-0}" -gt 0 ] && _note=" (${_corrupt} unreadable line(s) skipped — run: claude-worktime --debug)"
         if $raw; then echo '[]'
         elif [ -n "$scope_sid" ]; then echo "No cold rewrites recorded for this session${_note}"
         else echo "No cold rewrites recorded${_note}"; fi
