@@ -525,6 +525,18 @@ Run `claude-worktime --check` to verify. No python, no node, no extra runtimes.
 
 **Platform notes.** Linux uses GNU coreutils and bash 4+ directly; this is the canonical code path. macOS runs against vanilla system bash 3.2 and BSD utilities via a thin compatibility layer in `claude-worktime.sh` (bracketed near the top of the file). No `brew install bash` or `brew install coreutils` required — just `brew install jq`. The rate-limit glyphs (`⧗` for 5h, `➐` for 7d) render cleanly on both Linux and macOS, so there is no per-platform glyph split; `➐` replaced an earlier `⑦` that showed as tofu in common macOS monospace fonts.
 
+## Running the tests
+
+```bash
+tools/run-tests.sh            # every suite in tests/, one process each
+tools/run-tests.sh --quiet    # only failures and the summary
+tools/lint.sh                 # shellcheck over the repo's shell
+```
+
+`run-tests.sh` finds suites by glob, so a new `tests/*.sh` runs without editing anything. It exits with the number of failed suites — 0 when everything passed — which is what a git hook or CI keys on. A failing suite's own output is printed under its name, and one suite's failure never stops the ones after it. The full set takes a few seconds.
+
+`lint.sh` runs shellcheck at `--severity=warning`. Suppressions live in `.shellcheckrc`, each with the reason it is not actionable. Where shellcheck is not installed it exits 0 and says it could not verify, so a skipped lint never reads as a clean one. `docs/lint-baseline-2026-08-08.txt` records the findings as of that date; they are not fixed.
+
 ## Known limitations
 
 **Hook reliability (~93%).** Claude Code hooks occasionally don't fire — about 7% of events are missed. Total active time is unaffected. The Claude/You split may shift by a few percent. A missed prompt event merges two prompt-to-prompt spans into one, which may create a false away span or extend an existing one.

@@ -1,0 +1,27 @@
+# shellcheck configuration — see tools/lint.sh for the run itself.
+#
+# Every entry here suppresses evidence, so every entry carries the reason it is
+# not actionable. A code that fires on something a contributor could actually
+# fix does not belong in this file; it belongs in the findings.
+
+# config.sh is a sourced configuration fragment, so it correctly has no shebang
+# and shellcheck cannot infer the dialect. Measured on a fragment with no
+# shebang: without this line shellcheck adds "SC2148 (error): target shell is
+# unknown" on top of the file's real findings; with it, only the real findings
+# remain. The file is analysed either way — this removes an un-actionable ERROR
+# (config.sh must not gain a shebang), it does not unlock the analysis.
+# Files that DO carry a shebang are unaffected: this is the fallback dialect.
+shell=bash
+
+# SC1090 — "can't follow non-constant source". claude-worktime.sh:243 sources
+# the user's config from an XDG path resolved at runtime; the path is
+# non-constant by design and no directive can make it static. The finding is
+# therefore permanently un-actionable rather than merely unfixed.
+disable=SC1090
+
+# Deliberately NOT disabled, though it is the largest class (26 hits):
+# SC2034 "appears unused". 18 are the GROUP_* statusline defaults, which are a
+# documented user-override surface and only look unused; the other 8 (ts_cc,
+# ts_cr, ts_out, ts_ui, st_t, MARKER_END, HOME_ORG, PROJECT_GIT_ANCHOR) have not
+# been shown to be false positives. Blanketing the code would hide those with
+# the harmless ones, so they stay visible in docs/lint-baseline-2026-08-08.txt.
