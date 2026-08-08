@@ -2566,7 +2566,14 @@ mode_summary() {
     ")
 
     if $raw; then
-        echo "$result" | jq 'reduce .[] as $x ({}; . + {($x.project): $x.active})'
+        # `+=`, not `. + {…}`: the key is a TWO-SEGMENT LABEL, so two distinct
+        # raw paths can share one — /one/dev/proj and /two/dev/proj both render
+        # dev/proj — and object `+` overwrites, dropping one project's whole
+        # total. Measured on the live log 2026-08-08: 190 keys for 197 distinct
+        # raw paths, the sum reading 958h20m against a true 967h31m.
+        # Pre-existing; the non-raw branch below never lost it, since it prints
+        # one row per raw path.
+        echo "$result" | jq 'reduce .[] as $x ({}; .[$x.project] += $x.active)'
     else
         echo "$result" | jq -r '.[] | "  \(.project)  \(
             if .active >= 3600 then "\(.active / 3600 | floor)h \((.active % 3600) / 60 | floor)min"
