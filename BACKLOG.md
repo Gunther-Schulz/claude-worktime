@@ -519,7 +519,22 @@ is visible from reading the statusline.
   Not covered by `tests/rotation-corrupt-log.sh` or
   `tests/rotation-no-silent-truncation.sh` — both drive `_do_rotate`.
 
-- **READY (small) — the item-(2) refusal branch has no black-box test.**
+- **BUILT 2026-08-08 (2b3f553) — and the entry's premise was REFUTED, which is
+  the part worth keeping.** This entry called the branch fixture-unreachable
+  ("needs `:2655` to succeed while `:2662` fails — OOM, file vanishing") and
+  offered only two exits: a fault-injection seam, or a note recording it as
+  untestable. A third existed and cost neither. `_safe_log` is
+  `jq -Rc 'fromjson? // empty'`, which passes through any valid JSON including
+  a NON-OBJECT; the collect read then evaluates `.type` on it and raises. jq
+  skips the bad input, keeps going, and takes its exit status from the LAST
+  input — so a bare scalar on the final line makes the reader emit a valid
+  prefix AND exit non-zero, which is exactly the property the branch defends.
+  The first-event guard survives the same file because it ends in
+  `head -1 || true`. Lesson booked rather than the fix: **"unreachable by
+  fixture" is a load-bearing claim and earns the same refutation probe as any
+  other** — a five-minute probe overturned it, and was cheap precisely because
+  the claim named what would falsify it.
+  ~~READY~~ — the item-(2) refusal branch has no black-box test.
   `7a949ab` added a hard-error guard at the collect read (`:2662-2672`) that
   refuses to archive on a read failure. After the `_safe_log` routing it is
   unreachable by fixture — it needs `:2655` to succeed while `:2662` fails
@@ -632,6 +647,24 @@ is visible from reading the statusline.
   introduced by `f40e104`. It makes the (C) plausibility suite a LOWER bound —
   the safe direction, so (C) can under-fire but never over-fire — and the suite
   documents that. Truer number is the raw-path sum: 967h31m vs 958h20m.
+
+### The argument loop still swallows any unknown flag silently (2026-08-08, half-closed by design)
+
+- **READY (small) — `claude-worktime.sh`'s top-level `*) ;;` arm.** The
+  `--info` fix closed the SYMPTOM (a printed flag with no arm) and
+  `tests/printed-flags-are-handled.sh` keeps that class shut mechanically —
+  every `claude-worktime --flag` the script PRINTS must have a real arm. But
+  the general defect is untouched: any unrecognised flag still falls through
+  to the default session summary, so a typo runs the wrong mode and says
+  nothing. The executing agent stopped there deliberately, because making it
+  error changes behaviour the brief did not name — correct call, and the
+  remainder is this entry.
+  Decision needed before building: erroring on unknown flags is a
+  behaviour change for anyone (or any script) passing extra arguments today.
+  Verifier, red-first: `claude-worktime --nonsense` prints the session
+  summary and exits 0 today; after, it names the flag and exits non-zero.
+  Check the hook call sites first — the six harness hooks pass real flags,
+  and this must not break them.
 
 ## Parked
 

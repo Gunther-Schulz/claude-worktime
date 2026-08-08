@@ -28,10 +28,13 @@
 #     first..last span") yields ZERO violations against the very log carrying
 #     the 90-day gap, because the gap is bounded by the span it sits inside. It
 #     is unfalsifiable for this defect class. Do not substitute it.
-#   * `--summary --raw` keys its map by a two-segment label, and a collision
-#     OVERWRITES rather than adds. The sum is therefore a LOWER bound on the
-#     true total, which makes this check conservative: it can under-fire, never
-#     over-fire, so a red here is always a true red.
+#   * `--summary --raw` keys its map by a two-segment label, so several raw
+#     paths can share one key. Until 2026-08-08 a collision OVERWROTE rather
+#     than added, making this sum a LOWER bound — conservative, but by
+#     discarding real time (9h29m of it). Collisions now SUM (c1a9159), so the
+#     total is exact and this check no longer rests on being under-counted.
+#     The invariant got stricter, not looser: a red here was always a true red
+#     and still is.
 #
 # A missing log is COULD NOT VERIFY, not a pass — this suite exits non-zero and
 # says which file it wanted, because "0 <= 0" is exactly what a broken read
