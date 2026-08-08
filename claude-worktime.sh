@@ -2639,19 +2639,42 @@ _do_rotate() {
 
     _rotate_boundaries
 
+    # Every read below goes through _safe_log. The log is append-only from
+    # concurrent hooks, so a malformed line is expected, not exceptional — and a
+    # plain `jq` over the whole file turns one bad line into a dead rotation.
+    # Measured 2026-08-08: 46 malformed lines from one 13-minute window on
+    # 2026-04-01 had jammed every rotation since (1,052 identical entries in
+    # .rotation_errors, last archive activity-2026-03-31.jsonl, live log 83 MB).
+    # Unconditional rather than the read path's fast-path-then-fall-back shape
+    # (:1159): the first read here ends in `head -1`, and under `pipefail` the
+    # resulting SIGPIPE makes jq exit 141 on a CLEAN file too, so a failure
+    # signal there cannot be told from normal operation.
+
     # Check if there are old event entries (skip summaries)
     local first_event_ts
-    first_event_ts=$(jq -r 'select((.type // null) == null) | .t' "$LOGFILE" 2>/dev/null | head -1 || true)
+    first_event_ts=$(_safe_log "$LOGFILE" | jq -r 'select((.type // null) == null) | .t' 2>/dev/null | head -1 || true)
     [ -z "$first_event_ts" ] || [ "$first_event_ts" -ge "$ROTATE_CUTOFF" ] && return
 
     # Collect old event entries to archive
-    local old_entries
-    old_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t < $since)' "$LOGFILE" 2>/dev/null || true)
+    local old_entries collect_error=""
+    old_entries=$(_safe_log "$LOGFILE" | jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t < $since)' 2>/dev/null) || collect_error="true"
+
+    if [ -n "$collect_error" ]; then
+        # This read used to end in `|| true`. A dying reader emits everything up
+        # to the failure and then exits non-zero; `|| true` discarded that, the
+        # emptiness guard below accepted the prefix as the whole set, and the
+        # append at the archive step would have written it. Measured against the
+        # real log: 3,964 records against 351,753 valid ones. A read failure is
+        # now a refusal to archive, not a silent partial.
+        echo "WARNING: rotation could not read the entries to archive, skipping archive" >> "${LOGDIR}/.rotation_errors" 2>/dev/null
+        ! $quiet && echo "Warning: failed to read entries to archive, rotation skipped (data preserved)"
+        return
+    fi
     [ -z "$old_entries" ] && return
 
     # Generate per-project summaries BEFORE archiving
     local summaries summary_error=""
-    summaries=$(jq -sc --argjson since "$ROTATE_CUTOFF" --argjson pause "$PAUSE_THRESHOLD" "
+    summaries=$(_safe_log "$LOGFILE" | jq -sc --argjson since "$ROTATE_CUTOFF" --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
         [.[] | select((.type // null) == null) | select(.t < \$since)] | group_by(.p) | map(
             (sort_by(.t) | calc_split(\$pause)) as \$split
@@ -2664,7 +2687,7 @@ _do_rotate() {
                 period: \"$ROTATE_SUFFIX\"
             }
         ) | .[]
-    " "$LOGFILE" 2>/dev/null) || summary_error="true"
+    " 2>/dev/null) || summary_error="true"
 
     # Safety: validate summaries before proceeding
     # Count distinct projects in old entries vs summaries
@@ -2706,11 +2729,11 @@ _do_rotate() {
     # Rewrite active log: existing summaries + new summaries + current entries + token entries
     # Token entries are not archived (budget state carries the cross-window prior instead).
     local existing_summaries current_entries token_entries cold_entries rewrite_error=""
-    existing_summaries=$(jq -c 'select(.type == "summary")' "$LOGFILE" 2>/dev/null) || rewrite_error="summaries"
-    current_entries=$(jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="current entries"
-    token_entries=$(jq -c --argjson since "$token_cutoff" 'select(.type == "tokens" and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="token entries"
+    existing_summaries=$(_safe_log "$LOGFILE" | jq -c 'select(.type == "summary")' 2>/dev/null) || rewrite_error="summaries"
+    current_entries=$(_safe_log "$LOGFILE" | jq -c --argjson since "$ROTATE_CUTOFF" 'select((.type // null) == null and .t >= $since)' 2>/dev/null) || rewrite_error="current entries"
+    token_entries=$(_safe_log "$LOGFILE" | jq -c --argjson since "$token_cutoff" 'select(.type == "tokens" and .t >= $since)' 2>/dev/null) || rewrite_error="token entries"
     # Cold-cache events: rare, kept 90 days for longitudinal TTL analysis
-    cold_entries=$(jq -c --argjson since "$(( ROTATE_CUTOFF - 7776000 ))" 'select(.type == "cold" and .t >= $since)' "$LOGFILE" 2>/dev/null) || rewrite_error="cold entries"
+    cold_entries=$(_safe_log "$LOGFILE" | jq -c --argjson since "$(( ROTATE_CUTOFF - 7776000 ))" 'select(.type == "cold" and .t >= $since)' 2>/dev/null) || rewrite_error="cold entries"
 
     if [ -n "$rewrite_error" ]; then
         # jq failed to read existing data — don't rewrite, archive already done
