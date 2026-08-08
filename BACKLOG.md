@@ -540,6 +540,44 @@ is visible from reading the statusline.
   CLAUDE.md section (no longer used)" block, so severity is low — fix is
   either to use the variable in the awk or drop it.
 
+### The rotation summary WRITER still carries both defects the read path shed — and it is what gates the rotation hold (2026-08-08)
+
+- **READY — `claude-worktime.sh` ~:2786, the `summaries=` jq inside
+  `_do_rotate`.** It still reads
+  `group_by(.p) | map((sort_by(.t) | calc_split) … active: (sort_by(.t) | calc_active))`
+  and stamps `p: .[0].p` — the RAW cwd. So it reproduces (A) the slice defect
+  and (B) the unfolded key, in the one place whose output is PERMANENT: a
+  summary record replaces the events it summarises. `f40e104` fixed every READ
+  path (and correctly folds summary keys at read time, `:1187`), but a reader
+  cannot repair a value that was mis-computed at write time.
+  Why it survived: `_do_rotate` belonged to the rotation dispatch's write
+  boundary and the slice defect belonged to the calc_active dispatch's. Each
+  correctly stayed out of the other's file region, and the defect sat exactly
+  on the seam. Worth remembering when carving parallel boundaries by file
+  region rather than by defect.
+  **This is the live gate on `AUTO_ROTATE`.** The dotfiles hold
+  (`claude-worktime/config.sh`) originally said "remove once the calc_active
+  slice fix lands"; that condition is now satisfied while the hazard remains,
+  so the comment was corrected to name this item instead. Do not lift the hold
+  on the read-path fix alone.
+  Fix: route the writer through the same `active_by_project` rule and the same
+  key fold the read path uses. Verifier, red-first: rotate a sandbox fixture
+  where one session's events cross two projects mid-tool; today the written
+  summary carries the straddling gap billed to the wrong project under a raw
+  key — after the fix it matches what `active_by_project` reports for the same
+  events. Assert on the summary record read back, not on the rotation's exit.
+  Also decide, in the same pass: the 12 EXISTING summary records in the live
+  log were written under the old rule (per-day, so bounded — not the 90-day
+  shape). Recompute them from the archives, or drop them and let the archives
+  be the record. Not settled here.
+
+- **READY (small) — `--summary --raw` collides and always has.** It reduces to
+  `{label: active}` keyed on the 2-segment label, and a collision OVERWRITES
+  rather than sums: 190 keys for 197 distinct raw paths. Pre-existing, not
+  introduced by `f40e104`. It makes the (C) plausibility suite a LOWER bound —
+  the safe direction, so (C) can under-fire but never over-fire — and the suite
+  documents that. Truer number is the raw-path sum: 967h31m vs 958h20m.
+
 ## Parked
 
 - **PARKED — Layer 1 (call identity on every cold record) and (B) (the
