@@ -598,55 +598,30 @@ is visible from reading the statusline.
   CLAUDE.md section (no longer used)" block, so severity is low — fix is
   either to use the variable in the awk or drop it.
 
-### The rotation summary WRITER still carries both defects the read path shed — and it is what gates the rotation hold (2026-08-08)
+### Residue from the dotfiles-drift sweep and the install/gate lane (2026-08-08)
 
-- **READY — `claude-worktime.sh` ~:2786, the `summaries=` jq inside
-  `_do_rotate`.** It still reads
-  `group_by(.p) | map((sort_by(.t) | calc_split) … active: (sort_by(.t) | calc_active))`
-  and stamps `p: .[0].p` — the RAW cwd. So it reproduces (A) the slice defect
-  and (B) the unfolded key, in the one place whose output is PERMANENT: a
-  summary record replaces the events it summarises. `f40e104` fixed every READ
-  path (and correctly folds summary keys at read time, `:1187`), but a reader
-  cannot repair a value that was mis-computed at write time.
-  Why it survived: `_do_rotate` belonged to the rotation dispatch's write
-  boundary and the slice defect belonged to the calc_active dispatch's. Each
-  correctly stayed out of the other's file region, and the defect sat exactly
-  on the seam. Worth remembering when carving parallel boundaries by file
-  region rather than by defect.
-  **This is the live gate on `AUTO_ROTATE`.** The dotfiles hold
-  (`claude-worktime/config.sh`) originally said "remove once the calc_active
-  slice fix lands"; that condition is now satisfied while the hazard remains,
-  so the comment was corrected to name this item instead. Do not lift the hold
-  on the read-path fix alone.
-  Fix: route the writer through the same `active_by_project` rule and the same
-  key fold the read path uses. Verifier, red-first: rotate a sandbox fixture
-  where one session's events cross two projects mid-tool; today the written
-  summary carries the straddling gap billed to the wrong project under a raw
-  key — after the fix it matches what `active_by_project` reports for the same
-  events. Assert on the summary record read back, not on the rotation's exit.
-  **Priority is higher than correctness hygiene: this item is worth ~85x on
-  every statusline render.** Measured 2026-08-08 against the live 83 MB /
-  560k-record log, three runs each: NEW (f40e104) 2360/2317/2321 ms, OLD
-  (47be063) 2061/2063/2125 ms — so the calc_active fix costs ~250 ms (+12%),
-  NOT the ~1.9 s the executing agent flagged as a possible regression. The
-  finding is what that comparison EXPOSED rather than what it was testing: the
-  statusline already cost 2.06 s BEFORE the fix. Same shipped code against a
-  2000-record log renders in 26-28 ms. The driver is log SIZE, and the log is
-  83 MB only because rotation has been jammed since 2026-04-01. So the chain
-  closes on itself — fix this writer, rotation unblocks, the live log shrinks
-  to a day, and the statusline returns to tens of milliseconds. Do not
-  "optimise" the statusline before rotating; the walk is not the problem.
-  Also decide, in the same pass: the 12 EXISTING summary records in the live
-  log were written under the old rule (per-day, so bounded — not the 90-day
-  shape). Recompute them from the archives, or drop them and let the archives
-  be the record. Not settled here.
+- **READY (trivial) — the lint baseline drifts and nothing says so.**
+  `docs/lint-baseline-2026-08-08.txt` records 33 warnings at `cf1c126`; the
+  live run is 34 (27 SC2034, was 26), the extra one from test files added
+  after that commit. The file is commit-pinned and says it records the state
+  as found, so it is not wrong — but a reader comparing today's run against it
+  has no way to tell expected drift from a new finding.
+  Fix, either: regenerate it and re-pin (a `tools/lint.sh --format=gcc`
+  redirect plus the header's commit/date), or teach `tools/lint.sh` a
+  `--baseline` mode that diffs against the file and reports only NEW codes.
+  The second is the one worth building — it makes the baseline a check rather
+  than a document. Verifier, red-first: plant one new finding in a scratch
+  copy, assert the diff names it and stays silent on the 33 known ones.
 
-- **READY (small) — `--summary --raw` collides and always has.** It reduces to
-  `{label: active}` keyed on the 2-segment label, and a collision OVERWRITES
-  rather than sums: 190 keys for 197 distinct raw paths. Pre-existing, not
-  introduced by `f40e104`. It makes the (C) plausibility suite a LOWER bound —
-  the safe direction, so (C) can under-fire but never over-fire — and the suite
-  documents that. Truer number is the raw-path sum: 967h31m vs 958h20m.
+- **READY (small) — the suite gate is machine-local, so a fresh clone starts
+  ungated.** `tools/git-pre-push.sh` only runs once `.git/hooks/pre-push`
+  links to it, and `.git/hooks/` is not tracked — the README carries the
+  one-line setup, which means it holds exactly as long as someone reads it.
+  Fix belongs in dotfiles, not here: a `DEPLOYED_COPIES`-style entry in
+  `bootstrap/manifest.py` that creates the symlink for this clone, so
+  `./dot apply` restores the gate the way it restores everything else.
+  Pointer entry — the body of the work is in the dotfiles repo. Done when a
+  deliberately unlinked `.git/hooks/pre-push` is restored by `./dot apply`.
 
 ### The argument loop still swallows any unknown flag silently (2026-08-08, half-closed by design)
 
@@ -667,6 +642,18 @@ is visible from reading the statusline.
   and this must not break them.
 
 ## Parked
+
+- **PARKED — the `-ef` guard and the settings `cp` are Linux-tested only.**
+  `install.sh:82` uses `[ src -ef dst ]` and `:135`/`:145` write through a
+  symlinked destination with `cp`. Both were proven on Linux by executing the
+  real installer against a sandbox `CLAUDE_DIR`; the macOS path targets bash
+  3.2 with BSD utilities, where `-ef` is documented as a bash test builtin and
+  BSD `cp` follows a destination symlink the same way — neither claim was
+  exercised.
+  **Named missing evidence:** one run of `install.sh` and `uninstall.sh` on a
+  macOS machine, with `~/.claude/settings.json` symlinked, asserting the link
+  survives. Unparks the moment a macOS machine is available; there is no
+  reasoning path that settles it from here.
 
 - **PARKED — Layer 1 (call identity on every cold record) and (B) (the
   contradictory-class dedupe). Named missing evidence and design,
@@ -707,6 +694,31 @@ is visible from reading the statusline.
   The operator decision in (1) is the cheapest and unblocks the most.
 
 ## Departed
+
+- 2026-08-08: **the rotation summary WRITER — BUILT, and the hold it gated is
+  lifted.** The item said the `summaries=` jq inside `_do_rotate` still ran
+  `group_by(.p)` with a raw `p:` key, reproducing the slice defect and the
+  unfolded key in the one place whose output is permanent. Both halves are
+  answered. (A) is BUILT: the writer routes through `split_by_project($pause)`
+  — `claude-worktime.sh:2836`, the same rule every read path uses — landed by
+  `b25625f`. (B) was DECIDED the other way and correctly so: the raw `.p` key
+  is kept deliberately, because the read path folds by containment (`:1203`)
+  and folding at write time would destroy subdirectory detail permanently, so
+  raw key plus folding reader preserves strictly more information. The item's
+  own "also decide" tail is settled too — the 12 legacy summary records were
+  RECOMPUTED from the archives rather than dropped (`41b1917`), two
+  independently-built implementations agreeing to the second. The
+  `AUTO_ROTATE` hold this item gated was lifted the same day (dotfiles
+  `f1241e5`), verified by rotating a copy of the real log rather than by
+  reading the fix.
+
+- 2026-08-08: **`--summary --raw` label collisions — BUILT** (`c1a9159`,
+  with `tests/summary-raw-label-collision.sh`). Colliding labels now SUM
+  instead of overwriting, so the raw total is exact rather than the lower
+  bound the item described. Consequence the item did not anticipate: the (C)
+  plausibility suite's rationale still called the total a lower bound
+  "because collisions overwrote", which stopped being true — the invariant
+  got stricter, not looser, and that comment was corrected in `41b1917`.
 
 - 2026-08-08: **the torn-line writer — OBSOLETE, its diagnosis refuted.**
   The item asked to classify the unreadable lines and then fix the writer
