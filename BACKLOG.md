@@ -367,6 +367,82 @@ verifier below and is not yet designed.
   unreadable lines against the fixed writer where it adds at least one
   against the old.
 
+### `{project_total}` is inflated ~55x — two independent defects, found 2026-08-08 by operator disbelief at a statusline number
+
+The dotfiles statusline read `total 2204h44m`. Recomputed independently
+(Python reimplementation of `is_idle`/`calc_active`, `PAUSE_THRESHOLD=900`):
+`2204h46m` — reproduced, so the arithmetic is not in doubt. **97.9% of it is
+one gap of 2159h32m** (89.98 days). Both defects below are live, and neither
+is visible from reading the statusline.
+
+- **READY — (A) `calc_active` walks a per-project SLICE and treats
+  adjacent-in-slice events as adjacent in time.** `claude-worktime.sh:1106-1109`
+  computes `project_total_active` as
+  `$all | map(select(.p == $proj)) | calc_active($pause)`. The gap between two
+  events adjacent *in that slice* is not a real gap — it is every second the
+  session spent elsewhere. `is_idle` (≈280) suppresses a gap only when the
+  PREDECESSOR is `response` or `start`, so the slice mostly ends on a suppressed
+  pair and the bug stays hidden. The event kinds `tool_start`, `tool_end` and
+  `prompt` can never be idle by construction — so when a session `cd`s away
+  mid-tool the slice ends on a `tool_start` and the whole interval until the
+  project is next visited is billed as attended Claude work.
+  Traced to the record: session `00e18b84` emitted its last dotfiles event
+  (`tool_start`, 2026-04-28 14:08:49) then worked on in pbs-bureau /
+  mcp-server / skill-craft until 20:03:09 the same day — it did **not** crash.
+  The next dotfiles event is a `start` on 2026-07-27 13:40:52. Those two are
+  adjacent in the slice, so 90 days entered the total.
+  Fix: a gap counts for `$proj` only when BOTH endpoints carry `.p == $proj` —
+  i.e. walk the full sorted stream, not the slice. Same shape binds
+  `today_project_active` and `today_project_split` (1104-1105), which use the
+  identical `map(select(.p == $proj))` idiom.
+  Verifier, red-first: against the live log, `{project_total}` for dotfiles
+  reads 2204h47m today (the red); under the both-endpoints rule it reads
+  18h43m. Do NOT book 18h43m as the answer — it is depressed by (B) below, and
+  (B) must land with (A) or the fix trades a 55x overstatement for an
+  understatement. With (B) applied too (all cwds under the repo root folded to
+  the root — which surfaces `claude/hooks`, `claude/` and six
+  `.claude/worktrees/agent-*` lanes as dotfiles time), it reads **19h06m**.
+  **Open sub-decision, do not let an executor fill it silently:** the
+  both-endpoints rule DROPS every gap that straddles a project switch, and
+  those seconds are real work belonging to some project. Attributing them to
+  the PREDECESSOR's project (where the clock started) is the defensible
+  default; dropping them makes 19h06m a floor rather than the answer, and a
+  session that interleaves repos rapidly is under-counted most. Decide
+  attribution explicitly before building, and state the chosen rule in the
+  docstring.
+
+- **READY — (B) `.p` is written RAW but `{project}` is displayed ANCHORED, so
+  the label sits over a body it does not describe.** The log writer
+  (≈986-995) uses `HOOK_CWD`/`$(pwd)` verbatim; `PROJECT_GIT_ANCHOR`
+  (≈728, `_project_label_v`) anchors to the git common dir for the DISPLAY
+  token only. So a statusline reading `dotfiles` shows a total computed by
+  exact-string match on one cwd, and every subdirectory of the same repo is a
+  separate "project". Visible in the live data: `beat-the-books`,
+  `.../src/beat_the_books`, `.../docs` and `.../dictionaries/dictionaries` are
+  four rows. Fix: anchor at WRITE time (or normalize `$proj` at read time with
+  the same function the label uses) so the aggregation key and the rendered
+  label are the same value. Historical records keep raw cwds either way —
+  a read-time normalization repairs history, a write-time one does not; that
+  is the design call.
+  Verifier, red-first: today `{project}` renders `beat-the-books` while four
+  distinct `.p` values feed four different totals — assert label and
+  aggregation key are equal for every rendered row.
+
+- **READY — (C) the plausibility invariant that would have caught this, as a
+  `--test` check.** The manual probe is the prototype; the mechanism is the
+  deliverable. **Invariant: the SUM of all projects' active time cannot exceed
+  the log's own first..last wall span.** Measured today: sum `20565h43m` vs
+  wall span `3104h19m` = **6.6x wall clock** — red, on real data, no injection
+  needed. Near-zero false-fire risk: it is arithmetic on the log, and a human
+  cannot work 6.6x real time.
+  **Rejected, having been tested:** the per-project variant ("a project's
+  active time cannot exceed its own first..last span") — run against the live
+  log it yields **0 violations** even with the 90-day gap present, because the
+  gap is bounded by the span it sits inside. It is unfalsifiable for this
+  defect class and must not be built as a substitute.
+  Done-criterion: the check ships in `--test`, goes red on today's log, and
+  goes green once (A) and (B) land.
+
 ## Parked
 
 - **PARKED — Layer 1 (call identity on every cold record) and (B) (the
