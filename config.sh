@@ -9,6 +9,7 @@
 #   {session}        — active time in current session (by session ID)
 #   {session_wall}   — wall clock time since session started
 #   {today}          — today's total active time (all sessions, all projects)
+#   {today_wall}     — wall clock span of today (first event to now)
 #   {today_project}  — today's total for current project (Claude + You)
 #   {today_claude}   — today's Claude work time for current project
 #   {today_you}      — today's your active time for current project
@@ -18,6 +19,10 @@
 #   {last_break}     — last break duration with ⏸ icon (empty if none)
 #   {since_break}    — presence time since last break with ▶ icon
 #   {timeline}       — ▪▪··▪▪▪ day timeline (▪=present, ·=away)
+#   {today_start}    — start time today (e.g. "08:22")
+#   {today_now}      — clock time at the last render (e.g. "19:25") — the
+#                      staleness anchor: compare it against your actual clock
+#                      to see how old every other duration on the line is
 #
 #   Project tokens:
 #   {project}        — project name (last 2 path segments)
@@ -28,7 +33,12 @@
 #
 #   Claude Code tokens (from statusline stdin JSON):
 #   {rate_5h}        — 5-hour rate limit usage (e.g. "23%")
+#   {rate_5h_reset}  — time until the 5h window resets
+#   {rate_5h_proj}   — projected 5h usage at reset (yellow ≥90%, red ≥100%)
 #   {rate_7d}        — 7-day rate limit usage (e.g. "5%")
+#   {rate_7d_reset}  — time until the 7d window resets
+#   {rate_7d_day}    — reset weekday (e.g. "Sat")
+#   {rate_7d_proj}   — projected 7d usage ("→…" while data is insufficient)
 #   {rate_7d_scoped}      — model-scoped weekly limit usage (e.g. Fable on
 #                           Max plans: "36%"); fetched from the usage API
 #                           in the background (see USAGE_FETCH_INTERVAL)

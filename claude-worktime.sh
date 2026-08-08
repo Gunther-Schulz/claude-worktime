@@ -398,17 +398,33 @@ def active_in($pause; $root; $fold):
       end)
   | .active = (.claude + .user);
 
-# Same rule, every project at once: {path: seconds}. Seeded with a zero for
-# every path present, so a project that is never a gap predecessor still gets a
-# row — dropping it would silently change what --summary lists.
-def active_by_project($pause):
+# Same rule, every project at once, with the Claude/You split:
+# {path: {claude, user, active}}. Seeded with zeros for every path present, so a
+# project that is never a gap predecessor still gets a row — dropping it would
+# silently change what --summary lists.
+#
+# This is the ONE implementation of the rule for the all-projects case. The
+# rotation summary WRITER (_do_rotate) needs the split, the statusline and
+# --summary need the totals, and a second walk written for the writer is how the
+# read and write paths diverged in the first place: `f40e104` fixed every read
+# path while the writer kept a per-project-SLICE calc_active — and a summary
+# record REPLACES the events it summarises, so a reader cannot repair a value
+# that was mis-computed at write time.
+def split_by_project($pause):
   . as $a | reduce range(1; $a|length) as $i (
-    (reduce $a[] as $e ({}; .[$e.p] = 0));
-    ($a[$i].t - $a[$i-1].t) as $gap
+    (reduce $a[] as $e ({}; .[$e.p] = {claude: 0, user: 0}));
+    ($a[$i-1].p) as $proj
+    | ($a[$i].t - $a[$i-1].t) as $gap
     | if $gap <= 0 then .
       elif is_idle($a; $i; $pause) then .
-      else .[$a[$i-1].p] += $gap
-      end);'
+      elif is_user_turn($a; $i) then .[$proj].user += $gap
+      else .[$proj].claude += $gap
+      end)
+  | map_values(. + {active: (.claude + .user)});
+
+# Totals only: {path: seconds}. Shape kept for its existing callers.
+def active_by_project($pause):
+  split_by_project($pause) | map_values(.active);'
 
 # Phase breakdown — five categories
 # Pre-computes away spans, then classifies each gap by whether it falls
@@ -2780,21 +2796,46 @@ _do_rotate() {
     fi
     [ -z "$old_entries" ] && return
 
-    # Generate per-project summaries BEFORE archiving
+    # Generate per-project summaries BEFORE archiving.
+    #
+    # Through split_by_project — the SAME rule every read path uses (:404) —
+    # never a per-project slice. This shape used to be
+    # `group_by(.p) | map(sort_by(.t) | calc_active)`, which walks each
+    # project's own events as if they were adjacent in time: the interval
+    # between two of them is every second the session spent in other repos, and
+    # the slice bills all of it here. is_idle suppresses a gap only when its
+    # predecessor is `response` or `start`, so a session that moves away
+    # mid-tool bills its whole absence to the project it left.
+    #
+    # It is worse here than on any read path, which is why the writer is the
+    # gate on AUTO_ROTATE rather than hygiene: a summary record REPLACES the
+    # events it summarises, so the inflated number is permanent — `f40e104`
+    # fixed the readers, and a reader cannot repair a value mis-computed at
+    # write time.
+    #
+    # The `select(.t < $since)` prefix is a TIME prefix, not a slice: every
+    # excluded event is later than every included one, so events adjacent in
+    # the prefix are still adjacent in time. Only per-project slicing breaks
+    # the rule.
+    #
+    # The key stays the raw `.p`, exactly as the event records carry it — the
+    # read path folds keys by path containment at read time (in_project, :1187)
+    # and must keep answering for summaries the same way it answers for events.
     local summaries summary_error=""
     summaries=$(_safe_log "$LOGFILE" | jq -sc --argjson since "$ROTATE_CUTOFF" --argjson pause "$PAUSE_THRESHOLD" "
         ${JQ_CALC}
-        [.[] | select((.type // null) == null) | select(.t < \$since)] | group_by(.p) | map(
-            (sort_by(.t) | calc_split(\$pause)) as \$split
-            | {
-                type: \"summary\",
-                p: .[0].p,
-                active: (sort_by(.t) | calc_active(\$pause)),
-                claude: \$split.claude,
-                user: \$split.user,
-                period: \"$ROTATE_SUFFIX\"
-            }
-        ) | .[]
+        [.[] | select((.type // null) == null) | select(.t < \$since)]
+        | sort_by(.t)
+        | split_by_project(\$pause)
+        | to_entries[]
+        | {
+            type: \"summary\",
+            p: .key,
+            active: .value.active,
+            claude: .value.claude,
+            user: .value.user,
+            period: \"$ROTATE_SUFFIX\"
+        }
     " 2>/dev/null) || summary_error="true"
 
     # Safety: validate summaries before proceeding

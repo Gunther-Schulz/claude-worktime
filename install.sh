@@ -98,7 +98,6 @@ fi
 # Remove old CLAUDE.md section (no longer used)
 CLAUDE_MD="${CLAUDE_DIR}/CLAUDE.md"
 MARKER_START="<!-- claude-worktime:start -->"
-MARKER_END="<!-- claude-worktime:end -->"
 if [ -f "$CLAUDE_MD" ] && grep -q "$MARKER_START" "$CLAUDE_MD"; then
     awk -v start="$MARKER_START" '
         $0 == start { skip=1; next }

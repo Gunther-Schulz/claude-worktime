@@ -21,6 +21,10 @@ SCRIPT="$HERE/../claude-worktime.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# Sandbox the XDG root and drop the direct overrides: CLAUDE_WORKTIME_DATA takes
+# precedence over XDG (claude-worktime.sh:151), so on a machine exporting it this
+# suite would read the operator's REAL log instead of the fixture below.
+unset CLAUDE_WORKTIME_DATA CLAUDE_WORKTIME_CONFIG
 export XDG_DATA_HOME="$TMP/data"
 LOGDIR="$XDG_DATA_HOME/claude-worktime"
 mkdir -p "$LOGDIR"
