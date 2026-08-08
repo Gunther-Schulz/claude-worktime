@@ -566,6 +566,18 @@ is visible from reading the statusline.
   summary carries the straddling gap billed to the wrong project under a raw
   key — after the fix it matches what `active_by_project` reports for the same
   events. Assert on the summary record read back, not on the rotation's exit.
+  **Priority is higher than correctness hygiene: this item is worth ~85x on
+  every statusline render.** Measured 2026-08-08 against the live 83 MB /
+  560k-record log, three runs each: NEW (f40e104) 2360/2317/2321 ms, OLD
+  (47be063) 2061/2063/2125 ms — so the calc_active fix costs ~250 ms (+12%),
+  NOT the ~1.9 s the executing agent flagged as a possible regression. The
+  finding is what that comparison EXPOSED rather than what it was testing: the
+  statusline already cost 2.06 s BEFORE the fix. Same shipped code against a
+  2000-record log renders in 26-28 ms. The driver is log SIZE, and the log is
+  83 MB only because rotation has been jammed since 2026-04-01. So the chain
+  closes on itself — fix this writer, rotation unblocks, the live log shrinks
+  to a day, and the statusline returns to tens of milliseconds. Do not
+  "optimise" the statusline before rotating; the walk is not the problem.
   Also decide, in the same pass: the 12 EXISTING summary records in the live
   log were written under the old rule (per-day, so bounded — not the 90-day
   shape). Recompute them from the archives, or drop them and let the archives
