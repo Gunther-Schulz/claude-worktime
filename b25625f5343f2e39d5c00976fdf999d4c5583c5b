@@ -1,0 +1,28 @@
+ATTRIBUTION CORRECTION (added 2026-08-08, after this commit was pushed).
+
+This commit's message describes three small backlog items — a test's
+sandbox, config's token list, a dead assignment — and those are correct.
+But the commit also carries work by a DIFFERENT agent that its message
+does not mention:
+
+  claude-worktime.sh (+81/-21)  and  tests/rotation-summary-writer.sh
+  = the ENTIRE rotation summary-writer fix: `split_by_project`, the
+    `active_by_project` rewrite, and the `_do_rotate` writer.
+
+Cause: two agents shared one working copy and therefore one git INDEX.
+One staged its files; the other's `git commit` swept them in before the
+first could commit. Targeted `git add <paths>` does not protect against
+this — adding your own paths never unstages someone else's. The isolating
+form is `git commit -- <paths>`, which ignores the index for everything
+else.
+
+The captured state was COHERENT, not half-written: the tree at this
+commit was extracted with `git archive` and its suite run as committed —
+11 passed, 0 failed, `bash -n` clean.
+
+Not repaired by rewrite because the commit was already published by the
+time the mis-attribution was fully understood; rewriting shared history
+costs more than the wrong byline. Correct attribution for the four
+sibling commits (4d44362, 4b74ec5, c1a9159, 2b3f553) is unaffected.
+
+Rule minted from this incident: dispatch-guards 7e863d3, dotfiles 518555f.
