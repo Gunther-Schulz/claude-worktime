@@ -402,14 +402,27 @@ is visible from reading the statusline.
   understatement. With (B) applied too (all cwds under the repo root folded to
   the root — which surfaces `claude/hooks`, `claude/` and six
   `.claude/worktrees/agent-*` lanes as dotfiles time), it reads **19h06m**.
-  **Open sub-decision, do not let an executor fill it silently:** the
-  both-endpoints rule DROPS every gap that straddles a project switch, and
-  those seconds are real work belonging to some project. Attributing them to
-  the PREDECESSOR's project (where the clock started) is the defensible
-  default; dropping them makes 19h06m a floor rather than the answer, and a
-  session that interleaves repos rapidly is under-counted most. Decide
-  attribution explicitly before building, and state the chosen rule in the
-  docstring.
+  **Sub-decision SETTLED (operator decision, on the recommendation below):**
+  a gap straddling a project switch is attributed to the PREDECESSOR's
+  project — the one the clock was running in when the gap opened. Rejected:
+  dropping such gaps (the both-endpoints rule alone), which under-counts a
+  session that interleaves repos rapidly and makes 19h06m a floor rather than
+  an answer; and splitting the gap, which invents a boundary the log does not
+  record. State the chosen rule in the docstring so the next reader does not
+  re-derive it.
+  So the rule is: walk the FULL sorted stream; a gap counts for the project of
+  its EARLIER endpoint, subject to the existing `is_idle` suppression. This
+  supersedes the both-endpoints phrasing above wherever they differ.
+  **Target values, computed against the repaired log on the day the rule was
+  settled** (recompute rather than assert these — the log grows): dotfiles
+  `28h59m` (vs `2204h47m` shipped, and `19h06m` under the rejected
+  both-endpoints variant — the ~10h delta IS the straddling gaps, which is
+  what makes the attribution choice load-bearing rather than cosmetic).
+  Cross-check that ties (A), (B) and (C) together: under the settled rule the
+  all-projects sum is `967h25m` against a `3104h48m` wall span — the (C)
+  invariant PASSES at 0.31x, where the shipped code gives 6.6x. So (C) is the
+  acceptance test for (A)+(B), not merely a watchdog: it is red before and
+  green after, on real data, with no fixture.
 
 - **READY — (B) `.p` is written RAW but `{project}` is displayed ANCHORED, so
   the label sits over a body it does not describe.** The log writer
