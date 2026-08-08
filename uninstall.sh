@@ -35,7 +35,7 @@ if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
       # Clean up empty arrays and empty hooks object
       .hooks |= with_entries(select(.value | length > 0)) |
       if .hooks == {} then del(.hooks) else . end
-    ' "$SETTINGS" > "${SETTINGS}.tmp" && mv "${SETTINGS}.tmp" "$SETTINGS"
+    ' "$SETTINGS" > "${SETTINGS}.tmp" && cp "${SETTINGS}.tmp" "$SETTINGS" && rm -f "${SETTINGS}.tmp"
     # Remove statusline if it's ours
     if jq -e '.statusLine.command' "$SETTINGS" 2>/dev/null | grep -q 'claude-worktime'; then
         jq 'del(.statusLine)' "$SETTINGS" > "${SETTINGS}.tmp" && cp "${SETTINGS}.tmp" "$SETTINGS" && rm -f "${SETTINGS}.tmp"
