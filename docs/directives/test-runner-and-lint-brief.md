@@ -6,6 +6,17 @@ Base check (two reads, both required, run them FIRST):
 — expected: base contained, nothing on top. Any other state halts as a gap.
 Never rebase. Scratch: your OWN scratchpad.
 
+> **Post-dispatch correction (2026-08-08).** The "shellcheck is not installed
+> on this machine" premise below (Background, §2 bullet 1, Verification step 3)
+> went stale during the dispatch: shellcheck 0.11.0 was installed at
+> 10:17:22 that day (`/var/log/pacman.log`). Both paths are live and were
+> executed here: with shellcheck hidden from `PATH`, `tools/lint.sh` prints
+> "shellcheck not installed — skipping … / COULD NOT VERIFY: no lint ran" and
+> exits 0; on the real `PATH` it lints and exits 1, which is how
+> `docs/lint-baseline-2026-08-08.txt` (33 warnings at cf1c126) came to exist.
+> A fresh reader should expect `tools/lint.sh` to lint here, not skip.
+> Original text kept as the record of what was specified.
+
 ## Grounding basis — read before building; the report cites what was read
 
 - the executor skill (`dispatch-guards:executor`) — **load FIRST**.
