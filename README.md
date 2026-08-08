@@ -542,6 +542,14 @@ tools/lint.sh                 # shellcheck over the repo's shell
 
 `lint.sh` runs shellcheck at `--severity=warning`. Suppressions live in `.shellcheckrc`, each with the reason it is not actionable. Where shellcheck is not installed it exits 0 and says it could not verify, so a skipped lint never reads as a clean one. `docs/lint-baseline-2026-08-08.txt` records the findings as of that date; they are not fixed.
 
+**Gating pushes on the suite.** `tools/git-pre-push.sh` runs the suite and refuses the push when anything is red — that is the whole reason `run-tests.sh` exits with the failure count. It is not active until you link it, once per clone:
+
+```bash
+ln -s ../../tools/git-pre-push.sh .git/hooks/pre-push
+```
+
+The tracked file is `tools/git-pre-push.sh`; `.git/hooks/` is not tracked, so the symlink is machine-local and a fresh clone starts ungated. Two limits worth knowing before you rely on it: a chained hook that runs longer than 120 seconds is killed and the push proceeds anyway, so a suite that grew past two minutes would stop gating quietly rather than loudly (the full set is ~9s today, so the margin is wide); and `git push --no-verify` skips it entirely. `lint.sh` is deliberately not part of the gate — its 34 open findings would block every push from day one and teach you to reach for `--no-verify` by reflex, which is how a gate stops being one.
+
 ## Known limitations
 
 **Hook reliability (~93%).** Claude Code hooks occasionally don't fire — about 7% of events are missed. Total active time is unaffected. The Claude/You split may shift by a few percent. A missed prompt event merges two prompt-to-prompt spans into one, which may create a false away span or extend an existing one.
