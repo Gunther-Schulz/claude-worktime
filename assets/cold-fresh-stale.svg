@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="132" viewBox="0 0 560 132" role="img"
+     aria-label="The cold-cache token renders cyan while fresh and gray once older than COLD_FRESH_SECS">
+  <title>❄ fresh (cyan) vs stale (gray)</title>
+  <rect width="560" height="132" rx="6" fill="#1c1c1c"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="15">
+    <!-- fresh: ANSI 38;5;81 -->
+    <text x="20" y="38" fill="#5fd7ff">❄ 428k resume (5m)</text>
+    <text x="250" y="38" fill="#6e6e6e" font-size="13">← fresh, within COLD_FRESH_SECS</text>
+    <!-- stale: ANSI 38;5;246 -->
+    <text x="20" y="72" fill="#949494">❄ 428k resume (2h11m)</text>
+    <text x="250" y="72" fill="#6e6e6e" font-size="13">← same token, dimmed once old</text>
+    <text x="20" y="108" fill="#6e6e6e" font-size="12">colours are the token's own: ANSI 256 index 81 (fresh) and 246 (stale)</text>
+  </g>
+</svg>

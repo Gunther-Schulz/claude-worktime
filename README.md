@@ -13,11 +13,16 @@ Three lines, three perspectives on the same data:
 - **Line 2** — your day: presence timeline, break rhythm
 - **Line 3** — model, rate limits, token budget, context, and the last cold-cache rewrite
 
-The `❄` above is a FRESH one and renders **cyan** in the terminal; past
-`COLD_FRESH_SECS` (default 15min) the same token dims to gray, so an old event
-recedes instead of reading like a new one. `428k resume` is a cost class, not a
-bug: resuming a session re-writes the prefix and the number is what it cost you
-— see [the `{cold}` token](#configuration) for the full vocabulary.
+The `❄` above is a FRESH one; past `COLD_FRESH_SECS` (default 15min) the same
+token dims to gray, so an old event recedes instead of reading like a new one.
+The fence above is monochrome and cannot show that, so here is the difference
+itself:
+
+![The ❄ token: cyan while fresh, gray once older than COLD_FRESH_SECS](assets/cold-fresh-stale.svg)
+
+`428k resume` is a cost class, not a bug: resuming a session re-writes the
+prefix and the number is what it cost you — see
+[the `{cold}` token](#configuration) for the full vocabulary.
 
 **Platform:** Linux is the primary target (developed and tested on it). macOS is supported as a second-class target with vanilla system bash 3.2 — no Homebrew bash or coreutils required, just `jq`. Windows is not supported.
 

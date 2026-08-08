@@ -25,9 +25,14 @@ trap 'rm -rf "$TMP"' EXIT
 # precedence over XDG (claude-worktime.sh:151), so on a machine exporting it this
 # suite would read the operator's REAL log instead of the fixture below.
 unset CLAUDE_WORKTIME_DATA CLAUDE_WORKTIME_CONFIG
-export XDG_DATA_HOME="$TMP/data"
+# XDG_CONFIG_HOME too, matching rotation-corrupt-log.sh: the unset above closes
+# the DATA half, but CONFIGDIR would still fall back to ~/.config/claude-worktime,
+# and that file is sourced at :243 — AFTER DATADIR is assigned at :151 — so a
+# DATADIR= line in the user's real config would re-escape the sandbox. It sets
+# none today; this stops the suite depending on that staying true.
+export XDG_DATA_HOME="$TMP/data" XDG_CONFIG_HOME="$TMP/config"
 LOGDIR="$XDG_DATA_HOME/claude-worktime"
-mkdir -p "$LOGDIR"
+mkdir -p "$LOGDIR" "$XDG_CONFIG_HOME"
 LOG="$LOGDIR/activity.jsonl"
 
 SID="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
