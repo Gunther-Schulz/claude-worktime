@@ -223,7 +223,7 @@ the renders that duplicate. The cheap per-session fix does the work.
   NOT classify the 43 lines.
 
 **Evidence — PARTIALLY FROZEN 2026-08-07, and the gap is named.**
-Frozen to `~/.claude/cold-design-evidence-2026-08-07/` (machine-local,
+Frozen to `~/.local/share/claude-worktime/cold-design-evidence-2026-08-07/` (machine-local,
 mode 0700, untracked, holds raw ids by design): all 125 cold rows, the
 four event windows, `.rotation_errors`, and a 3.6 MB archive of the 24
 candidate transcripts. **NOT frozen, and required:** the replay
@@ -493,7 +493,7 @@ verifier below and is not yet designed.
   standing check rather than a one-time fix; (e) state files
   `.cold_<sid>` parse and carry 7 fields.
   Verifier, red-first against the FROZEN ledger copy at
-  `~/.claude/cold-design-evidence-2026-08-07/`: (a) goes red at 43;
+  `~/.local/share/claude-worktime/cold-design-evidence-2026-08-07/`: (a) goes red at 43;
   (b) red at 1,022; (c) red on the 17:40 triple and both contradictory
   pairs; (d) red on the 23:59 and 03:32 idle rows. Each must go GREEN
   on a hand-built clean fixture, so a check that can never pass is
