@@ -13,6 +13,67 @@ hand for the same reason.
 
 ## Ready
 
+- **READY — `other` splits cleanly into TWO classes and the ledger already
+  carries the discriminator: a TOTAL miss (`cr == 0`) is genuinely causeless,
+  while every event that had a real `cache_miss_reason` was a PARTIAL miss.
+  Name the first class instead of calling it `other`.** Requested by the
+  operator 2026-08-13 ("if we can ever name some classes of `other` better
+  do update the claude-worktime repo as well"); measured the same day.
+  **This QUALIFIES the raced-read entry directly below, which is why it sits
+  here rather than in a corner.** That entry's measurement stands — four
+  events, four real causes sitting in the transcript — but its
+  generalization ("`other` is a raced read, not a missing cause") does not
+  hold as a universal, and the counter-population is larger than the
+  population that established it.
+  **The measurement, 2026-08-13, one session's transcript, ten cold rows.**
+  Perfect separation, no overlap in either direction:
+
+      cr == 0  (total miss)     7 rows   apiCause = null on ALL 7
+      cr >  0  (partial miss)   3 rows   apiCause present on ALL 3
+                                         (messages_changed,
+                                          previous_message_not_found x2)
+
+  The seven causeless rows carry `cc` = 63988 / 246636 / 247105 / 248327 /
+  248889 / 249130 / 270001, six of them inside one 3.5-minute burst
+  (2026-08-13T11:33:46Z-11:37:09Z, ~1.51 M tokens re-billed).
+  **The absence is REAL, not a reader failure, and the control is built into
+  the same run** — the identical reader over the identical file returns
+  three populated causes. A query that could not find a cause would have
+  returned ten nulls. So this is not the raced-read class with a wider
+  window: there is nothing in the transcript to race with.
+  **Structural signature, computable from fields every ledger row already
+  carries:** on all seven, `cc` equals `ctx` minus `input` exactly (e.g.
+  246636 = 246638 - 2). Nothing was read; the whole context was re-written.
+  That is a different event from a partial miss where a prefix hit and only
+  the remainder was re-billed — and today both render as the same `other`.
+  **Design, decided.** Classify at render and in the ledger from
+  `cr`/`cc`/`ctx`, all already present — no new capture, no transcript read,
+  no new field:
+  - `cr == 0` -> name it (proposed: `no-prefix`; the WORD is the operator's
+    call, the CLASS is what this entry fixes). Means: the API matched no
+    cached prefix at all.
+  - `cr > 0` and no cause -> keep `other`, which then means exactly what its
+    own code comment already says — "no cause available" — now honestly
+    scoped to the population where a cause could have existed.
+  Leave the existing late-cause upgrade path untouched: it is correct for
+  the partial class and this change must not disturb it.
+  **Red-first arrangement, and the two must DIFFER:** a synthetic ledger row
+  with `cr=0, cc=246636, ctx=246638` renders the new name; one with
+  `cr=141672, cc=3228` and no cause still renders `other`. A change that
+  renders both the same has renamed `other` rather than split it.
+  **Do NOT infer a mechanism from the name.** WHY a total miss happens is
+  unsettled and under investigation in the cache-fix fork, where the leading
+  desk hypothesis (breakpoint collapse) was measured and REFUTED on
+  2026-08-13. This entry names an OBSERVABLE and nothing more; a name
+  implying a cause would be the label-over-body drift the corpus warns
+  about.
+  Done: both bites above pass; a `--cold` listing over the 2026-08-13 rows
+  shows the six burst events under the new name and the three caused events
+  unchanged; this entry leaves with its commit ref.
+  Verifier: the two synthetic rows above, plus `claude-worktime --cold` over
+  the real 2026-08-13 ledger.
+  Anchor: claude-worktime.sh (the `cs_lastcause` / `other` default path)
+
 - **READY — `other` in the ledger is a RACED READ of the transcript, not a
   missing cause: every one of four measured events had a real
   `cache_miss_reason` sitting in its transcript.** Measured 2026-08-08
