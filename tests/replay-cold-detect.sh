@@ -232,7 +232,10 @@ echo "❄ post-compact first write (hit predicate not met) displays as compact c
 # Measured 2026-08-14T15:42:40Z:
 #   prev turn ctx 713031 · post-compact first write cr=105164 cc=8040 ui=2
 # The cold-cache sibling that DID book, 2026-08-14T15:41:04Z, had
-# cr=0 cc=77475 — it had been idle 3h03m, so the prefix was gone too.
+# cr=0 cc=77475 — it had gone 3h03m without an upstream call, so the prefix was
+# gone too. Not "idle" in the user sense: that session was working throughout,
+# on local tools only. The gap that kills a cache is time since the last API
+# call, never time since the user last did something.
 compact_display_check() {
     local label=$1 with_boundary=$2 want_cost=$3 want_cause=$4
     local prev=${5:-355000} t_cr=${6:-0} t_cc=${7:-51000} t_ui=${8:-100}

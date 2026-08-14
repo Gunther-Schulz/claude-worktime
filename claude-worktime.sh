@@ -2025,8 +2025,15 @@ mode_statusline() {
                     # on showing a 294k bust from 6h56m earlier (confirmed
                     # against the operator's rendered statusline). The session
                     # that DID book at 2026-08-14T15:41:04Z (cr=0 cc=77475) had
-                    # been idle 3h03m, so its prefix was gone too — the ratio
-                    # test was passing on a dead cache, not on compaction.
+                    # gone 3h03m without an upstream call, so its prefix was
+                    # gone too — the ratio test was passing on a dead cache,
+                    # not on compaction. NOT "idle" in the user sense: that
+                    # session was working the whole time, just on local tools
+                    # (reported by the session itself, 2026-08-14). The gap
+                    # this code measures is time since the last TOKENS entry,
+                    # i.e. since the last API call, which is the quantity the
+                    # cache TTL actually runs against — a session can be busy
+                    # for hours and still let its cache die.
                     #
                     # Dropping it is safe because the boundary already answers
                     # the question exactly once: cs_prev_t advances to THIS
