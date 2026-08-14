@@ -387,22 +387,6 @@ is visible from reading the statusline.
 
 ### The argument loop still swallows any unknown flag silently (2026-08-08, half-closed by design)
 
-- **READY (small) — `claude-worktime.sh`'s top-level `*) ;;` arm.** The
-  `--info` fix closed the SYMPTOM (a printed flag with no arm) and
-  `tests/printed-flags-are-handled.sh` keeps that class shut mechanically —
-  every `claude-worktime --flag` the script PRINTS must have a real arm. But
-  the general defect is untouched: any unrecognised flag still falls through
-  to the default session summary, so a typo runs the wrong mode and says
-  nothing. The executing agent stopped there deliberately, because making it
-  error changes behaviour the brief did not name — correct call, and the
-  remainder is this entry.
-  Decision needed before building: erroring on unknown flags is a
-  behaviour change for anyone (or any script) passing extra arguments today.
-  Verifier, red-first: `claude-worktime --nonsense` prints the session
-  summary and exits 0 today; after, it names the flag and exits non-zero.
-  Check the hook call sites first — the six harness hooks pass real flags,
-  and this must not break them.
-
 ## Parked
 
 - **PARKED — `_cw_compact_boundary_info` picks the newest compact boundary by
@@ -512,7 +496,55 @@ is visible from reading the statusline.
   amended. Nothing here is blocked on evidence the repo lacks — it is blocked
   on a choice, which is why this is parked and not ready.
 
+- **PARKED — `--statusline` exits 1 intermittently on a minimal synthetic log,
+  rendering a literal `{` for the project token.** Observed 2026-08-14 while
+  building `tests/unknown-flags-error.sh`, against an UNMODIFIED script, so it
+  is not caused by any change that day. With a data dir holding one hand-written
+  event (`{"t":…,"p":"/tmp/p","s":"sess","e":"prompt"}`) the render began with an
+  unsubstituted `{` and exited 1; a later run of the same shape exited 0, and the
+  operator's REAL data dir exits 0 every time (checked repeatedly).
+  **Why it matters despite being synthetic:** Claude Code invokes the statusline
+  as a command, so a non-zero exit is a failure signal in the operator's own
+  harness, and the unsubstituted `{` suggests a token substitution failing
+  rather than a cosmetic edge.
+  **Named missing evidence:** a deterministic reproduction. It did not
+  reproduce on demand, and the two runs that differed were not held to one
+  changed variable — so what is missing is the discriminating fixture, not a
+  design decision. Likeliest suspects, unprobed: a field the renderer expects
+  that a hand-written event lacks (`b`/branch was ruled out — both shapes exited
+  0 on the retry), or state files written by a first invocation changing the
+  second's path.
+  **Deliberately not chased further** at the time: it surfaced inside an
+  unrelated change and had already cost several probes; the argument-parsing
+  suite was decoupled from it instead (it asserts only that `--statusline` is
+  not rejected as an unknown flag, never its exit code), so no check depends on
+  the flake.
+
 ## Departed
+
+- 2026-08-14: **unknown flags are named and rejected — SHIPPED `1964d3c`**
+  (with `06f1255`, a repair to the guard that this change tripped). The
+  argument loop's `*) ;;` discarded anything unrecognised and fell through to
+  the default session summary, exit 0 — a typo answered a different question
+  confidently. Now: the flag is named on stderr with the --help pointer,
+  exit 2. The operator's behaviour-change decision was delegated to the desk
+  and taken with the six hook call sites checked FIRST: they pass `log --*`
+  (caught by the top-level dispatch, which shifts and exits before the loop)
+  and `--statusline` (its own arm), so none reach the new branch.
+  **The false-fire controls outnumber the red 19 to 2**, deliberately: the risk
+  in this change is rejecting something legitimate, so every mode, every filter
+  — including the value-taking ones whose ARGUMENT must not be read as a flag —
+  the bare default run, and all six hook sites are pinned in
+  `tests/unknown-flags-error.sh`.
+  **It also exposed two predicate errors in the older printed-flags guard**
+  (`06f1255`), both found by that guard firing on legitimate work: its matcher
+  rejected any case pattern containing `|`, so alternation arms like
+  `-h|--help|help)` were invisible and `--help` read as unhandled though it has
+  always been handled; and it scanned commentary, so it fired on a comment
+  naming `--tody` as an example of a typo. Both repaired by narrowing the
+  predicate to what the guard always claimed to check, and re-proven in BOTH
+  directions — green on the real tree, still red by name on a planted printed
+  flag with no arm.
 
 - 2026-08-14: **the residual `other` bucket SPLIT — SHIPPED `841f493`.**
   `cr == 0` now books `no-prefix`, `cr > 0` with no diagnostic keeps `other`.
