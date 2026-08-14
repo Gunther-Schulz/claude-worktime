@@ -133,10 +133,24 @@ check "/clear (tiny fresh write) does not flag" 0 "5 130000 $((NOW-30)) 120000" 
 
 echo
 echo "❄ cause classification (state: count ctx now lastcc lasthit_t lastcause prevmodel):"
-# Prior context 130k, gap set via the 'now' field. Same-model + small gap =
-# other; model changed = model; gap past 0.9×TTL = idle (idle wins over model).
-checkcause "same model, short gap -> other" other \
+# Prior context 130k, gap set via the 'now' field. Same-model + small gap falls
+# to the residual bucket; model changed = model; gap past 0.9×TTL = idle (idle
+# wins over model).
+#
+# THE RESIDUAL IS TWO CLASSES, AND THESE TWO CASES MUST DIFFER. Measured
+# 2026-08-13 over ten cold rows with perfect separation in both directions:
+# every `cr == 0` row had a null API cause (7 of 7), every `cr > 0` row had a
+# real one (3 of 3). So a total miss is not "cause unknown" — nothing was read,
+# the whole context was re-written, and that is a different event from a partial
+# miss where a prefix hit and only the remainder was re-billed. `no-prefix`
+# names the observable and asserts no mechanism: WHY a total miss happens is
+# unsettled (the leading hypothesis was measured and REFUTED 2026-08-13).
+# A change that renders both cases the same has renamed `other`, not split it —
+# which is why the cr>0 case below is not optional.
+checkcause "residual, cr == 0 -> no-prefix" no-prefix \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5   0 130000 100
+checkcause "residual, cr > 0 -> still other" other \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5   20000 110000 100
 checkcause "model changed -> model" model \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-opus-4-8  0 130000 100
 checkcause "gap past 0.9xTTL -> idle" idle \
@@ -160,10 +174,21 @@ checkcause_tp "unavailable -> cause=unavailable" unavailable \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
     '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn","diagnostics":{"cache_miss_reason":{"type":"unavailable"}}}}'
 # Graceful degradation: an older-CC transcript with no diagnostics field at
-# all (or no transcript entry matching) must fall back to plain "other" —
-# never crash, never block the statusline.
-checkcause_tp "no diagnostics field -> falls back to other" other \
+# all (or no transcript entry matching) must fall back to the residual — never
+# crash, never block the statusline.
+#
+# TWO CASES, because the residual GAINED A VALUE. This was one case asserting
+# `other` with cr=0, and it went red on the no-prefix split — not because the
+# split broke it, but because a fixture written under a two-valued predicate
+# stops testing what it claims once a third value exists. Flipping its
+# expectation would have kept one path covered and silently dropped the other,
+# so both are pinned here: degradation must reach the RIGHT residual class, not
+# merely avoid crashing.
+checkcause_tp "no diagnostics field, cr == 0 -> no-prefix" no-prefix \
     "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 0 130000 100 \
+    '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn"}}'
+checkcause_tp "no diagnostics field, cr > 0 -> other" other \
+    "3 130000 $((NOW-49)) 128000 0 - claude-fable-5"  claude-fable-5 20000 110000 100 \
     '{"type":"assistant","message":{"content":[{"type":"text"}],"stop_reason":"end_turn"}}'
 
 echo

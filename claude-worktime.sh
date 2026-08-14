@@ -2068,6 +2068,34 @@ mode_statusline() {
                         cs_lastcause="model"
                     elif [ -n "$_cw_cause" ]; then
                         cs_lastcause="$_cw_cause"
+                    elif [ "${t_cr:-0}" -eq 0 ]; then
+                        # THE RESIDUAL IS TWO CLASSES, and the ledger already
+                        # carried the discriminator. Measured 2026-08-13 over ten
+                        # cold rows, perfect separation both ways: all 7 rows with
+                        # cr == 0 had a null API cause, all 3 with cr > 0 had a
+                        # real one. The absence is real, not a reader failure —
+                        # the identical reader over the identical file returned
+                        # three populated causes in the same run.
+                        #
+                        # So cr == 0 is not "cause unknown": no cached prefix
+                        # matched at all and the whole context was re-written,
+                        # which is a different event from a partial miss where a
+                        # prefix hit and only the remainder was re-billed. Calling
+                        # both "other" put a label over two different bodies.
+                        #
+                        # The name asserts an OBSERVABLE and no mechanism. WHY a
+                        # total miss happens is unsettled — the leading hypothesis
+                        # (breakpoint collapse) was measured and REFUTED
+                        # 2026-08-13 — so a name implying a cause would be exactly
+                        # the label-over-body drift this split exists to end.
+                        #
+                        # Deliberately BELOW the diagnostic leg: a row that has a
+                        # real cache_miss_reason keeps it. This splits the
+                        # residual only, and the late-bind upgrade path is
+                        # untouched by construction — it gates on "other", so a
+                        # no-prefix row is never upgraded, which is correct: there
+                        # was no cause to arrive late.
+                        cs_lastcause="no-prefix"
                     else
                         cs_lastcause="other"
                     fi
