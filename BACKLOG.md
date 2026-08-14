@@ -3,7 +3,12 @@
 Two grades: **ready** (decision-complete: design decided, verifier
 named, done-criterion stated) and **parked** (carries its named missing
 evidence). Items leave by commit ref or are dropped with a one-line
-reason.
+reason — and LEAVING MEANS THE BODY MOVES: the closed entry's body
+goes to `## Departed` with its evidence, never graded closed in
+place. A struck-through or SHIPPED-marked entry left sitting in
+Ready or Parked is a closure without an exit, and the carrier then
+grows without bound while formally compliant (measured 2026-08-14:
+nine such entries holding 272 of this file's 1008 lines).
 
 Events are named by UTC timestamp, never by session id: this repo is
 public and the machine-wide push-side leak scan does not reach it
@@ -306,147 +311,6 @@ verifier below and is not yet designed.
 
 ---
 
-- **DROPPED 2026-08-08 — see Departed; design retained below should a real consumer appear.** ~~READY~~ — `--rows`: a line-robust ledger query mode.** There is no
-  query surface, so every investigation hand-rolls one and re-earns
-  the two hazards this repo already solved: the unreadable lines (F6)
-  and the 81 MB size. Measured 2026-08-07: an ad-hoc scan written
-  during this design pass did both wrong at once — one `jq` process
-  per line over the whole file — and was killed at 120 s having
-  answered nothing.
-  Design: one `--rows` mode taking a time window and an optional kind
-  filter, emitting matching records as JSONL through the SAME
-  line-robust reader `--cold` already uses, so unreadable lines are
-  skipped AND counted rather than fatal.
-  Verifier: `--rows` over the 03:32 window returns the hit and cost
-  rows and reports the unreadable count; the same window through a
-  naive whole-file `jq` still dies. `[vet]` reviewed: clean,
-  red-first, two-sided, no objection.
-
-- **SHIPPED 2026-08-08 (`8bfc385`, pushed) — per-session `token_prev`.**
-  Landed as `local token_prev="${LOGDIR}/.token_prev_${sid}"`, keyed like the
-  existing `.cold_${sid}` state file. Red-first proven and INDEPENDENTLY
-  re-run by the dispatcher, not booked on the lane's word: the new test
-  `tests/replay-token-prev-session.sh` exits **1** against base `5487ec6`'s
-  script (md5 `acf2cec1220a51e470e5e6f206ec350a`, cross-checked by the
-  dispatcher against `git show 5487ec6:claude-worktime.sh`) and **0** against
-  the fix; the unmutated baseline was run first and stated green. Against the
-  old script the duplicate render books `hits=1 cc=335933` — the measured
-  01:00:55Z false ❄; against the fix, `hits=0`. Full suite 17/17 on the
-  dispatcher's own run and again in the pre-push hook.
-  **Confirming evidence gathered the same morning, worth keeping**: TWO live
-  busts, both double-booked, 2 for 2 under concurrent sessions — 638k at
-  09:48:53Z/09:49:20Z (one `message.id`, `cr=15,530 cc=638,186` on both rows)
-  and 141k at 09:59:53Z/10:00:00Z (one `message.id`, `cr=15,195 cc=140,878`).
-  Both are the predicted signature: identical `(cr,cc)` within one session,
-  let through by cross-session interleave. The operator saw the phantom render
-  as ordinal `#2` in the statusline, live, which is the nuisance this closes.
-  Residual, NOT closed by this fix and deliberately not widened into it: the
-  guard is an identity PROXY ("same `(cr,cc)` within a session"), not identity.
-  The real identity is the API call id, which `tools/cold-events.mjs` in the
-  cache-fix fork uses (`requestId`) and which is not available at the
-  statusline tap — sixteen fields extracted, none an identifier. If a duplicate
-  ever appears with genuinely differing `(cr,cc)` for one call, this proxy will
-  not catch it and the transcript-reading route is the fallback.
-  Original entry follows unchanged: Scanned 2026-08-08 over all 105
-  recorded hits: **20 pairs sit less than 60 s apart within the SAME session**,
-  several with an identical `cc` on both sides (119664 -> 119664,
-  81917 -> 81917) — the same API call booked twice, which is exactly the
-  signature this item predicts. One pair disagrees with itself about class
-  (`other` / `messages_changed`), the "two duplicates that cannot even be
-  recognised as one event" case. And 44 of 105 hits (42%) sit in the degraded
-  `other` bucket.
-  It is also the only item here attached to a LIVE operator-facing nuisance:
-  the ❄ notifications still fire (operator-confirmed 2026-08-08), so a share
-  of them are false, and a checker that fires on a non-defect trains its
-  reader to discount the real one. **Bundle with the diagnostic-ordering item
-  (A) below** — same code region, and (A) attacks that same 42% `other`
-  bucket; splitting them buys nothing but a second round.
-  Root cause, 2026-08-07 01:00:55Z: the predicate
-  (`cc >= 0.6 x prev_ctx` AND `cr <= prev_ctx / 5`, ≈1694) compared a
-  render against another render of the SAME call. `[vet]` verified the
-  arithmetic from the tokens rows: `t=1786064427` cr=0 cc=39,711
-  (ctx 39,713); `t=1786064440` and `t=1786064455` both cr=39,711
-  cc=335,933 (ctx 375,646). The :440 render wrote `cs_prev=375,646`;
-  at :455 the predicate passed by wide margins (335,933 ≥ 225,388;
-  39,711 ≤ 75,129). **The threshold is fine; the baseline was not.**
-  Design: move the `(cr,cc)` guard from the global
-  `${LOGDIR}/.token_prev` to `.token_prev_<sid>`. That alone closes
-  every observed duplicate, because all four sets carry identical
-  `(cr,cc)` within their session and were let through only by a
-  cross-session interleave (F2).
-  Verifier, red-first: replaying the 01:00 render sequence with a
-  foreign session's write interleaved must produce NO event against
-  the new code and one 336k hit against the old. Sibling control —
-  the cache-fix fork's `tools/cold-events.mjs` reports no event at
-  01:00:55Z on the same transcript. **`[vet]` warning: that sibling
-  reading has already drifted** — it reported 13 calls / 0 events
-  yesterday and 49 calls / 1 event today, because the transcript grew.
-  The load-bearing half (no event at 01:00:55Z) still reproduces; cite
-  only that half, and cite it against the frozen transcript archive,
-  not the live file.
-  **Closure criterion, corrected `[vet]`:** "the two instruments agree"
-  is ill-defined — `cold-events.mjs` classes the 03:32 event as an
-  idle bust while (A) will class it a controlled cost, so they must
-  DISAGREE there by design. Closure ranges over the 01:00 event only.
-
-- **SHIPPED 2026-08-08 (`8bfc385`, pushed, bundled with the item above) — (A):
-  consult the diagnostic BEFORE the idle short-circuit.** The `_cw_diag` read
-  now runs whenever the hit predicate matches, ahead of the idle/model ladder;
-  `previous_message_not_found` wins outright over gap and model.
-  **The struck `gap > TTL` leg was NOT implemented**, per this entry's own
-  `[vet]` blocking note — the diagnostic leg alone catches the named cases, and
-  the leg would have silenced the whole idle class.
-  Verifier ran THREE-sided as this entry specified, red-first
-  (`tests/replay-diag-before-idle.sh`, dispatcher-re-run: exit **1** against
-  base `5487ec6`, **0** against the fix): against OLD, the 23:59:10Z and
-  03:32:02Z shapes failed as expected (`got hit/idle, want cost/resume`) while
-  BOTH over-firing controls already passed on OLD — the 18:08:32Z genuine
-  mid-history bust (`gap=7`, `messages_changed`) still books as a hit, and a
-  constructed idle expiry with `gap > TTL` and no resume diagnostic still books
-  as a hit. Those two passing on the old code is the point: it shows the red
-  came from the diagnostic-precedence cases only, not from a check that fires
-  on everything.
-  Sequencing note from this entry HELD: (A) shipped before 3b's fixture was
-  captured, so 3b's verifier has not dissolved.
-  Original entry follows unchanged: Measured 2026-08-06 23:59:10Z: `previous_message_
-  not_found` booked a `k:"hit"` with cause `idle`, `cc` 215,873,
-  `gap` 22,702 s — an ordinary idle expiry rendered as a ❄ bust and a
-  prevention target, which the 2026-07-31 resume-split's own contract
-  says never happens. The split held on the route it was built for and
-  missed this one: the `idle` cause reaches hit-booking without
-  passing it.
-  Design: the residual branch's `_cw_diag` read (≈1766-1770) moves
-  AHEAD of the idle/model short-circuit, so a transcript diagnostic
-  that is already on disk is consulted before a cause is assumed. A
-  cold event whose diagnostic is `previous_message_not_found` is a
-  controlled cost, never a hit. Basis: F4(b) — the diagnostic WAS on
-  disk before the booking, at both named events.
-  **The `gap > TTL` leg is STRUCK `[vet]`, and this is blocking-grade.**
-  It would silence the entire idle class (9 rows), and idle cache
-  expiry is the canonical PREVENTABLE bust — the very thing the cold
-  guard warns about before it happens. The named case does not need
-  the leg: all three `cc=215873` transcript rows carry
-  `previous_message_not_found`, so the diagnostic leg alone catches
-  it. (Struck for OVER-FIRING, unlike the `mtok == 0` leg struck
-  earlier for being a degraded default. Also moot now: "read the TTL
-  from the session's own traffic" names a mechanism that does not
-  exist — `CACHE_GUARD_TTL` is 0 by default with a 3600 fallback.)
-  Verifier, red-first and THREE-sided `[vet]`: the 23:59 and 03:32
-  events must book as controlled costs with no ❄; the genuine
-  mid-history bust at 2026-08-06 18:08:32Z (`mtok` 267,780, gap 7,
-  `messages_changed`) must STILL book as a hit; and — the control the
-  earlier version lacked — a genuine idle expiry with `gap > TTL` and
-  no resume diagnostic must ALSO still book as a hit. The 18:08 case
-  cannot serve as that control: its gap is 7 s, so it structurally
-  cannot detect over-firing of a gap-based leg.
-  **Correction `[vet]`:** an earlier version called 18:08:32Z the
-  "same session window" as the 23:59 event. It is a different session.
-  **Sequencing `[vet]`:** (A) converts the 23:59 and 03:32 idle rows
-  into controlled costs — exactly the rows 3b's verifier names as
-  "must render as a disagreement". Ship (A) before 3b's fixture is
-  captured and 3b's verifier dissolves. The freeze above covers the
-  ledger rows; the stdin sequences it needs are still missing.
-
 - **PARKED 2026-08-08 (was READY) — Layer 3a: a fourth answer, "the cache
   was fine."** Design below is intact and unchallenged; what changed is the
   SEQUENCING. Its motivating population is false fires forced to render as
@@ -562,25 +426,6 @@ verifier below and is not yet designed.
   Done when all five have been shown red on real data and green on the
   clean fixture, and `--doctor` is wired into whatever runs daily.
 
-- **OBSOLETE 2026-08-08 — see Departed; diagnosis refuted, artifact gone.** ~~READY~~ — the torn-line writer.** `--cold` reporting `43 unreadable
-  line(s) skipped` is the 2026-07-28 three-answer fix working: the
-  READER is fine. But the count is wallpaper, nothing classifies what
-  is unreadable, and `.rotation_errors` shows 1,022 consecutive
-  rotation failures against a rotation that REWRITES the live file
-  (F6) — the first suspect, untested.
-  Design: one classifier pass reporting, per unreadable line, its byte
-  length and whether it is a truncated prefix of a valid record, two
-  records concatenated, or interleaved bytes from two writers — then
-  fix the writer producing the dominant shape. Read once, line by
-  line, never a process per line.
-  Verifier `[vet]` corrected: anchor to a FROZEN copy of the ledger,
-  not the live file — "names all 45" was already false (43 today)
-  because the anchor mutates. Against the frozen copy: every
-  unreadable line carries a shape with no unclassified remainder; and
-  a concurrency probe (N renders racing one append) adds zero new
-  unreadable lines against the fixed writer where it adds at least one
-  against the old.
-
 ### `{project_total}` is inflated ~55x — two independent defects, found 2026-08-08 by operator disbelief at a statusline number
 
 The dotfiles statusline read `total 2204h44m`. Recomputed independently
@@ -588,87 +433,6 @@ The dotfiles statusline read `total 2204h44m`. Recomputed independently
 `2204h46m` — reproduced, so the arithmetic is not in doubt. **97.9% of it is
 one gap of 2159h32m** (89.98 days). Both defects below are live, and neither
 is visible from reading the statusline.
-
-- **BUILT 2026-08-08 (f40e104, deployed) — see Departed.** ~~READY~~ — (A) `calc_active` walks a per-project SLICE and treats
-  adjacent-in-slice events as adjacent in time.** `claude-worktime.sh:1106-1109`
-  computes `project_total_active` as
-  `$all | map(select(.p == $proj)) | calc_active($pause)`. The gap between two
-  events adjacent *in that slice* is not a real gap — it is every second the
-  session spent elsewhere. `is_idle` (≈280) suppresses a gap only when the
-  PREDECESSOR is `response` or `start`, so the slice mostly ends on a suppressed
-  pair and the bug stays hidden. The event kinds `tool_start`, `tool_end` and
-  `prompt` can never be idle by construction — so when a session `cd`s away
-  mid-tool the slice ends on a `tool_start` and the whole interval until the
-  project is next visited is billed as attended Claude work.
-  Traced to the record: session `00e18b84` emitted its last dotfiles event
-  (`tool_start`, 2026-04-28 14:08:49) then worked on in pbs-bureau /
-  mcp-server / skill-craft until 20:03:09 the same day — it did **not** crash.
-  The next dotfiles event is a `start` on 2026-07-27 13:40:52. Those two are
-  adjacent in the slice, so 90 days entered the total.
-  Fix: a gap counts for `$proj` only when BOTH endpoints carry `.p == $proj` —
-  i.e. walk the full sorted stream, not the slice. Same shape binds
-  `today_project_active` and `today_project_split` (1104-1105), which use the
-  identical `map(select(.p == $proj))` idiom.
-  Verifier, red-first: against the live log, `{project_total}` for dotfiles
-  reads 2204h47m today (the red); under the both-endpoints rule it reads
-  18h43m. Do NOT book 18h43m as the answer — it is depressed by (B) below, and
-  (B) must land with (A) or the fix trades a 55x overstatement for an
-  understatement. With (B) applied too (all cwds under the repo root folded to
-  the root — which surfaces `claude/hooks`, `claude/` and six
-  `.claude/worktrees/agent-*` lanes as dotfiles time), it reads **19h06m**.
-  **Sub-decision SETTLED (operator decision, on the recommendation below):**
-  a gap straddling a project switch is attributed to the PREDECESSOR's
-  project — the one the clock was running in when the gap opened. Rejected:
-  dropping such gaps (the both-endpoints rule alone), which under-counts a
-  session that interleaves repos rapidly and makes 19h06m a floor rather than
-  an answer; and splitting the gap, which invents a boundary the log does not
-  record. State the chosen rule in the docstring so the next reader does not
-  re-derive it.
-  So the rule is: walk the FULL sorted stream; a gap counts for the project of
-  its EARLIER endpoint, subject to the existing `is_idle` suppression. This
-  supersedes the both-endpoints phrasing above wherever they differ.
-  **Target values, computed against the repaired log on the day the rule was
-  settled** (recompute rather than assert these — the log grows): dotfiles
-  `28h59m` (vs `2204h47m` shipped, and `19h06m` under the rejected
-  both-endpoints variant — the ~10h delta IS the straddling gaps, which is
-  what makes the attribution choice load-bearing rather than cosmetic).
-  Cross-check that ties (A), (B) and (C) together: under the settled rule the
-  all-projects sum is `967h25m` against a `3104h48m` wall span — the (C)
-  invariant PASSES at 0.31x, where the shipped code gives 6.6x. So (C) is the
-  acceptance test for (A)+(B), not merely a watchdog: it is red before and
-  green after, on real data, with no fixture.
-
-- **BUILT 2026-08-08 (f40e104, deployed) — see Departed.** ~~READY~~ — (B) `.p` is written RAW but `{project}` is displayed ANCHORED, so
-  the label sits over a body it does not describe.** The log writer
-  (≈986-995) uses `HOOK_CWD`/`$(pwd)` verbatim; `PROJECT_GIT_ANCHOR`
-  (≈728, `_project_label_v`) anchors to the git common dir for the DISPLAY
-  token only. So a statusline reading `dotfiles` shows a total computed by
-  exact-string match on one cwd, and every subdirectory of the same repo is a
-  separate "project". Visible in the live data: `beat-the-books`,
-  `.../src/beat_the_books`, `.../docs` and `.../dictionaries/dictionaries` are
-  four rows. Fix: anchor at WRITE time (or normalize `$proj` at read time with
-  the same function the label uses) so the aggregation key and the rendered
-  label are the same value. Historical records keep raw cwds either way —
-  a read-time normalization repairs history, a write-time one does not; that
-  is the design call.
-  Verifier, red-first: today `{project}` renders `beat-the-books` while four
-  distinct `.p` values feed four different totals — assert label and
-  aggregation key are equal for every rendered row.
-
-- **BUILT 2026-08-08 (tests/project-totals-plausibility.sh) — see Departed.** ~~READY~~ — (C) the plausibility invariant that would have caught this, as a
-  `--test` check.** The manual probe is the prototype; the mechanism is the
-  deliverable. **Invariant: the SUM of all projects' active time cannot exceed
-  the log's own first..last wall span.** Measured today: sum `20565h43m` vs
-  wall span `3104h19m` = **6.6x wall clock** — red, on real data, no injection
-  needed. Near-zero false-fire risk: it is arithmetic on the log, and a human
-  cannot work 6.6x real time.
-  **Rejected, having been tested:** the per-project variant ("a project's
-  active time cannot exceed its own first..last span") — run against the live
-  log it yields **0 violations** even with the 90-day gap present, because the
-  gap is bounded by the span it sits inside. It is unfalsifiable for this
-  defect class and must not be built as a substitute.
-  Done-criterion: the check ships in `--test`, goes red on today's log, and
-  goes green once (A) and (B) land.
 
 ### `mode_rotate` keeps its own plain-jq copy of the guard `_do_rotate` just had fixed (found 2026-08-08 by the executing agent, outside its write boundary)
 
@@ -690,47 +454,7 @@ is visible from reading the statusline.
   Not covered by `tests/rotation-corrupt-log.sh` or
   `tests/rotation-no-silent-truncation.sh` — both drive `_do_rotate`.
 
-- **BUILT 2026-08-08 (2b3f553) — and the entry's premise was REFUTED, which is
-  the part worth keeping.** This entry called the branch fixture-unreachable
-  ("needs `:2655` to succeed while `:2662` fails — OOM, file vanishing") and
-  offered only two exits: a fault-injection seam, or a note recording it as
-  untestable. A third existed and cost neither. `_safe_log` is
-  `jq -Rc 'fromjson? // empty'`, which passes through any valid JSON including
-  a NON-OBJECT; the collect read then evaluates `.type` on it and raises. jq
-  skips the bad input, keeps going, and takes its exit status from the LAST
-  input — so a bare scalar on the final line makes the reader emit a valid
-  prefix AND exit non-zero, which is exactly the property the branch defends.
-  The first-event guard survives the same file because it ends in
-  `head -1 || true`. Lesson booked rather than the fix: **"unreachable by
-  fixture" is a load-bearing claim and earns the same refutation probe as any
-  other** — a five-minute probe overturned it, and was cheap precisely because
-  the claim named what would falsify it.
-  ~~READY~~ — the item-(2) refusal branch has no black-box test.
-  `7a949ab` added a hard-error guard at the collect read (`:2662-2672`) that
-  refuses to archive on a read failure. After the `_safe_log` routing it is
-  unreachable by fixture — it needs `:2655` to succeed while `:2662` fails
-  (OOM, file vanishing mid-run). Proven by injection only (executor bite 2,
-  2026-08-08), never by a suite test. Decide: either a fault-injection seam the
-  suite can drive, or an explicit note in the test file that this branch is
-  injection-proven. Silently untested is the one option ruled out.
-
 ### Rotation's first run after the 2026-08-08 repair is a one-time 12-25 s stall — DECISION PENDING
-
-- **SETTLED 2026-08-08, superseded by the summary-writer hold — see Departed.** ~~READY~~ — operator decision, evidence gathered. With the live log repaired
-  (46 lines, 2026-08-08) rotation is unjammed for the first time in 129 days,
-  and `:1003` runs it SYNCHRONOUSLY on the session-start hook. Measured on an
-  83 MB synthetic corrupt log: **24.2 s wall**, `Rotated 1073862 entries
-  (24 projects)`. The synthetic carries ~1.9x the real log's line count and the
-  cost looks per-record, so the real figure is plausibly ~12 s — same order.
-  One-time; afterwards the live log is small.
-  Currently NEUTRALISED by `AUTO_ROTATE=false` in dotfiles'
-  `claude-worktime/config.sh` (hold set 2026-08-08, reason and removal
-  condition in the comment there). The hold exists for a different reason —
-  rotation would bake inflated `calc_active` totals into permanent summary
-  records — so BOTH must clear before it lifts.
-  When it lifts: prefer `claude-worktime --rotate` run manually, once, before
-  the next session start, over paying the stall on a hook. Recommendation, not
-  yet decided.
 
 ### Two findings from the runner/lint dispatch, both outside its write boundary (2026-08-08)
 
@@ -812,32 +536,6 @@ is visible from reading the statusline.
   Check the hook call sites first — the six harness hooks pass real flags,
   and this must not break them.
 
-- **READY — a guard that catches a test fixture seeding a state filename the
-  code never reads.** Found 2026-08-14 while fixing the warm-compact defect:
-  three sites in `tests/replay-cold-detect.sh` wrote `"$d/.token_prev"`, the
-  pre-split GLOBAL name, while the detector has read `.token_prev_<sid>` since
-  the per-session split (`claude-worktime.sh:1800`). All three read as pinned
-  premises and pinned nothing. One was not merely decorative: the zero-usage
-  case's own comment says "token_prev differs from (0,0) so only the zero-total
-  rule can skip it" — with the seed landing on a dead name, `tp` read (0,0), the
-  unchanged-pair gate skipped the render too, and the case would have passed
-  with the zero-total rule DELETED. A green check exercising less than it
-  claims, byte-identical to health.
-  **Design, decided.** A check in `tools/` that (a) derives, from
-  `claude-worktime.sh`, the set of `${LOGDIR}/.<name>` state files the script
-  actually reads or writes — derived from the source, never a restated list,
-  since a restated one cannot age loudly — and (b) asserts every `"$d/.<name>"`
-  a file under `tests/` writes resolves to a member of that set, allowing the
-  `_<sid>` suffix. Wire it into `tools/run-tests.sh`.
-  **Red-first arrangement:** revert one of today's three renames back to
-  `.token_prev` and the guard goes red naming that line; the unreverted tree is
-  green. Baseline is green today (suite 18/18, 2026-08-14) — state that before
-  claiming the red, since a permanently-red guard is indistinguishable from a
-  working one.
-  **Done-criterion:** guard red on the reverted site, green on the tree,
-  `tools/run-tests.sh` still 18/18 (19 suites with the guard).
-  **Write boundary:** `tools/` (new check) + `tools/run-tests.sh`.
-
 ## Parked
 
 - **PARKED — `_cw_compact_boundary_info` picks the newest compact boundary by
@@ -913,7 +611,50 @@ is visible from reading the statusline.
   token's rendering of a disagreement is undefined.
   The operator decision in (1) is the cheapest and unblocks the most.
 
+- **PARKED — the duplicate-render guard is an identity PROXY, not identity.**
+  Residual of the per-session `token_prev` fix (SHIPPED 2026-08-08 `8bfc385`,
+  see Departed), deliberately not widened into it at the time. The guard's
+  test for "same API call rendered twice" is "same `(cr,cc)` within one
+  session". The real identity is the API call id, which `tools/cold-events.mjs`
+  in the cache-fix fork uses (`requestId`) and which is NOT available at the
+  statusline tap — sixteen fields are extracted there, none an identifier.
+  **Named missing evidence:** one observed duplicate render of a single API
+  call whose `(cr,cc)` pair DIFFERS between the two renders. Until such a case
+  exists the proxy and true identity are indistinguishable in practice, and the
+  fallback (reading identity from the transcript) would be paid for nothing.
+  Unparks the moment such a pair is seen in the ledger; the scan is the same
+  same-session near-duplicate query that found the original 20 pairs.
+
 ## Departed
+
+- 2026-08-14: **a fixture seeding a state filename nothing reads — GUARD BUILT**
+  (`tests/state-file-names-are-live.sh`). Booked and built the same day, out of
+  the warm-compact repair: three fixtures in `tests/replay-cold-detect.sh` were
+  seeding `"$d/.token_prev"`, the pre-split GLOBAL name the detector stopped
+  reading at `claude-worktime.sh:1800`. All three read as pinned premises and
+  pinned nothing; one was load-bearing, since the zero-usage case's own comment
+  claims "only the zero-total rule can skip it" while the dead seed let the
+  unchanged-pair gate skip the render too — it would have passed with the rule
+  it guards DELETED.
+  The guard derives its allow-set from `claude-worktime.sh` on every run rather
+  than restating one, so a new state file cannot age it into a silent green.
+  Red-first, baseline stated green first: reverting one rename returns exit 1
+  naming the file and line, restoring returns 0.
+  **Two false fires were found and fixed by predicate, never by softening** —
+  both are the reason the guard is trustworthy rather than merely present.
+  (1) It fired on `tests/project-total-fold.sh:103`, which names a worktree
+  DIRECTORY (`$REPO/.claude/worktrees/...`); the dotname must be the last path
+  segment. (2) It fired on its OWN explanatory comment, which names the dead
+  file to explain itself; whole-line comments are now stripped on both sides.
+  That second one is load-bearing in the other direction too: the abandoned
+  `.token_prev` still appears in `claude-worktime.sh:1788` inside the comment
+  explaining its abandonment, so a derivation over the raw file would have
+  admitted it to the allow-set and passed on the founding defect. The guard
+  asserts that negative control on itself and refuses a verdict if it fails.
+  **Deviation from the entry as booked:** it landed in `tests/`, not `tools/`.
+  The runner discovers suites by glob and advertises that a new `tests/*.sh`
+  needs no runner edit; the guard's subject IS the fixtures, so `tests/` is both
+  the honest placement and the one that keeps the runner's idiom. Suite 19/19.
 
 - 2026-08-14: **the statusline shows the session's OWN peer name — SHIPPED
   `8821afb` (implementation, tests, install) + `1dd961c` (README,
@@ -929,6 +670,53 @@ is visible from reading the statusline.
   (synthesized ids only); `CLAUDE_SESSIONS_DIR` overridable; registry schema
   is a CC-internal binding (2.1.229) — on schema drift the segment silently
   vanishes, which is the designed failure mode.
+
+- 2026-08-08: **per-session `token_prev` — SHIPPED** (`8bfc385`, pushed).
+  Landed as `local token_prev="${LOGDIR}/.token_prev_${sid}"`, keyed like the
+  existing `.cold_${sid}` state file, so a foreign session's write can no
+  longer sit between two renders of the same call and let a duplicate book
+  itself as a fresh bust. Red-first proven and INDEPENDENTLY re-run by the
+  dispatcher, not booked on the lane's word: `tests/replay-token-prev-session.sh`
+  exits 1 against base `5487ec6`'s script and 0 against the fix, with the
+  unmutated baseline run first and stated green. Against the old script the
+  duplicate render books `hits=1 cc=335933` — the measured 01:00:55Z false ❄;
+  against the fix, `hits=0`. Confirming live evidence the same morning: two
+  busts, both double-booked, each one `message.id` with identical `(cr,cc)` on
+  both rows (638k at 09:48:53Z/09:49:20Z, 141k at 09:59:53Z/10:00:00Z). The
+  residual — the guard is an identity PROXY, not identity — did not close with
+  it and is carried as its own parked entry.
+
+- 2026-08-08: **consult the diagnostic BEFORE the idle short-circuit —
+  SHIPPED** (`8bfc385`, bundled with the item above: same code region, one
+  edit). The `_cw_diag` read now runs whenever the hit predicate matches, ahead
+  of the idle/model ladder, and `previous_message_not_found` wins outright over
+  gap and model — so a genuine resume/fork/compact landing on a long idle gap
+  no longer books as an idle bust. The struck `gap > TTL` leg was deliberately
+  NOT implemented, per the entry's own blocking vet note: the diagnostic leg
+  alone catches the named cases, and that leg would have silenced the whole
+  idle class. Verifier ran three-sided, red-first
+  (`tests/replay-diag-before-idle.sh`, dispatcher-re-run: exit 1 against base
+  `5487ec6`, 0 against the fix): the 23:59:10Z and 03:32:02Z shapes failed as
+  expected against OLD while BOTH over-firing controls already PASSED on OLD —
+  a genuine mid-history bust and a constructed idle expiry both still book as
+  hits. The controls passing on the old code is the point: the red came from
+  the diagnostic-precedence cases only, not from a check that fires on
+  everything.
+
+- 2026-08-08: **the refusal branch's missing black-box test — BUILT
+  (`2b3f553`), and the entry's own premise was REFUTED, which is the part
+  worth keeping.** The entry called the branch fixture-unreachable (it "needs
+  `:2655` to succeed while `:2662` fails — OOM, file vanishing") and offered
+  only two exits: a fault-injection seam, or a note recording it untestable. A
+  third existed and cost neither. `_safe_log` is `jq -Rc 'fromjson? // empty'`,
+  which passes through any valid JSON including a NON-OBJECT; the collect read
+  then evaluates `.type` on it and raises. jq skips the bad input, keeps going,
+  and takes its exit status from the LAST input — so a bare scalar on the final
+  line makes the reader emit a valid prefix AND exit non-zero, which is exactly
+  the property the branch defends. Lesson booked rather than the fix:
+  **"unreachable by fixture" is a load-bearing claim and earns the same
+  refutation probe as any other** — a five-minute probe overturned it, and was
+  cheap precisely because the claim named what would falsify it.
 
 - 2026-08-08: **the rotation summary WRITER — BUILT, and the hold it gated is
   lifted.** The item said the `summaries=` jq inside `_do_rotate` still ran
