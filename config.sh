@@ -52,6 +52,14 @@
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
 #   {effort}         — reasoning effort level: low / medium / high / xhigh / max
 #                      (hidden when active model doesn't support effort)
+#   {peer_name}      — THIS session's own peer name (e.g. "my-project-ab"), the
+#                      address other sessions reach it by. Claude Code shows you
+#                      every other session's name and never your own, so without
+#                      it you cannot deliberately target the session you are
+#                      typing in. Looked up by matching the statusline's own
+#                      session id against Claude Code's live-session registry
+#                      (see CLAUDE_SESSIONS_DIR); silently absent whenever that
+#                      lookup does not resolve.
 
 # ---------------------------------------------------------------------------
 # Idle detection
@@ -91,11 +99,12 @@
 #GROUP_COLD="{cold}"
 #GROUP_MODEL="{model}"
 #GROUP_EFFORT="{effort}"
+#GROUP_PEER="{peer_name}"
 # GROUP_TOKENS removed — weighted tokens missed subagent costs; use {cost_budget} instead
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
 #STATUSLINE_2="TIMELINE BREAKS"
-#STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD"
+#STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 #GROUP_DIVIDER=" · "
 
 # Per-group colors (optional, falls back to COLOR_NORMAL)
@@ -104,8 +113,22 @@
 #GROUP_RATE_SCOPED_COLOR="dark-gray"
 #GROUP_CONTEXT_COLOR="dark-gray"
 #GROUP_BUDGET_COLOR="dark-gray"
+#GROUP_PEER_COLOR="dark-gray"
 #GROUP_COLD_COLOR="none"    # ❄ self-colours (cyan fresh / gray stale); "none"
                             # keeps the group wrapper from repainting it
+
+# ---------------------------------------------------------------------------
+# Own peer name ({peer_name})
+# ---------------------------------------------------------------------------
+# Claude Code's live-session registry: one <pid>.json per running session,
+# each carrying that session's `sessionId` and peer `name`. {peer_name} finds
+# this session's file by matching the statusline's own session id, and shows
+# the name. Undocumented internal format, so every failure is silent — a
+# missing directory, no match, an unreadable file or a changed schema simply
+# leave the segment out; nothing else on the line moves. Point this elsewhere
+# only if your Claude Code data root is not ~/.claude (the environment
+# variable of the same name works too).
+#CLAUDE_SESSIONS_DIR="$HOME/.claude/sessions"
 
 # ---------------------------------------------------------------------------
 # Cold-cache counter (❄) & prompt-submit guard

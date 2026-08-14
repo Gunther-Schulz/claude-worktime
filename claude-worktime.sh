@@ -149,6 +149,10 @@ _CW_GLYPH_7D="➐ "
 CONFIGDIR="${CLAUDE_WORKTIME_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-worktime}"
 CONFIGFILE="${CONFIGDIR}/config.sh"
 DATADIR="${CLAUDE_WORKTIME_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/claude-worktime}"
+# Claude Code's live-session registry: one <pid>.json per running session,
+# carrying that session's peer `name` — the address other sessions reach it by.
+# Undocumented internal format, so every read of it fails soft (see {peer_name}).
+CLAUDE_SESSIONS_DIR="${CLAUDE_SESSIONS_DIR:-$HOME/.claude/sessions}"
 
 # --- Defaults (overridden by config.sh) ---
 PAUSE_THRESHOLD=900
@@ -168,6 +172,7 @@ GROUP_CONTEXT="ctx {context}"
 GROUP_COLD="{cold}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
+GROUP_PEER="{peer_name}"
 # token_budget removed: weighted tokens only tracked main conversation,
 # missing subagent costs (1.1-2.4x underestimate). Use {cost_budget} instead.
 GROUP_TOKENS=""
@@ -175,6 +180,7 @@ GROUP_RATE_7D_COLOR="dark-gray"
 GROUP_RATE_SCOPED_COLOR="dark-gray"
 GROUP_CONTEXT_COLOR="dark-gray"
 GROUP_BUDGET_COLOR="dark-gray"
+GROUP_PEER_COLOR="dark-gray"
 # ❄ self-colours (cyan fresh / gray stale) — "none" stops the group wrapper
 # from repainting it, and its own group means the ` · ` divider is inserted
 # automatically only when a cold rewrite exists.
@@ -182,7 +188,7 @@ GROUP_COLD_COLOR="none"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
-STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD"
+STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 # Per-model colors for {model}: comma list of "substring=color" pairs,
 # matched case-insensitively against the model id and display name.
 # First match wins; unmatched models keep the group color.
@@ -2352,6 +2358,40 @@ mode_statusline() {
 
     local tok_status="⏱"
 
+    # {peer_name} — this session's OWN address in Claude Code's live-session
+    # registry. The CLI shows every OTHER session's peer name (a peer's
+    # ListAgents) and never the one you are typing into, so without this an
+    # operator cannot deliberately target their own session for cross-session
+    # messaging.
+    #
+    # The registry is one <pid>.json per live session (schema observed at CC
+    # 2.1.229, peerProtocol 1). It is undocumented and free to change under any
+    # CLI update, which is why EVERY failure here is silent: missing dir, no
+    # files, no match, unparseable file, missing field — each leaves the token
+    # empty, its group hidden, and the rest of the line untouched. A
+    # convenience segment must never break the display it rides on.
+    #
+    # Read with bash pattern matching rather than jq: the directory holds one
+    # file per LIVE session, so a jq spawn per refresh would put a process on
+    # the hot path for a handful of small reads. Both key patterns are anchored
+    # at `{` or `,`, so `bridgeSessionId` cannot satisfy `sessionId` and
+    # `nameSource` cannot satisfy `name` — an unanchored substring test would
+    # read the neighbouring key's value.
+    local tok_peer_name=""
+    if [[ "$all_formats" == *"{peer_name}"* ]] && [ -n "$sid" ]; then
+        local _pf _pc
+        local _peer_re_sid='[{,][[:space:]]*"sessionId"[[:space:]]*:[[:space:]]*"([^"]*)"'
+        local _peer_re_name='[{,][[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)"'
+        for _pf in "$CLAUDE_SESSIONS_DIR"/*.json; do
+            [ -f "$_pf" ] && [ -r "$_pf" ] || continue
+            _pc=$(<"$_pf")
+            [[ "$_pc" =~ $_peer_re_sid ]] || continue
+            [ "${BASH_REMATCH[1]}" = "$sid" ] || continue
+            [[ "$_pc" =~ $_peer_re_name ]] && tok_peer_name="${BASH_REMATCH[1]}"
+            break
+        done
+    fi
+
     # Colorize timeline blocks if colors are configured
     # Colorize timeline blocks using actual ANSI escape bytes
     if [ -n "${tok_timeline:-}" ]; then
@@ -2363,8 +2403,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{effort}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{effort}' '{peer_name}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" "$tok_peer_name" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
