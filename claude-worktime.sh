@@ -42,6 +42,7 @@
 #   claude-worktime --rotate                # archive old entries
 #   claude-worktime --check                 # verify dependencies
 #   claude-worktime --debug                 # full diagnostic info
+#   claude-worktime --doctor                # verdicts over the ledger's own health
 #   claude-worktime --repair                # remove corrupt log lines
 #   claude-worktime --raw                   # JSON output (any mode)
 
@@ -732,6 +733,105 @@ cmd_debug() {
     echo ""
     echo "Dependencies:"
     cmd_check
+}
+
+# `--doctor`: verdicts over the LEDGER's own health, as opposed to --check
+# (host dependencies) and --debug (a dump for a human to read). Every check
+# answers one of three ways, never silence:
+#   verified clean    — the property holds
+#   verified broken    — it does not, with the numbers that make it actionable
+#   COULD NOT VERIFY   — an input the verdict needs is unreadable or absent
+#
+# First (and currently only) check: rotation staleness. 1,052 consecutive
+# rotation failures over 129 days went unnoticed because nothing asked
+# whether rotation was still running — .rotation_errors only prints under
+# --debug, which nobody runs unprompted (see BACKLOG.md). Further checks
+# (unreadable-line count, contradictory cold-event classes, cold state-file
+# shape, ...) are booked there and are out of scope here.
+cmd_doctor() {
+    _require_jq
+    local rc=0
+
+    echo "claude-worktime doctor"
+    echo "======================="
+    echo ""
+    echo "Rotation staleness:"
+
+    if [ ! -d "$LOGDIR" ] || [ ! -r "$LOGDIR" ]; then
+        # Absent/unreadable data dir is COULD NOT VERIFY, not clean: silently
+        # reading "nothing to check" as "nothing wrong" is the exact failure
+        # mode this mode exists to close (mode_rotate's own history, above).
+        echo "  COULD NOT VERIFY — data directory unreadable or does not exist: $LOGDIR"
+        rc=2
+    elif [ ! -f "$LOGFILE" ]; then
+        # A data dir with no log yet is a legitimate fresh install — nothing
+        # has ever been written, so nothing can be stale.
+        echo "  verified clean — no log file yet, nothing to rotate ($LOGFILE)"
+    elif [ ! -r "$LOGFILE" ]; then
+        echo "  COULD NOT VERIFY — log file unreadable: $LOGFILE"
+        rc=2
+    elif ! $AUTO_ROTATE; then
+        # Deliberate guard, kept intentionally: without it this check fires on
+        # every machine that has rotation switched off on purpose, which is
+        # the guard-fires-on-a-non-defect shape (BACKLOG.md, Fixing rules).
+        echo "  verified clean — AUTO_ROTATE is off, staleness does not apply"
+    else
+        # Reuse the cutoff machinery rather than re-deriving it: _rotate_boundaries
+        # sets ROTATE_CUTOFF/ROTATE_SUFFIX (the same values _do_rotate and
+        # mode_rotate act on), and _rotate_first_event_ts is the one shared
+        # copy of the safe-read guard both of them already carry.
+        _rotate_boundaries
+        local first_event_ts; first_event_ts=$(_rotate_first_event_ts)
+
+        if [ -z "$first_event_ts" ] || [ "$first_event_ts" -ge "$ROTATE_CUTOFF" ]; then
+            echo "  verified clean — live log holds no entries older than the current $ROTATE_INTERVAL period"
+        else
+            local period_secs
+            case "$ROTATE_INTERVAL" in
+                daily)   period_secs=86400 ;;
+                weekly)  period_secs=604800 ;;
+                monthly|*) period_secs=2592000 ;;  # matches _rotate_boundaries' own monthly|* fallback
+            esac
+            local n=2
+            local threshold=$(( period_secs * n ))
+            local now; now=$(date +%s)
+
+            shopt -s nullglob
+            local archives=( "$LOGDIR"/activity-*.jsonl )
+            shopt -u nullglob
+
+            local oldest_desc; oldest_desc=$(_date_at "$first_event_ts" "%Y-%m-%d")
+
+            if [ "${#archives[@]}" -eq 0 ]; then
+                echo "  verified broken — no archive exists for $ROTATE_INTERVAL rotation, and the live" \
+                     "log holds entries from $oldest_desc (current period started" \
+                     "$(_date_at "$ROTATE_CUTOFF" "%Y-%m-%d %H:%M"))"
+                rc=1
+            else
+                # ISO-shaped suffixes (YYYY-MM-DD / YYYY-Www / YYYY-MM) sort
+                # lexicographically in chronological order, so a plain sort
+                # finds the newest without parsing each format.
+                local newest; newest=$(printf '%s\n' "${archives[@]}" | sort | tail -1)
+                _mtime_v "$newest"
+                local archive_age=$(( now - _V ))
+                local archive_age_d=$(( archive_age / 86400 ))
+                local threshold_d=$(( threshold / 86400 ))
+
+                if [ "$archive_age" -ge "$threshold" ]; then
+                    echo "  verified broken — newest archive $(basename "$newest") is ${archive_age_d}d old" \
+                         "(threshold: ${threshold_d}d = $n × $ROTATE_INTERVAL), live log holds entries" \
+                         "from $oldest_desc"
+                    rc=1
+                else
+                    echo "  verified clean — newest archive $(basename "$newest") is ${archive_age_d}d old" \
+                         "(threshold: ${threshold_d}d = $n × $ROTATE_INTERVAL)"
+                fi
+            fi
+        fi
+    fi
+
+    echo ""
+    return "$rc"
 }
 
 # --- Read hook stdin JSON ---
@@ -3030,6 +3130,17 @@ _do_rotate() {
     fi
 }
 
+# The timestamp of the oldest event-type entry in the live log, read through
+# _safe_log so a malformed line costs one record rather than the whole read
+# (the same failure _do_rotate's own copy of this guard was fixed for, and
+# mode_rotate's independent plain-jq copy of it drifted from before it was
+# caught — see BACKLOG.md). A third hand-rolled copy would repeat exactly
+# that drift, so callers needing "does the live log hold anything from
+# before the current rotation period" share this one.
+_rotate_first_event_ts() {
+    _safe_log "$LOGFILE" | jq -r 'select((.type // null) == null) | .t' 2>/dev/null | head -1 || true
+}
+
 # List cold-cache rewrites (type=cold, k=hit) — the history behind the ❄
 # statusline token, which only shows the most recent one. Defaults to the
 # current session; --today/--week/--since/--session widen or retarget.
@@ -3222,6 +3333,7 @@ case "${1:-}" in
         ;;
     --check) cmd_check; exit $? ;;
     --debug) cmd_debug; exit $? ;;
+    --doctor) cmd_doctor; exit $? ;;
     --tokens)
         cat << 'TOKENS'
 Statusline token reference:

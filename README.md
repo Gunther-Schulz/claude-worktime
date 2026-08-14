@@ -473,6 +473,7 @@ Each entry records **session ID**, **project path**, and **git branch**:
 ```bash
 claude-worktime --check     # verify dependencies
 claude-worktime --debug     # full diagnostic dump
+claude-worktime --doctor    # verdicts over the ledger's own health (verified clean / broken / could not verify)
 claude-worktime --repair    # remove corrupt log lines
 ```
 
