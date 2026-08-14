@@ -1,0 +1,74 @@
+shellcheck baseline — claude-worktime
+
+Generated: 2026-08-14 by tools/lint.sh --format=gcc
+Commit:    67cfa9b7cef419cbbe4796e32e3692bca365e8ea
+shellcheck: 0.11.0  (severity=warning, .shellcheckrc applied)
+lint.sh exit code: 1
+
+NOT FIXED. This file records the state as found; see the dispatch report.
+SC2148 and SC1090 are suppressed by .shellcheckrc, each with its reason there.
+Re-pin of docs/lint-baseline-2026-08-08.txt (33 -> 38 findings in six days;
+see BACKLOG.md, the lint-baseline-drift entry). `tools/lint.sh --baseline`
+now diffs against the newest docs/lint-baseline-*.txt by filename, so this
+file stops being read by eye and starts being read by that flag.
+
+Total findings: 38
+
+By severity:
+       38 warning
+
+By SC code:
+       29 SC2034
+       6 SC2164
+       3 SC2155
+
+By file:
+       27 claude-worktime.sh
+       2 tests/replay-cold-detect.sh
+       2 tests/project-total-fold.sh
+       2 tests/label-git-anchor.sh
+       1 tests/test-cold-guard-clipboard.sh
+       1 tests/replay-token-prev-session.sh
+       1 tests/replay-diag-before-idle.sh
+       1 tests/replay-cold-guard.sh
+       1 tests/replay-cold-guard-compact.sh
+
+---- findings (verbatim tools/lint.sh --format=gcc output) ----
+claude-worktime.sh:164:1: warning: GROUP_PROJECT appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:165:1: warning: GROUP_TODAY appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:166:1: warning: GROUP_TOTAL appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:167:1: warning: GROUP_TIMELINE appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:168:1: warning: GROUP_BREAKS appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:169:1: warning: GROUP_RATE_5H appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:170:1: warning: GROUP_RATE_7D appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:171:1: warning: GROUP_RATE_SCOPED appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:172:1: warning: GROUP_CONTEXT appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:173:1: warning: GROUP_COLD appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:174:1: warning: GROUP_MODEL appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:175:1: warning: GROUP_EFFORT appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:176:1: warning: GROUP_PEER appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:179:1: warning: GROUP_TOKENS appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:180:1: warning: GROUP_RATE_7D_COLOR appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:181:1: warning: GROUP_RATE_SCOPED_COLOR appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:182:1: warning: GROUP_CONTEXT_COLOR appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:183:1: warning: GROUP_BUDGET_COLOR appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:184:1: warning: GROUP_PEER_COLOR appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:188:1: warning: GROUP_COLD_COLOR appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:1294:11: warning: Declare and assign separately to avoid masking return values. [SC2155]
+claude-worktime.sh:2401:49: warning: ts_cr appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:2401:55: warning: ts_cc appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:2401:61: warning: ts_ui appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:2401:67: warning: ts_out appears unused. Verify use (or export if used externally). [SC2034]
+claude-worktime.sh:2455:27: warning: Declare and assign separately to avoid masking return values. [SC2155]
+claude-worktime.sh:2683:11: warning: Declare and assign separately to avoid masking return values. [SC2155]
+tests/label-git-anchor.sh:77:1: warning: HOME_ORG appears unused. Verify use (or export if used externally). [SC2034]
+tests/label-git-anchor.sh:88:1: warning: PROJECT_GIT_ANCHOR appears unused. Verify use (or export if used externally). [SC2034]
+tests/project-total-fold.sh:227:1: warning: HOME_ORG appears unused. Verify use (or export if used externally). [SC2034]
+tests/project-total-fold.sh:228:1: warning: PROJECT_GIT_ANCHOR appears unused. Verify use (or export if used externally). [SC2034]
+tests/replay-cold-detect.sh:23:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+tests/replay-cold-detect.sh:350:22: warning: st_t appears unused. Verify use (or export if used externally). [SC2034]
+tests/replay-cold-guard-compact.sh:23:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+tests/replay-cold-guard.sh:36:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+tests/replay-diag-before-idle.sh:33:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+tests/replay-token-prev-session.sh:31:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+tests/test-cold-guard-clipboard.sh:25:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
