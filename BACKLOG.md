@@ -27,74 +27,6 @@ hand for the same reason.
 
 ## Ready
 
-- **READY — `other` splits cleanly into TWO classes and the ledger already
-  carries the discriminator: a TOTAL miss (`cr == 0`) is genuinely causeless,
-  while every event that had a real `cache_miss_reason` was a PARTIAL miss.
-  Name the first class instead of calling it `other`.** Requested by the
-  operator 2026-08-13 ("if we can ever name some classes of `other` better
-  do update the claude-worktime repo as well"); measured the same day.
-  **This QUALIFIES the raced-read entry directly below, which is why it sits
-  here rather than in a corner.** That entry's measurement stands — four
-  events, four real causes sitting in the transcript — but its
-  generalization ("`other` is a raced read, not a missing cause") does not
-  hold as a universal, and the counter-population is larger than the
-  population that established it.
-  **The measurement, 2026-08-13, one session's transcript, ten cold rows.**
-  Perfect separation, no overlap in either direction:
-
-      cr == 0  (total miss)     7 rows   apiCause = null on ALL 7
-      cr >  0  (partial miss)   3 rows   apiCause present on ALL 3
-                                         (messages_changed,
-                                          previous_message_not_found x2)
-
-  The seven causeless rows carry `cc` = 63988 / 246636 / 247105 / 248327 /
-  248889 / 249130 / 270001, six of them inside one 3.5-minute burst
-  (2026-08-13T11:33:46Z-11:37:09Z, ~1.51 M tokens re-billed).
-  **The absence is REAL, not a reader failure, and the control is built into
-  the same run** — the identical reader over the identical file returns
-  three populated causes. A query that could not find a cause would have
-  returned ten nulls. So this is not the raced-read class with a wider
-  window: there is nothing in the transcript to race with.
-  **Structural signature, computable from fields every ledger row already
-  carries:** on all seven, `cc` equals `ctx` minus `input` exactly (e.g.
-  246636 = 246638 - 2). Nothing was read; the whole context was re-written.
-  That is a different event from a partial miss where a prefix hit and only
-  the remainder was re-billed — and today both render as the same `other`.
-  **Design, decided.** Classify at render and in the ledger from
-  `cr`/`cc`/`ctx`, all already present — no new capture, no transcript read,
-  no new field:
-  - `cr == 0` -> **`no-prefix`. The word is SETTLED 2026-08-14** (operator
-    delegated the call: "based on what you recommend"). Means: the API matched
-    no cached prefix at all. Rejected alternatives and why, so the question
-    does not reopen: `total-miss` describes the measurement rather than the
-    cache state and reads like a severity; `cold-start` asserts a CAUSE, and
-    this entry's own closing paragraph forbids inferring a mechanism from the
-    name — the cause is unsettled and under investigation in the fork.
-    `no-prefix` says exactly what was observed and nothing more, and it is the
-    vocabulary the cache-key mechanism already uses (a prefix matched, or none
-    did) — the same word the warm-compact fix of 2026-08-14 turns on.
-  - `cr > 0` and no cause -> keep `other`, which then means exactly what its
-    own code comment already says — "no cause available" — now honestly
-    scoped to the population where a cause could have existed.
-  Leave the existing late-cause upgrade path untouched: it is correct for
-  the partial class and this change must not disturb it.
-  **Red-first arrangement, and the two must DIFFER:** a synthetic ledger row
-  with `cr=0, cc=246636, ctx=246638` renders the new name; one with
-  `cr=141672, cc=3228` and no cause still renders `other`. A change that
-  renders both the same has renamed `other` rather than split it.
-  **Do NOT infer a mechanism from the name.** WHY a total miss happens is
-  unsettled and under investigation in the cache-fix fork, where the leading
-  desk hypothesis (breakpoint collapse) was measured and REFUTED on
-  2026-08-13. This entry names an OBSERVABLE and nothing more; a name
-  implying a cause would be the label-over-body drift the corpus warns
-  about.
-  Done: both bites above pass; a `--cold` listing over the 2026-08-13 rows
-  shows the six burst events under the new name and the three caused events
-  unchanged; this entry leaves with its commit ref.
-  Verifier: the two synthetic rows above, plus `claude-worktime --cold` over
-  the real 2026-08-13 ledger.
-  Anchor: claude-worktime.sh (the `cs_lastcause` / `other` default path)
-
 - **READY — `other` in the ledger is a RACED READ of the transcript, not a
   missing cause: every one of four measured events had a real
   `cache_miss_reason` sitting in its transcript.** Measured 2026-08-08
@@ -360,6 +292,27 @@ verifier below and is not yet designed.
 
 - **READY — a DOCTOR verdict over the ledger's own health. There is
   none, and that is the emptiest cell in the instrument matrix.**
+  **PARTIALLY SHIPPED 2026-08-14 — the MODE and the FIRST verdict exist
+  (`67cfa9b` + `f7938fc`); the remaining five checks are what keeps this entry
+  open.** `--doctor` emits three-answer verdicts (verified clean / verified
+  broken / COULD NOT VERIFY, exit 2 for the third so it can never read as
+  clean), and the rotation-staleness verdict is live: run read-only against the
+  real ledger it reports "verified broken — newest archive
+  activity-2026-03-31.jsonl (period 2026-03-31) predates the staleness
+  threshold, live log holds entries from 2026-04-01". So the 129-day blind spot
+  that motivated this entry is now instrumented. Still to build: (a)
+  unreadable-line count, (b) `.rotation_errors` freshness, (c) the
+  contradictory-class detector, (d) the standing `previous_message_not_found`
+  check, (e) cold state-file shape — all five as described below, against the
+  frozen ledger copy the verifier names (confirmed present 2026-08-14).
+  Two lessons the first verdict paid for, both worth applying to the remaining
+  five: the check first anchored archive age to MTIME, which is mutable — a
+  copied or restored data dir made a never-rotating system read clean, caught
+  by a dispatcher probe and repaired to compare the archive's own filename
+  SUFFIX; and its `(g)` residue surfaced a real ISO week-year defect in the
+  suffix format itself (Departed, `5e40c1c`). A health check's failure mode is
+  going quiet, not firing falsely, so each remaining verdict earns a false-fire
+  control alongside its red.
   **RE-SCOPED 2026-08-08, and the first verdict is now named.** The argument
   below (nothing asks whether the ledger is SOUND) is right and its inventory
   stands. What it lacked was a proven blind spot to aim at first, and one
@@ -421,22 +374,6 @@ is visible from reading the statusline.
 ### Two findings from the runner/lint dispatch, both outside its write boundary (2026-08-08)
 
 ### Residue from the dotfiles-drift sweep and the install/gate lane (2026-08-08)
-
-- **READY (trivial) — the lint baseline drifts and nothing says so.**
-  `docs/lint-baseline-2026-08-08.txt` records 33 warnings at `cf1c126`. The
-  live run was 34 when this was filed; **re-measured 2026-08-14 with the same
-  method (`tools/lint.sh --format=gcc`, counting `[SCnnnn]`): 38** — 29 SC2034
-  (was 26 at baseline), 6 SC2164 (was 4), 3 SC2155 (unchanged). The file is
-  commit-pinned and says it records the state as found, so it is not wrong —
-  but a reader comparing today's run against it has no way to tell expected
-  drift from a new finding, and the drift is now growing faster than the entry
-  itself was tracking (33 -> 34 -> 38 in six days).
-  Fix, either: regenerate it and re-pin (a `tools/lint.sh --format=gcc`
-  redirect plus the header's commit/date), or teach `tools/lint.sh` a
-  `--baseline` mode that diffs against the file and reports only NEW codes.
-  The second is the one worth building — it makes the baseline a check rather
-  than a document. Verifier, red-first: plant one new finding in a scratch
-  copy, assert the diff names it and stays silent on the 33 known ones.
 
 - **READY (small) — the suite gate is machine-local, so a fresh clone starts
   ungated.** `tools/git-pre-push.sh` only runs once `.git/hooks/pre-push`
@@ -555,7 +492,73 @@ is visible from reading the statusline.
   Unparks the moment such a pair is seen in the ledger; the scan is the same
   same-session near-duplicate query that found the original 20 pairs.
 
+- **PARKED — should the six historical `other` burst rows be relabelled
+  `no-prefix`?** The split (SHIPPED 2026-08-14 `841f493`) classifies at WRITE
+  time, so rows logged before it keep the label they were recorded with. The
+  entry's own done-criterion wanted `--cold` over the 2026-08-13 rows to show
+  the six burst events under the new name, and that half is NOT met.
+  **Why it was not done anyway:** stored cold rows carry neither `cr` nor `ui`
+  (verified 2026-08-14 via `--cold --raw`: the fields are absent), so a
+  read-time reclassification would have to key on `ctx - cc`. The separation in
+  the real data is stark — 1 or 2 for the six total misses, ~18,000 for the
+  three partial ones — but picking a cutoff between them invents a magnitude
+  threshold, which is the exact shape this repo already replaced once with a
+  real question (the old 25k floor in the cold detector).
+  **Named missing evidence / decision:** either (a) an operator decision to
+  accept a stated `ctx - cc` threshold for READ-time relabelling of legacy
+  rows, or (b) a decision to start storing `cr` (or `ui`) on new cold rows,
+  which makes future rows exact but still leaves these six needing (a), or
+  (c) a decision that history stays as recorded and the done-criterion is
+  amended. Nothing here is blocked on evidence the repo lacks — it is blocked
+  on a choice, which is why this is parked and not ready.
+
 ## Departed
+
+- 2026-08-14: **the residual `other` bucket SPLIT — SHIPPED `841f493`.**
+  `cr == 0` now books `no-prefix`, `cr > 0` with no diagnostic keeps `other`.
+  Operator-requested 2026-08-13; the name was delegated to the desk and settled
+  the same day, with `total-miss` and `cold-start` rejected in the entry before
+  it left. Placed BELOW the diagnostic leg so a row with a real
+  cache_miss_reason keeps it, and the late-bind upgrade path is untouched by
+  construction — it gates on `other`, so a `no-prefix` row is never upgraded,
+  which is right: there was no cause to arrive late. Red-first with the pair
+  that must DIFFER (cr=0 red-then-green, cr>0 green throughout). One
+  pre-existing case went red unplanted — the graceful-degradation case, written
+  under a two-valued predicate — and became two cases rather than a flipped
+  expectation, which would have kept one path covered and dropped the other.
+  FORWARD-ONLY, deliberately; the historical half is parked below.
+
+- 2026-08-14: **`tools/lint.sh --baseline` — SHIPPED `783a35c` + `d3676e9`,
+  and the drifted baseline re-pinned.** Diffs a live run against
+  `docs/lint-baseline-2026-08-14.txt` and reports NEW / FIXED / unchanged;
+  COULD NOT VERIFY when shellcheck or the baseline is missing, never "clean".
+  The first cut compared tuple PRESENCE at the (file, SC code) grain the desk
+  specified — and the desk's grain was wrong, measured against the lane's own
+  new baseline: 38 findings collapsed to 11 tuples, with
+  `claude-worktime.sh:SC2034` absorbing 24, so any new unused-variable finding
+  in the main script was invisible and the check reported clean. Corrected to
+  per-tuple COUNTS in `d3676e9`; dispatcher-probed after, planting a 25th
+  SC2034 modelled on the 24 known positives → "25 live vs 24 baseline (+1)",
+  exit 1. **The dispatcher's first probe was DEAD** — an appended assignment
+  shellcheck never flagged, so the count never moved and the check correctly
+  said 0 new, which read exactly like the fix failing. A failure to reproduce
+  and a genuine refutation return identical output; the setup is the
+  instrument and earns its own positive control first.
+
+- 2026-08-14: **the weekly rotation suffix paired an ISO week number with a
+  calendar year — FIXED `5e40c1c`.** Not a booked entry: it surfaced in the
+  `(g)` "what was NOT verified" slot of the --doctor lane's report, flagged as
+  inherited and out of that lane's scope rather than quietly fixed or quietly
+  dropped. `%V` is the ISO week number and its companion year is `%G`;
+  2027-01-01 rendered `2027-W53`, a period that does not exist. The severe half
+  is ordering: this repo sorts archive suffixes lexicographically as
+  chronological, and `2027-W53` sorts after `2027-W01`, so a New Year archive
+  would read as newer than every archive for the rest of that year and the
+  staleness verdict would report clean for twelve months. Both sites fixed and
+  kept byte-identical, since one is compared against the other. Latent —
+  `daily` is the shipped default. `tests/rotate-suffix-iso-week.sh` derives the
+  formats FROM the script, asserts the ordering property rather than the name,
+  and carries a control proving the machine's date(1) reproduces the defect.
 
 - 2026-08-14: **seven entries CLOSED by a retirement pass — each had already
   been resolved by other work, and nobody had closed them.** Found by a
