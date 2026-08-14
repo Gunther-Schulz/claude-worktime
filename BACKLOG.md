@@ -63,9 +63,16 @@ hand for the same reason.
   **Design, decided.** Classify at render and in the ledger from
   `cr`/`cc`/`ctx`, all already present — no new capture, no transcript read,
   no new field:
-  - `cr == 0` -> name it (proposed: `no-prefix`; the WORD is the operator's
-    call, the CLASS is what this entry fixes). Means: the API matched no
-    cached prefix at all.
+  - `cr == 0` -> **`no-prefix`. The word is SETTLED 2026-08-14** (operator
+    delegated the call: "based on what you recommend"). Means: the API matched
+    no cached prefix at all. Rejected alternatives and why, so the question
+    does not reopen: `total-miss` describes the measurement rather than the
+    cache state and reads like a severity; `cold-start` asserts a CAUSE, and
+    this entry's own closing paragraph forbids inferring a mechanism from the
+    name — the cause is unsettled and under investigation in the fork.
+    `no-prefix` says exactly what was observed and nothing more, and it is the
+    vocabulary the cache-key mechanism already uses (a prefix matched, or none
+    did) — the same word the warm-compact fix of 2026-08-14 turns on.
   - `cr > 0` and no cause -> keep `other`, which then means exactly what its
     own code comment already says — "no cause available" — now honestly
     scoped to the population where a cause could have existed.
