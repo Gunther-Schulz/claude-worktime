@@ -786,15 +786,16 @@ cmd_doctor() {
         if [ -z "$first_event_ts" ] || [ "$first_event_ts" -ge "$ROTATE_CUTOFF" ]; then
             echo "  verified clean — live log holds no entries older than the current $ROTATE_INTERVAL period"
         else
-            local period_secs
-            case "$ROTATE_INTERVAL" in
-                daily)   period_secs=86400 ;;
-                weekly)  period_secs=604800 ;;
-                monthly|*) period_secs=2592000 ;;  # matches _rotate_boundaries' own monthly|* fallback
-            esac
             local n=2
-            local threshold=$(( period_secs * n ))
-            local now; now=$(date +%s)
+            # Threshold expressed as a SUFFIX, in the same format
+            # _rotate_boundaries assigns to ROTATE_SUFFIX for this
+            # ROTATE_INTERVAL — never as an mtime cutoff. mtime is mutable
+            # (touch, cp, rsync without -a, a backup restore); the filename's
+            # own period suffix is not, and _do_rotate never renames an
+            # archive after writing it. Comparing suffixes keeps the verdict
+            # tied to what the archive IS, not to when its inode was last
+            # touched — see BACKLOG.md for the mtime false-clean this replaced.
+            local threshold_suffix; threshold_suffix=$(_rotate_periods_ago_suffix "$n")
 
             shopt -s nullglob
             local archives=( "$LOGDIR"/activity-*.jsonl )
@@ -803,28 +804,26 @@ cmd_doctor() {
             local oldest_desc; oldest_desc=$(_date_at "$first_event_ts" "%Y-%m-%d")
 
             if [ "${#archives[@]}" -eq 0 ]; then
-                echo "  verified broken — no archive exists for $ROTATE_INTERVAL rotation, and the live" \
-                     "log holds entries from $oldest_desc (current period started" \
-                     "$(_date_at "$ROTATE_CUTOFF" "%Y-%m-%d %H:%M"))"
+                echo "  verified broken — no archive exists for $ROTATE_INTERVAL rotation (threshold:" \
+                     "no archive older than period $threshold_suffix), live log holds entries from $oldest_desc"
                 rc=1
             else
                 # ISO-shaped suffixes (YYYY-MM-DD / YYYY-Www / YYYY-MM) sort
                 # lexicographically in chronological order, so a plain sort
                 # finds the newest without parsing each format.
                 local newest; newest=$(printf '%s\n' "${archives[@]}" | sort | tail -1)
-                _mtime_v "$newest"
-                local archive_age=$(( now - _V ))
-                local archive_age_d=$(( archive_age / 86400 ))
-                local threshold_d=$(( threshold / 86400 ))
+                local newest_name; newest_name=$(basename "$newest")
+                local archive_suffix="${newest_name#activity-}"
+                archive_suffix="${archive_suffix%.jsonl}"
 
-                if [ "$archive_age" -ge "$threshold" ]; then
-                    echo "  verified broken — newest archive $(basename "$newest") is ${archive_age_d}d old" \
-                         "(threshold: ${threshold_d}d = $n × $ROTATE_INTERVAL), live log holds entries" \
-                         "from $oldest_desc"
+                if [[ "$archive_suffix" < "$threshold_suffix" ]]; then
+                    echo "  verified broken — newest archive $newest_name (period $archive_suffix) predates" \
+                         "the staleness threshold $threshold_suffix ($n × $ROTATE_INTERVAL back), live log" \
+                         "holds entries from $oldest_desc"
                     rc=1
                 else
-                    echo "  verified clean — newest archive $(basename "$newest") is ${archive_age_d}d old" \
-                         "(threshold: ${threshold_d}d = $n × $ROTATE_INTERVAL)"
+                    echo "  verified clean — newest archive $newest_name (period $archive_suffix) is within" \
+                         "$n × $ROTATE_INTERVAL of today (threshold: $threshold_suffix)"
                 fi
             fi
         fi
@@ -3139,6 +3138,27 @@ _do_rotate() {
 # before the current rotation period" share this one.
 _rotate_first_event_ts() {
     _safe_log "$LOGFILE" | jq -r 'select((.type // null) == null) | .t' 2>/dev/null | head -1 || true
+}
+
+# The archive-filename SUFFIX (YYYY-MM-DD / YYYY-Www / YYYY-MM, matching
+# ROTATE_SUFFIX's own format for the current ROTATE_INTERVAL) that N rotation
+# periods ago would have produced. A string, not an epoch: --doctor's
+# staleness verdict compares this lexicographically against an archive's own
+# filename suffix rather than its mtime, which a touch/cp/restore can move
+# without the archive having rotated (BACKLOG.md).
+_rotate_periods_ago_suffix() {
+    local n="$1"
+    case "$ROTATE_INTERVAL" in
+        daily)
+            date -d "$n days ago" +%Y-%m-%d 2>/dev/null || date -v-"${n}"d +%Y-%m-%d 2>/dev/null
+            ;;
+        weekly)
+            date -d "$(( n * 7 )) days ago" +%Y-W%V 2>/dev/null || date -v-"$(( n * 7 ))"d +%Y-W%V 2>/dev/null
+            ;;
+        monthly|*)
+            date -d "$n months ago" +%Y-%m 2>/dev/null || date -v-"${n}"m +%Y-%m 2>/dev/null
+            ;;
+    esac
 }
 
 # List cold-cache rewrites (type=cold, k=hit) — the history behind the ❄
