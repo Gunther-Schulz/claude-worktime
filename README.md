@@ -107,7 +107,7 @@ The bar itself is one character per time slot (`TIMELINE_SLOT`, default: 1200 se
 
 **Line 3 — Model & limits**:
 ```
-Opus 5 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77% · ❄ 397k other (2m)
+Opus 5 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77% · ❄ 397k other (2m) · my-project-ab
 ```
 
 | Element | Meaning |
@@ -117,6 +117,7 @@ Opus 5 (local) · ⧗30% ↻3h21m →51% · ➐ 5% ↻Sat · ctx 77% · ❄ 397k
 | `➐ 5% ↻Sat` | 7d rate limit: used, reset day |
 | `ctx 77%` | Context window fullness |
 | `❄ 397k other (2m)` | Last cold-cache rewrite — size, cause, and (age); cyan when recent, gray once old. Its own `{cold}` token / `COLD` group, so it sits after `ctx` behind a normal ` · ` divider |
+| `my-project-ab` | This session's own peer name — the address other sessions reach it by. Muted, and silently absent when it cannot be resolved; see below |
 
 ### CLI queries
 
@@ -267,6 +268,7 @@ A commented-out template with all options is created on install.
 | `{cost}` | Session cost (e.g. `$1.23`) |
 | `{model}` | Model name + source when overridden (e.g. `Opus 4.6 (local)`) |
 | `{effort}` | Reasoning effort level (`low` / `medium` / `high` / `xhigh` / `max`). Hidden when the active model doesn't support effort. |
+| `{peer_name}` | This session's own cross-session peer name (e.g. `my-project-ab`) — the address other sessions reach it by. Matched from the stdin session id against Claude Code's live-session registry; silently empty when that lookup does not resolve. See below |
 
 Empty tokens are automatically removed along with their surrounding separators.
 
@@ -318,6 +320,10 @@ One scope limit worth knowing: the anchor rewrites the **label** only. Totals ar
 
 A cached value is only displayed while it is fresh: once the cache is older than `USAGE_STALE_MAX` seconds (default 900) the percentage renders as `?%` and the projection is dropped. The fetch interval is tracked on a separate lock file, so the cache's own timestamp always reflects the last *successful* response — a fetch that keeps failing (expired token, no network, API change) degrades to `?%` instead of showing its last number forever.
 
+**Your own peer name (`{peer_name}`):** Claude Code's UI shows you every *other* session's peer name — the address you message it by — and never the one you are typing into. So the moment you want another session to reach *this* one, you have to work out your own address by elimination. The name is not hidden, just unrendered: Claude Code keeps a live-session registry, one `<pid>.json` per running session, each carrying that session's `sessionId` and `name`. The statusline's own stdin already carries the session id, so the display is a lookup — match the id, show the name. It ships as its own `GROUP_PEER` group at the end of line 3, muted like `ctx`.
+
+**When the lookup fails, nothing happens — deliberately.** That registry is an internal format Claude Code does not document (schema observed at CC 2.1.229, `peerProtocol: 1`); it may move, change shape, or disappear under any CLI update. So every failure is silent: a missing directory, no files, no matching session, an unreadable or unparseable file, a file without a `name` field — each leaves the segment out and the rest of the line byte-identical, with the exit status unchanged. The trade is deliberate: a convenience segment must never be able to break the display it rides on, and a statusline that errored on every refresh would be a far worse bargain than one that quietly shows one thing less. `CLAUDE_SESSIONS_DIR` (default `~/.claude/sessions`) points at the registry if yours is elsewhere. The lookup only runs when `{peer_name}` is actually on a line, so removing the group costs nothing at all.
+
 ### Groups and layout
 
 Define named groups, then compose lines by listing group names. The divider (`GROUP_DIVIDER`, default ` · `) is inserted between non-empty groups. Empty groups are hidden.
@@ -336,11 +342,12 @@ GROUP_CONTEXT="ctx {context}"
 GROUP_COLD="{cold}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
+GROUP_PEER="{peer_name}"
 
 # Lines (space-separated group names)
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
-STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD"
+STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 GROUP_DIVIDER=" · "
 ```
 
@@ -367,7 +374,7 @@ GROUP_RATE_7D_COLOR="dark-gray"
 GROUP_CONTEXT_COLOR="dark-gray"
 ```
 
-Four ship muted by default — `GROUP_RATE_7D_COLOR`, `GROUP_RATE_SCOPED_COLOR`, `GROUP_CONTEXT_COLOR` and `GROUP_BUDGET_COLOR`, all `dark-gray` — and one ships as `none`: `GROUP_COLD_COLOR`. `none` means *do not wrap this group at all* — the `❄` token colors itself (cyan fresh, gray stale), and a group wrapper would repaint over that. Use `none` for any group whose template emits its own ANSI codes.
+Five ship muted by default — `GROUP_RATE_7D_COLOR`, `GROUP_RATE_SCOPED_COLOR`, `GROUP_CONTEXT_COLOR`, `GROUP_BUDGET_COLOR` and `GROUP_PEER_COLOR`, all `dark-gray` — and one ships as `none`: `GROUP_COLD_COLOR`. `none` means *do not wrap this group at all* — the `❄` token colors itself (cyan fresh, gray stale), and a group wrapper would repaint over that. Use `none` for any group whose template emits its own ANSI codes.
 
 ### Colors
 
@@ -415,10 +422,12 @@ Rotation trims the active log, but archives are only ever appended — without a
 |----------|---------|-------------|
 | `CLAUDE_WORKTIME_CONFIG` | `~/.config/claude-worktime` | Config directory |
 | `CLAUDE_WORKTIME_DATA` | `~/.local/share/claude-worktime` | Data directory |
+| `CLAUDE_SESSIONS_DIR` | `~/.claude/sessions` | Claude Code's live-session registry, read for `{peer_name}` |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's own data root, read only to find the OAuth token for `{rate_7d_scoped}` |
 
-Paths follow [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/).
+The first two follow the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/); the last two point at Claude Code's own directories rather than this tool's, and are worth setting only if your Claude Code install does not use the defaults.
 
-These two are the only environment variables the script reads. Everything else — including the idle threshold, `PAUSE_THRESHOLD` — is set in the config file; pointing `CLAUDE_WORKTIME_CONFIG` at a different directory is how you run an alternate configuration.
+Everything else — including the idle threshold, `PAUSE_THRESHOLD` — is set in the config file; pointing `CLAUDE_WORKTIME_CONFIG` at a different directory is how you run an alternate configuration. `CLAUDE_SESSIONS_DIR` is the one entry above that can also be set in the config file, which is sourced after it is resolved and therefore wins over the environment.
 
 ## How it works
 

@@ -19,9 +19,23 @@ shell=bash
 # therefore permanently un-actionable rather than merely unfixed.
 disable=SC1090
 
-# Deliberately NOT disabled, though it is the largest class (26 hits):
-# SC2034 "appears unused". 18 are the GROUP_* statusline defaults, which are a
-# documented user-override surface and only look unused; the other 8 (ts_cc,
-# ts_cr, ts_out, ts_ui, st_t, MARKER_END, HOME_ORG, PROJECT_GIT_ANCHOR) have not
-# been shown to be false positives. Blanketing the code would hide those with
-# the harmless ones, so they stay visible in docs/lint-baseline-2026-08-08.txt.
+# Deliberately NOT disabled, though it is the largest class: SC2034 "appears
+# unused". Most of it is the GROUP_* statusline defaults, which are a documented
+# user-override surface reached by indirection (${!var_name}) and only look
+# unused; the rest (ts_cc, ts_cr, ts_out, ts_ui, st_t, HOME_ORG,
+# PROJECT_GIT_ANCHOR) have not been shown to be false positives. Blanketing the
+# code would hide those with the harmless ones, so they stay visible in
+# docs/lint-baseline-2026-08-08.txt.
+#
+# The split is measured, never remembered — a count written here goes stale the
+# next time a group is added, silently, because nothing checks it:
+#   tools/lint.sh --format=gcc | grep -c SC2034             # all of them
+#   tools/lint.sh --format=gcc | grep SC2034 | grep -c GROUP_
+# 29 and 20 as of 2026-08-14, replacing a stale 26/18 that also named a
+# MARKER_END hit which no longer fires.
+#
+# Use --format=gcc for any such count, not the default output: the default ends
+# with a "For more information" footer carrying one line per unique code, and
+# that line quotes a sample message — so it matches both `grep SC2034` and
+# `grep GROUP_` and inflates each tally by one. Measured here 2026-08-14: the
+# default format answers 30 and 21 where the real counts are 29 and 20.
