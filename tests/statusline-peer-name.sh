@@ -54,9 +54,9 @@ CFGDIR="$XDG_CONFIG_HOME/claude-worktime"
 mkdir -p "$LOGDIR" "$CFGDIR"
 LOG="$LOGDIR/activity.jsonl"
 
-SID="00000000-0000-4000-8000-000000000000"
+SID="synthetic-session-id-alpha"
 NAME="example-project-ab"
-OTHER_SID="11111111-1111-4111-8111-111111111111"
+OTHER_SID="synthetic-session-id-beta"
 OTHER_NAME="other-project-cd"
 
 # A non-git cwd, so {git} renders the same in every run below and cannot make
