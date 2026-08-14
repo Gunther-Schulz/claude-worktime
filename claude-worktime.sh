@@ -3496,7 +3496,28 @@ while [ $# -gt 0 ]; do
         --today) SINCE_TS=$(_today_start); [ "$MODE" = "session" ] && MODE="range" ;;
         --week) SINCE_TS=$(_week_start); [ "$MODE" = "session" ] && MODE="range" ;;
         --since) shift; SINCE_TS=$(_date_parse "$1"); [ "$MODE" = "session" ] && MODE="range" ;;
-        *) ;;
+        *)
+            # A typo used to answer a DIFFERENT question in silence: `*) ;;`
+            # discarded anything unrecognised and the tool fell through to the
+            # default session summary, exit 0. `claude-worktime --tody` printed
+            # a plausible report and nothing distinguished it from the run the
+            # user meant — the failure mode this repo keeps finding, where being
+            # wrong looks exactly like being right.
+            #
+            # Safe for the six harness hook call sites, checked before this
+            # landed: they pass `log --start|--prompt|--response|--tool-start|
+            # --tool-end` and `--statusline`. `log` is caught by the top-level
+            # dispatch, which shifts and exits before this loop ever runs, and
+            # `--statusline` has its own arm above. The value-taking flags
+            # (--filter/--branch/--session/--since) consume their argument with
+            # `shift`, so a VALUE can never arrive here and be read as a flag.
+            # tests/unknown-flags-error.sh pins all of that as false-fire
+            # controls — the risk in this change is rejecting something
+            # legitimate, not failing to reject a typo.
+            printf 'claude-worktime: unknown option: %s\n' "$1" >&2
+            printf 'Run `claude-worktime --help` for the available flags.\n' >&2
+            exit 2
+            ;;
     esac
     shift
 done
