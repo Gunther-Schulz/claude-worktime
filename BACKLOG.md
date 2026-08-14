@@ -10,6 +10,15 @@ Ready or Parked is a closure without an exit, and the carrier then
 grows without bound while formally compliant (measured 2026-08-14:
 nine such entries holding 272 of this file's 1008 lines).
 
+**Last retirement pass: 2026-08-14** — 1008 lines / 21 open entries in,
+748 lines / 14 open entries out (9 closed-in-place bodies exited, 7 open
+entries closed as already-resolved, 1 built, 1 new booking). The next
+pass measures its growth against those numbers, not against a feeling.
+The method that found the 7: re-check each entry's premise against the
+tree by EXECUTED command, never by re-reading the entry's own reasoning —
+six of the seven had been silently resolved by repairs aimed at something
+else, and every one of them still read as perfectly plausible.
+
 Events are named by UTC timestamp, never by session id: this repo is
 public and the machine-wide push-side leak scan does not reach it
 (known gap, booked in the cache-fix fork's BACKLOG as a pointer to the
@@ -126,17 +135,6 @@ The audit repaired the README and left the script and config untouched by
 design. Five claims turned out to be defects in the code or its configuration
 rather than in the prose, and two of them need a decision before anyone builds.
 
-- **READY (small) — `--info` is printed at users and is not a handled flag.**
-  `claude-worktime.sh:2850` tells a user with a corrupt log to
-  "run: claude-worktime --info". Executed: it falls through the `*) ;;` arm and
-  silently runs the default session mode, so the hint sends people to a no-op at
-  exactly the moment they have a broken log. Fix is a real arm; `--repair` or
-  `--debug` looks like the intent, and the hint text moves with whatever it
-  becomes. Verifier, red-first: `claude-worktime --info` today prints the
-  session summary — that is the red — and after the fix prints what the corrupt
-  path promised. This is a decision only in the sense of naming the flag; the
-  defect is not in doubt.
-
 - **PARKED — the `:msg`/`:hook` cause suffix is documented twice and produced
   nowhere.** `config.sh:108-112` and `--tokens` (`claude-worktime.sh:2966`)
   both describe it; no code path emits it. The cause literals the script
@@ -147,13 +145,6 @@ rather than in the prose, and two of them need a decision before anyone builds.
   one never built. That decides whether the fix is deleting two doc lines or
   building the suffix, and it is not derivable from the current tree.
 
-- **READY (small) — `config.sh`'s token list omits 8 tokens the script
-  substitutes.** The README's table is the complete one (35: 17 always + 18
-  optional, verified as a set difference in both directions against the two
-  substitution arrays at `claude-worktime.sh:2211-2214`). A user reading the
-  config file to discover tokens sees an incomplete list. Verifier: the same set
-  difference, run against `config.sh`, must come back empty.
-
 - **PARKED — `CLAUDE_WORKTIME_PAUSE` was documented as an env override and does
   not exist.** Removed from the README 2026-08-07 (`c5f9a9a`), proven by
   execution with a positive control: setting it changed nothing while
@@ -163,24 +154,6 @@ rather than in the prose, and two of them need a decision before anyone builds.
   was INTENDED.** Every other knob is config-file-only, so the doc row may
   simply have been wrong — but if env overrides are wanted, this is a code fix
   and probably a whole class rather than one variable.
-
-- **PARKED — `PROJECT_GIT_ANCHOR` merges the LABEL but not the TOTALS.**
-  Measured 2026-08-07 while documenting it: the anchor rewrites the displayed
-  project name only (`claude-worktime.sh:1206` is its sole caller), while
-  aggregation still selects on the raw logged path
-  (`select(.p == $proj)`, `:1104-1108`). So a git worktree displays the repo's
-  name and totals separately from it — which is strictly better than before
-  (the label was wrong AND the totals were split) and is still two answers to
-  one question. **Missing evidence: whether totals SHOULD merge across
-  worktrees.** It is a product decision, not a bug: an agent worktree's time
-  arguably belongs to the repo, and arguably is worth seeing apart.
-
-- **READY (small) — the README's `❄` colour cannot be shown in a code block.**
-  The headline example carries a fresh `❄ 428k resume (5m)` and a sentence
-  saying it renders cyan, because a markdown fence is monochrome. If the colour
-  is worth showing, the artifact is an SVG or an ANSI-rendered asset committed
-  beside the README and referenced from it. Done-criterion: the example shows
-  the cyan/gray distinction without a reader having to take prose for it.
 
 - **PARKED — the tool carries no VERSION and `--version` is not a flag.**
   Measured 2026-08-07: no version constant in `claude-worktime.sh`,
@@ -436,62 +409,9 @@ is visible from reading the statusline.
 
 ### `mode_rotate` keeps its own plain-jq copy of the guard `_do_rotate` just had fixed (found 2026-08-08 by the executing agent, outside its write boundary)
 
-- **READY (small) — `claude-worktime.sh:2931`.** `_do_rotate`'s first-event
-  guard is now `_safe_log "$LOGFILE" | jq -r … | head -1` (`:2655`, commit
-  `7a949ab`). `mode_rotate` has a second, untouched copy:
-  `first_event_ts=$(jq -r 'select((.type // null) == null) | .t' "$LOGFILE" … | head -1 || true)`.
-  It is tolerant BY ACCIDENT — streaming jq emits the first valid record before
-  dying — and fails exactly where the corrupt line PRECEDES every valid event
-  record: the read yields empty and `--rotate` prints "Nothing to rotate" over
-  a log full of rotatable entries. That is the could-not-verify answer wearing
-  a pass-shaped costume, the same shape `docs/` warns about.
-  Fix: route it through `_safe_log`, identically to `:2655`.
-  Verifier, red-first: a fixture whose FIRST line is malformed and whose
-  remaining lines are all pre-cutoff events — `--rotate` prints "Nothing to
-  rotate" today (the red); after the fix it rotates them. Note the ordinary
-  fixture (corrupt line in the middle) does NOT go red here, which is why the
-  ordering is part of the spec, not an incidental fixture detail.
-  Not covered by `tests/rotation-corrupt-log.sh` or
-  `tests/rotation-no-silent-truncation.sh` — both drive `_do_rotate`.
-
 ### Rotation's first run after the 2026-08-08 repair is a one-time 12-25 s stall — DECISION PENDING
 
 ### Two findings from the runner/lint dispatch, both outside its write boundary (2026-08-08)
-
-- **READY (small) — one suite's sandbox rests on an environment variable
-  happening to be unset.** `tests/replay-cold-corrupt-log.sh` sets
-  `XDG_DATA_HOME` and stops there. But `CLAUDE_WORKTIME_DATA` takes precedence
-  over XDG (`claude-worktime.sh:151`), so on a machine exporting it that suite
-  reads and writes the operator's REAL log. It holds today only because
-  nothing exports it — a sandbox whose correctness is a property of the
-  ambient environment, not of the test.
-  **Audit completed by the dispatcher — the hazard is confined to this ONE
-  suite**, which is worth recording because the executing agent could only
-  report the gap as unaudited: `rotation-corrupt-log.sh` and
-  `rotation-no-silent-truncation.sh` set XDG *and* `unset
-  CLAUDE_WORKTIME_DATA CLAUDE_WORKTIME_CONFIG`; `replay-cold-detect.sh`,
-  `replay-cold-guard.sh`, `replay-cold-guard-compact.sh` and
-  `test-cold-guard-clipboard.sh` pass `CLAUDE_WORKTIME_DATA=` explicitly on
-  every invocation, which is stronger than the XDG route and immune to the
-  ambient value; `label-git-anchor.sh` awk-extracts two functions and never
-  runs the script at all.
-  Fix: give `replay-cold-corrupt-log.sh` the same `unset` line the rotation
-  suites carry. Verifier, red-first: `CLAUDE_WORKTIME_DATA=/tmp/decoy
-  bash tests/replay-cold-corrupt-log.sh` — today the suite escapes its sandbox
-  into that path (assert against a decoy, never the real log); after the fix
-  it stays in its own. Do NOT red-test this against the real log.
-  Generalisable: prefer the per-invocation `CLAUDE_WORKTIME_DATA=` form over
-  `XDG_DATA_HOME`, since it cannot be overridden by a higher-precedence
-  variable the test never mentions.
-
-- **READY (trivial) — `install.sh:101` `MARKER_END` is assigned and never
-  read.** The `awk` two lines below hardcodes the literal
-  `/^<!-- claude-worktime:end -->/`, so the variable and the string it stands
-  for can drift apart silently; `uninstall.sh` does not define it at all. The
-  one shellcheck finding of the 33 that is a real defect rather than an
-  indirect-expansion false positive. It sits inside the legacy "Remove old
-  CLAUDE.md section (no longer used)" block, so severity is low — fix is
-  either to use the variable in the awk or drop it.
 
 ### Residue from the dotfiles-drift sweep and the install/gate lane (2026-08-08)
 
@@ -626,6 +546,46 @@ is visible from reading the statusline.
   same-session near-duplicate query that found the original 20 pairs.
 
 ## Departed
+
+- 2026-08-14: **seven entries CLOSED by a retirement pass — each had already
+  been resolved by other work, and nobody had closed them.** Found by a
+  read-only audit lane that re-checked every open entry's premise against the
+  tree by executed command rather than by re-reading the entry's reasoning;
+  every verdict below was then independently re-run by the dispatcher before
+  the entry left. This is the capture-dominance the session-start banner had
+  been reporting (booked ~7 vs closed ~0): the bookings were fine, the closing
+  was not happening.
+  - `--info` printed at users, not a handled flag — resolved under a DIFFERENT
+    name than proposed: the hint now reads `--debug`, which has a real dispatch
+    arm (`claude-worktime.sh:3217`) and `tests/printed-flags-are-handled.sh`
+    keeping the class shut. The entry's own naming question was answered by the
+    fix.
+  - `config.sh`'s token list omits 8 tokens — the entry's OWN verifier now
+    comes back empty in both directions (set difference over config.sh's
+    `{token}` list vs the script's substitution arrays, 36 each, `{peer_name}`
+    added since filing).
+  - `PROJECT_GIT_ANCHOR` merges the LABEL but not the TOTALS — closed as a side
+    effect of the `{project_total}` inflation repair. `in_project($root; $fold)`
+    (`claude-worktime.sh:389`) folds the aggregation key on exactly the
+    condition that drives the display anchor, so label and total now fold
+    identically.
+  - the README's `❄` colour cannot be shown in a code block — done-criterion met
+    exactly: `assets/cold-fresh-stale.svg` exists and README embeds it.
+  - `mode_rotate` kept a second plain-`jq` copy of the first-event guard — it now
+    routes through `_safe_log`, identically to `_do_rotate`'s copy.
+  - one suite's sandbox rested on an unset ambient env var —
+    `tests/replay-cold-corrupt-log.sh:27` now carries the
+    `unset CLAUDE_WORKTIME_DATA CLAUDE_WORKTIME_CONFIG` line the rotation suites
+    carry.
+  - `install.sh:101` `MARKER_END` assigned and never read — resolved via the
+    entry's own named "drop it" option; zero hits in install.sh and uninstall.sh,
+    both awk blocks using the literal directly.
+  **The lesson this pass paid for, worth more than the seven closures:** an
+  entry rots by being SILENTLY FIXED elsewhere, and it stays perfectly plausible
+  while it does. Six of these seven were closed by repairs aimed at something
+  else. A review that reads an entry's reasoning confirms it intact; only
+  executing its premise against the tree finds it dead — which is why the audit
+  brief forbade verdicts drawn from the entry's own prose.
 
 - 2026-08-14: **a fixture seeding a state filename nothing reads — GUARD BUILT**
   (`tests/state-file-names-are-live.sh`). Booked and built the same day, out of
