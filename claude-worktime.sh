@@ -2387,7 +2387,9 @@ mode_statusline() {
             _pc=$(<"$_pf")
             [[ "$_pc" =~ $_peer_re_sid ]] || continue
             [ "${BASH_REMATCH[1]}" = "$sid" ] || continue
-            [[ "$_pc" =~ $_peer_re_name ]] && tok_peer_name="${BASH_REMATCH[1]}"
+            # "@" marks it as an address (SendMessage handle); added only on
+            # a found name so the fail-soft empty stays empty, never a bare @.
+            [[ "$_pc" =~ $_peer_re_name ]] && tok_peer_name="@${BASH_REMATCH[1]}"
             break
         done
     fi

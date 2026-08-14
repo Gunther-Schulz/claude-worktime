@@ -126,11 +126,11 @@ D1="$TMP/s1"; sess_file "$D1" "$SID" "$NAME"
 out="$(render "$D1")"; rc=$?
 plain="$(printf '%s' "$out" | sed 's/\x1b\[[0-9;]*m//g')"
 case "$plain" in
-  *"$NAME"*) check "a matching registry file shows its name" "0" "0" ;;
+  *"@$NAME"*) check "a matching registry file shows its name" "0" "0" ;;
   *)         printf '  FAIL %-56s -> %s\n' "a matching registry file shows its name" "$plain"
              fails=$((fails + 1)) ;;
 esac
-check "the name is the LAST segment on the line" "$NAME" "${plain##* }"
+check "the name is the LAST segment on the line" "@$NAME" "${plain##* }"
 check "exit status on a match" "0" "$rc"
 
 # The `.key` siblings the harness writes into the same directory must not be
@@ -138,7 +138,7 @@ check "exit status on a match" "0" "$rc"
 printf 'not json at all' > "$D1/4242.deadbeef.key"
 out="$(render "$D1")"
 plain="$(printf '%s' "$out" | sed 's/\x1b\[[0-9;]*m//g')"
-check "a sibling .key file does not disturb the match" "$NAME" "${plain##* }"
+check "a sibling .key file does not disturb the match" "@$NAME" "${plain##* }"
 
 # ---------------------------------------------------------------------------
 # 2. The discriminator: with a non-matching file present too, the name shown
@@ -152,7 +152,7 @@ printf '{"pid":2222,"sessionId":"%s","name":"%s","peerProtocol":1}' \
   "$SID" "$NAME" > "$D2/2222.json"
 out="$(render "$D2")"
 plain="$(printf '%s' "$out" | sed 's/\x1b\[[0-9;]*m//g')"
-check "the matching file's name wins over a sibling's" "$NAME" "${plain##* }"
+check "the matching file's name wins over a sibling's" "@$NAME" "${plain##* }"
 case "$plain" in
   *"$OTHER_NAME"*) printf '  FAIL %-56s -> %s\n' "another session's name must never appear" "$plain"
                    fails=$((fails + 1)) ;;
