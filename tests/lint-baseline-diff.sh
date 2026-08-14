@@ -90,8 +90,10 @@ echo "$out1" | grep -q 'known findings (unchanged, present in both): 2'
 check "clean fixture: 2 known findings counted" $?
 ! echo "$out1" | grep -q 'NEW findings'
 check "clean fixture: no NEW findings section" $?
-[ "$rc1" -eq 0 ]
-check "clean fixture: exit 0" $?
+# A bare "[ ... ]; check ... $?" reads as SC2319 (this $? refers to a
+# condition, not a command) — the arithmetic form below sidesteps it while
+# staying the same check: cond is 0 (ok) exactly when rc1 is 0.
+check "clean fixture: exit 0" "$(( rc1 != 0 ))"
 
 # --- Case 2: RED — plant one new finding, must be named exactly, the two
 # known ones must stay silent (not re-listed as new).
@@ -108,14 +110,34 @@ out2="$(cd "$repo2" && bash tools/lint.sh --baseline 2>&1)"
 rc2=$?
 echo "$out2" | grep -q 'NEW findings'
 check "planted finding: NEW findings section present" $?
-echo "$out2" | grep -q 'fixture-c.sh.*\[SC2128\]'
-check "planted finding: fixture-c.sh SC2128 named" $?
-! echo "$out2" | grep -qE 'fixture-a\.sh.*\[SC2034\]|fixture-b\.sh.*\[SC2164\]'
-check "planted finding: the 2 known findings stay out of the NEW section" $?
+echo "$out2" | grep -qE 'fixture-c\.sh:SC2128: 1 live vs 0 baseline \(\+1\)'
+check "planted finding: fixture-c.sh SC2128 named with its delta" $?
+! echo "$out2" | grep -qE 'fixture-a\.sh:SC2034|fixture-b\.sh:SC2164'
+check "planted finding: the 2 known tuples stay out of the NEW section" $?
 echo "$out2" | grep -q 'known findings (unchanged, present in both): 2'
 check "planted finding: known count still 2 (the new one is not counted as known)" $?
-[ "$rc2" -ne 0 ]
-check "planted finding: exit non-zero" $?
+check "planted finding: exit non-zero" "$(( rc2 == 0 ))"
+
+# --- Case 2b: RED, count-increase in an ALREADY-known tuple. This is the
+# case a presence-only grain misses: fixture-a.sh already carries one
+# SC2034, so a presence check would let a second SC2034 in the same file
+# pass as "known" — exactly the failure this comparison exists to close
+# (measured on the real repo: 24 distinct claude-worktime.sh SC2034
+# findings collapsed to one presence-tuple, so a 25th went unreported).
+repo2b="$TMP/case2b"
+build_fixture "$repo2b"
+cat >> "$repo2b/tools/fixture-a.sh" <<'EOF'
+another_unused_var=2
+EOF
+out2b="$(cd "$repo2b" && bash tools/lint.sh --baseline 2>&1)"
+rc2b=$?
+echo "$out2b" | grep -qE 'fixture-a\.sh:SC2034: 2 live vs 1 baseline \(\+1\)'
+check "count-increase: fixture-a.sh SC2034 named with its delta (2 vs 1)" $?
+! echo "$out2b" | grep -q 'fixture-b.sh:SC2164'
+check "count-increase: the untouched fixture-b.sh tuple stays out of the NEW section" $?
+echo "$out2b" | grep -q 'known findings (unchanged, present in both): 2'
+check "count-increase: known count is 2 (1 from the still-covered fixture-a finding + 1 from fixture-b)" $?
+check "count-increase: exit non-zero" "$(( rc2b == 0 ))"
 
 # --- Case 3: FIXED direction — remove a known finding, it must be
 # reported as FIXED, and a FIXED-only diff must not fail the run.
@@ -136,8 +158,7 @@ check "fixed finding: fixture-b.sh:SC2164 named as fixed" $?
 check "fixed finding: no NEW findings section" $?
 echo "$out3" | grep -q 'known findings (unchanged, present in both): 1'
 check "fixed finding: known count dropped to 1" $?
-[ "$rc3" -eq 0 ]
-check "fixed finding: exit 0 (FIXED alone does not fail the run)" $?
+check "fixed finding: exit 0 (FIXED alone does not fail the run)" "$(( rc3 != 0 ))"
 
 # --- Case 4: COULD NOT VERIFY — a nonexistent baseline file must say so in
 # those words and must not exit 0 as if clean.

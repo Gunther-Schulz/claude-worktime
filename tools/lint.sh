@@ -15,13 +15,17 @@
 # Style nits are deliberately out of scope: --severity=warning is the floor.
 #
 # `--baseline [file]` extends the same three-answer contract with a fourth
-# comparison: instead of "clean" meaning zero findings, it means the live run
-# is a subset of a pinned baseline (docs/lint-baseline-*.txt). It reports NEW
-# findings (fail the run), FIXED findings (info only, printed so the baseline
-# can be honestly re-pinned), and a count of unchanged/known findings. Absent
-# a file argument it picks the newest docs/lint-baseline-*.txt by filename
-# (the date is embedded, so a plain sort orders it correctly). A missing or
-# unreadable baseline is its own COULD NOT VERIFY, never read as clean.
+# comparison: instead of "clean" meaning zero findings, it means every (file,
+# SC code) tuple's live COUNT is at or below its count in a pinned baseline
+# (docs/lint-baseline-*.txt) — a per-tuple presence check would let a second
+# same-code finding land in an already-flagged file invisibly, since one
+# known finding there would vouch for any number more. It reports NEW
+# findings (fail the run), FIXED findings (info only, printed so the
+# baseline can be honestly re-pinned), and a count of unchanged/known
+# findings. Absent a file argument it picks the newest
+# docs/lint-baseline-*.txt by filename (the date is embedded, so a plain
+# sort orders it correctly). A missing or unreadable baseline is its own
+# COULD NOT VERIFY, never read as clean.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,11 +47,13 @@ Exits 0 when clean AND when shellcheck is absent (with a "could not verify"
 message); non-zero only when shellcheck itself reports findings.
 
 --baseline diffs the live run against a pinned docs/lint-baseline-*.txt
-(newest by filename when no file is given) on the tuple (file path, SC
-code) — never line numbers or message text, both of which drift on
-unrelated edits. Reports NEW findings (exit non-zero), FIXED findings
-(info only), and a count of known findings. A missing or unreadable
-baseline is COULD NOT VERIFY, never "clean".
+(newest by filename when no file is given) on the PER-TUPLE COUNT of
+(file path, SC code) — never line numbers or message text, both of which
+drift on unrelated edits, and never mere presence, which would let a
+second same-code finding in an already-flagged file pass silently.
+Reports NEW findings (exit non-zero), FIXED findings (info only), and a
+count of known findings. A missing or unreadable baseline is COULD NOT
+VERIFY, never "clean".
 EOF
 }
 
@@ -105,90 +111,104 @@ if [ "$baseline_mode" -eq 1 ]; then
     exit 2
   fi
 
-  known_tuples_file="$(mktemp)"
-  trap 'rm -f "$known_tuples_file"' EXIT
-
-  # Baseline comparison GRAIN, decided (BACKLOG.md, this entry): (file path,
-  # SC code), never line numbers (they move on any edit above them, so an
-  # unrelated change would look like a new finding) and never message text
-  # (carries variable content, e.g. the variable name in SC2034's message).
-  # The tradeoff: multiple same-code findings within one file collapse to one
-  # known tuple, so a genuinely new SC2034 in an already-SC2034-flagged file
-  # will not be flagged NEW.
+  # Baseline comparison GRAIN, decided (BACKLOG.md, this entry; corrected
+  # 2026-08-14 after being measured against this repo's own baseline): (file
+  # path, SC code) COUNTS, not presence — never line numbers (they move on
+  # any edit above them, so an unrelated change would look like a new
+  # finding) and never message text (carries variable content, e.g. the
+  # variable name in SC2034's message). Presence-only collapsed 24 distinct
+  # claude-worktime.sh SC2034 findings into one "known" tuple, so a
+  # genuinely new SC2034 anywhere in that file — the most-edited script,
+  # carrying the most common code — went unreported: a check reading clean
+  # while exercising less than it claimed. Counting per tuple closes that: a
+  # tuple's live count exceeding baseline is NEW for the excess, below is
+  # FIXED for the shortfall, equal is unchanged. A finding moving from one
+  # file to another therefore reads as one FIXED plus one NEW — correct, and
+  # deliberately not special-cased.
   #
-  # The tuple is pulled straight out of the baseline file's verbatim
-  # `--format=gcc` findings block (the same lines shellcheck itself prints —
-  # see the existing docs/lint-baseline-2026-08-08.txt) with the SAME pattern
-  # used below on the live run, so both sides read the identical shape and
-  # a parsing drift between them cannot silently misalign the comparison.
-  # Prose lines in the header do not match and are skipped, not misread.
+  # Both sides are parsed from the SAME verbatim `--format=gcc` shape (the
+  # baseline file carries real shellcheck output — see
+  # docs/lint-baseline-2026-08-08.txt) with the SAME pattern, so a parsing
+  # drift between them cannot silently misalign the comparison. Prose lines
+  # in the header do not match and are skipped, not misread.
   gcc_line_pattern='^([^:]+):[0-9]+:[0-9]+: [a-z]+: .*\[(SC[0-9]+)\]$'
-  sed -nE "s/${gcc_line_pattern}/\\1:\\2/p" "$baseline_file" | sort -u > "$known_tuples_file"
 
-  if [ ! -s "$known_tuples_file" ]; then
+  declare -A baseline_count=()
+  total_baseline=0
+  # Process substitution, not a pipe: a pipe would run this loop in a
+  # subshell, and every baseline_count/total_baseline update would vanish
+  # the moment the loop exits.
+  while IFS= read -r tuple; do
+    [ -z "$tuple" ] && continue
+    baseline_count["$tuple"]=$(( ${baseline_count[$tuple]:-0} + 1 ))
+    total_baseline=$(( total_baseline + 1 ))
+  done < <(sed -nE "s/${gcc_line_pattern}/\\1:\\2/p" "$baseline_file")
+
+  if [ "$total_baseline" -eq 0 ]; then
     echo "lint.sh --baseline: COULD NOT VERIFY — $baseline_file has no parseable" \
          "shellcheck findings lines (expected verbatim --format=gcc output)" >&2
     exit 2
   fi
 
-  declare -A known_tuples=()
-  while IFS= read -r t; do
-    known_tuples["$t"]=1
-  done < "$known_tuples_file"
-
   live_output="$(shellcheck --severity=warning --format=gcc "${targets[@]}")"
 
-  declare -A live_seen=()
+  declare -A live_count=()
   total_live=0
-  new_count=0
-  new_report=""
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     if [[ "$line" =~ $gcc_line_pattern ]]; then
-      total_live=$(( total_live + 1 ))
       tuple="${BASH_REMATCH[1]}:${BASH_REMATCH[2]}"
-      live_seen["$tuple"]=1
-      if [ -z "${known_tuples[$tuple]:-}" ]; then
-        new_count=$(( new_count + 1 ))
-        new_report="${new_report}${line}"$'\n'
-      fi
+      live_count["$tuple"]=$(( ${live_count[$tuple]:-0} + 1 ))
+      total_live=$(( total_live + 1 ))
     fi
   done <<< "$live_output"
 
-  fixed_report=""
-  fixed_count=0
-  for tuple in "${!known_tuples[@]}"; do
-    if [ -z "${live_seen[$tuple]:-}" ]; then
-      fixed_count=$(( fixed_count + 1 ))
-      fixed_report="${fixed_report}${tuple}"$'\n'
-    fi
-  done
-  fixed_report="$(printf '%s' "$fixed_report" | sort)"
+  # Union of every tuple seen on either side, sorted for deterministic output.
+  all_tuples="$( { printf '%s\n' "${!baseline_count[@]}"; printf '%s\n' "${!live_count[@]}"; } | sort -u )"
 
-  known_count=$(( total_live - new_count ))
+  new_report=""
+  fixed_report=""
+  new_delta_total=0
+  fixed_delta_total=0
+  while IFS= read -r tuple; do
+    [ -z "$tuple" ] && continue
+    b=${baseline_count[$tuple]:-0}
+    l=${live_count[$tuple]:-0}
+    if [ "$l" -gt "$b" ]; then
+      d=$(( l - b ))
+      new_delta_total=$(( new_delta_total + d ))
+      new_report="${new_report}${tuple}: ${l} live vs ${b} baseline (+${d})"$'\n'
+    elif [ "$l" -lt "$b" ]; then
+      d=$(( b - l ))
+      fixed_delta_total=$(( fixed_delta_total + d ))
+      fixed_report="${fixed_report}${tuple}: ${l} live vs ${b} baseline (-${d})"$'\n'
+    fi
+  done <<< "$all_tuples"
+
+  known_count=$(( total_live - new_delta_total ))
 
   echo "lint.sh --baseline: comparing live run against $baseline_file"
   echo
 
-  if [ "$new_count" -gt 0 ]; then
-    echo "NEW findings (not in baseline):"
+  if [ "$new_delta_total" -gt 0 ]; then
+    echo "NEW findings (live count exceeds baseline count for the tuple):"
     printf '%s' "$new_report"
     echo
   fi
 
-  if [ "$fixed_count" -gt 0 ]; then
-    echo "FIXED findings (in baseline, not live anymore — info only):"
-    printf '%s\n' "$fixed_report"
+  if [ "$fixed_delta_total" -gt 0 ]; then
+    echo "FIXED findings (live count below baseline count for the tuple — info only):"
+    printf '%s' "$fixed_report"
     echo
   fi
 
   echo "known findings (unchanged, present in both): $known_count"
 
-  if [ "$new_count" -eq 0 ] && [ "$fixed_count" -eq 0 ]; then
+  if [ "$new_delta_total" -eq 0 ] && [ "$fixed_delta_total" -eq 0 ]; then
     echo "shellcheck --baseline: clean ($known_count known findings, 0 new, 0 fixed)"
   fi
 
-  if [ "$new_count" -gt 0 ]; then
+  if [ "$new_delta_total" -gt 0 ]; then
     exit 1
   fi
   exit 0
