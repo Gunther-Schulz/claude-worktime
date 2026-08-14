@@ -31,7 +31,13 @@ handled=$(awk '
   /^case "\$\{1:-\}" in$/     { inblock = 1; next }
   /^while \[ \$# -gt 0 \]; do$/ { inblock = 1; next }
   /^esac$/ || /^done$/        { inblock = 0; next }
-  inblock && /^[[:space:]]*[^[:space:]|)]+\)/ {
+  # The pattern list may be an ALTERNATION (`-h|--help|help)`), so `|` must be
+  # allowed here. It was excluded, which made every alternation arm invisible:
+  # `--help` has been handled all along and this extractor could not see it, so
+  # the first hint to print `claude-worktime --help` failed the check against a
+  # flag that works. The split on "|" below always expected this shape — the
+  # matcher just never let those lines through.
+  inblock && /^[[:space:]]*[^[:space:])]+\)/ {
     line = $0
     sub(/\).*$/, "", line)              # keep the pattern list, drop the body
     gsub(/^[[:space:]]+/, "", line)
@@ -57,7 +63,14 @@ fi
 # Flags PRINTED: every "claude-worktime --flag" the file contains. The header
 # comment block counts — `--help` prints it verbatim (`sed -n '2,/^$/…'`), so
 # its usage lines are user-facing text, not commentary.
-printed=$(grep -o -- 'claude-worktime --[a-z][a-z-]*' "$SCRIPT" \
+# ...but a comment BELOW that block is commentary, and commentary is not
+# printed at anyone. Scanning it made this guard fire on a code comment that
+# named `claude-worktime --tody` as an EXAMPLE OF A TYPO — a guard red on
+# legitimate work, which is the fire that trains people to override guards.
+# So: the header block (lines 2..first blank, printed verbatim by --help) plus
+# every non-comment line, and nothing else.
+printed=$( { sed -n '2,/^$/p' "$SCRIPT"; grep -vE '^[[:space:]]*#' "$SCRIPT"; } \
+          | grep -o -- 'claude-worktime --[a-z][a-z-]*' \
           | sed 's/^claude-worktime //' | sort -u)
 
 if [ -z "$printed" ]; then
