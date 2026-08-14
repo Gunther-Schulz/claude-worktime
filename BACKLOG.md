@@ -496,29 +496,34 @@ is visible from reading the statusline.
   amended. Nothing here is blocked on evidence the repo lacks — it is blocked
   on a choice, which is why this is parked and not ready.
 
-- **PARKED — `--statusline` exits 1 intermittently on a minimal synthetic log,
-  rendering a literal `{` for the project token.** Observed 2026-08-14 while
-  building `tests/unknown-flags-error.sh`, against an UNMODIFIED script, so it
-  is not caused by any change that day. With a data dir holding one hand-written
-  event (`{"t":…,"p":"/tmp/p","s":"sess","e":"prompt"}`) the render began with an
-  unsubstituted `{` and exited 1; a later run of the same shape exited 0, and the
-  operator's REAL data dir exits 0 every time (checked repeatedly).
-  **Why it matters despite being synthetic:** Claude Code invokes the statusline
-  as a command, so a non-zero exit is a failure signal in the operator's own
-  harness, and the unsubstituted `{` suggests a token substitution failing
-  rather than a cosmetic edge.
-  **Named missing evidence:** a deterministic reproduction. It did not
-  reproduce on demand, and the two runs that differed were not held to one
-  changed variable — so what is missing is the discriminating fixture, not a
-  design decision. Likeliest suspects, unprobed: a field the renderer expects
-  that a hand-written event lacks (`b`/branch was ruled out — both shapes exited
-  0 on the retry), or state files written by a first invocation changing the
-  second's path.
-  **Deliberately not chased further** at the time: it surfaced inside an
-  unrelated change and had already cost several probes; the argument-parsing
-  suite was decoupled from it instead (it asserts only that `--statusline` is
-  not rejected as an unknown flag, never its exit code), so no check depends on
-  the flake.
+- **PARKED — `--statusline` renders a literal `{` for the project group when
+  invoked from the CLI, and once exited 1.** Two observations, kept together
+  because they surfaced together; they may be one defect or two.
+  **The `{` is DETERMINISTIC and sharply bounded** (re-probed 2026-08-14 after
+  the manual rotation): the first token renders as a bare `{` under EVERY
+  variable held so far — the operator's real config, a config dir with an empty
+  `config.sh`, a config dir with none at all; a real session id, an unknown one;
+  a cwd with events and one without; before and after rotation. Exit 0 in all of
+  those.
+  **And it does NOT reproduce in the real harness.** The operator's own
+  statusline renders project and branch correctly (screenshots 2026-08-14:
+  `25-06 PV Georgendorf/intern`, `vendor/claude-code-cache-fix (main ×?)`).
+  So the discriminator is not config, session, cwd or ledger state — it is
+  something in the stdin Claude Code actually sends that a hand-written payload
+  lacks. `GROUP_PROJECT` is `"{project} ({git})"`, and one bare `{` is not that
+  group failing wholesale, which is the detail any fix should explain.
+  **Named missing evidence, now specific:** a captured copy of the REAL stdin
+  Claude Code passes to the statusline command. That is one hook-side dump, and
+  it converts this from a hunt into a diff against the synthetic payload above.
+  **Second, separate observation:** on one run against a minimal synthetic log
+  the command exited 1; it has not reproduced since, including in the sweep
+  above. Recorded rather than dropped, but the `{` is the tractable half and the
+  exit-1 half has no reproduction at all.
+  **Why it is parked and not chased:** it surfaced twice inside unrelated work
+  (the unknown-flag suite, then the post-rotation verification) and consumed
+  several probes each time without converging. No check depends on it —
+  `tests/unknown-flags-error.sh` asserts only that `--statusline` is not
+  rejected as an unknown flag, never its exit code or output.
 
 ## Departed
 
