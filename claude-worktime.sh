@@ -2001,17 +2001,38 @@ mode_statusline() {
                         cs_lasthit_t=$now
                     fi
                 elif [ "$cs_prev_t" -gt 0 ] && [ "${ctx_tok:-0}" -gt 0 ] \
-                    && [ "${t_cc:-0}" -ge $(( ctx_tok * 6 / 10 )) ] \
-                    && [ "${t_cr:-0}" -le $(( ctx_tok / 5 )) ] \
                     && [ -n "${tp_path:-}" ] && [ -r "$tp_path" ]; then
                     # Post-compact first write with the hit predicate NOT met
-                    # (prev ctx much larger than the compacted context): a
-                    # full fresh write of the CURRENT context, evidenced by a
-                    # compact_boundary newer than the last real turn. A real
+                    # (prev ctx much larger than the compacted context): a real
                     # miss the user (or the auto-compact ceiling) caused —
-                    # displayed as compact/auto-compact cost, never booked as
-                    # a hit. Without the boundary evidence this shape stays
-                    # silent (no speculation).
+                    # displayed as compact/auto-compact cost, never booked as a
+                    # hit. Evidenced by a compact_boundary newer than the last
+                    # real turn; without that evidence this shape stays silent
+                    # (no speculation).
+                    #
+                    # THE BOUNDARY IS THE WHOLE DISCRIMINATOR — no ratio test.
+                    # This branch used to also demand a full fresh write
+                    # (cc >= 0.6*ctx, cr <= 0.2*ctx), inherited from the hit
+                    # predicate above. That silently narrowed it to compaction
+                    # ON A DEAD CACHE, which is the rarer half. The cache key is
+                    # a PREFIX: the system prompt and tool definitions sit ahead
+                    # of the messages and a compact leaves them byte-identical,
+                    # so while the cache is still live the provider serves that
+                    # prefix from cache and writes only the summary. Measured
+                    # 2026-08-14T15:42:40Z: prev ctx 713031, first post-compact
+                    # write cr=105164 cc=8040 — 8040 is nowhere near 0.6*113206,
+                    # so two manual compacts booked NOTHING and the ❄ token went
+                    # on showing a 294k bust from 6h56m earlier (confirmed
+                    # against the operator's rendered statusline). The session
+                    # that DID book at 2026-08-14T15:41:04Z (cr=0 cc=77475) had
+                    # been idle 3h03m, so its prefix was gone too — the ratio
+                    # test was passing on a dead cache, not on compaction.
+                    #
+                    # Dropping it is safe because the boundary already answers
+                    # the question exactly once: cs_prev_t advances to THIS
+                    # turn's clock as soon as the write is logged, so the next
+                    # turn's boundary is no longer newer and cannot re-book.
+                    # A ratio test cannot bound what a boundary already bounds.
                     local _cw_bi2 _cw_bep2 _cw_btr2
                     _cw_bi2=$(_cw_compact_boundary_info "$tp_path")
                     _cw_bep2=${_cw_bi2%% *}; _cw_btr2=${_cw_bi2##* }

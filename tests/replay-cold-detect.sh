@@ -221,14 +221,30 @@ echo "❄ post-compact first write (hit predicate not met) displays as compact c
 # the user acted to cause. With a compact_boundary newer than the last real
 # turn, it books k:"cost" cause=compact and shows in ❄; without the
 # boundary evidence, it stays silent (nothing speculative).
+#
+# WARM-CACHE COMPACT (params 5-8). Compaction does not always produce a full
+# fresh write, and the cold-cache case above is the rarer one. The cache key is
+# a PREFIX: system prompt + tool definitions sit ahead of the messages, and a
+# compact leaves them byte-identical. So while the cache is still live the
+# provider serves that prefix from cache and writes only the summary — the API
+# reports a large cache_read beside a small cache_creation, and the ratio test
+# that identifies a "full fresh write" cannot see the compact at all.
+# Measured 2026-08-14T15:42:40Z:
+#   prev turn ctx 713031 · post-compact first write cr=105164 cc=8040 ui=2
+# The cold-cache sibling that DID book, 2026-08-14T15:41:04Z, had
+# cr=0 cc=77475 — it had been idle 3h03m, so the prefix was gone too.
 compact_display_check() {
     local label=$1 with_boundary=$2 want_cost=$3 want_cause=$4
+    local prev=${5:-355000} t_cr=${6:-0} t_cc=${7:-51000} t_ui=${8:-100}
     local d; d=$(mktemp -d)
     local now; now=$(date +%s)
     printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
     : > "$d/config.sh"
-    printf '%s\n' "0 355000 $((now-36000)) 0 0 - claude-fable-5" > "$d/.cold_$SID"
-    printf '350000 5000\n' > "$d/.token_prev"
+    printf '%s\n' "0 $prev $((now-36000)) 0 0 - claude-fable-5" > "$d/.cold_$SID"
+    # Per-session name. A bare ".token_prev" is the pre-split global the
+    # detector stopped reading, so seeding THAT asserted a premise no run ever
+    # saw — the fixture read as pinned while the code ran on (0,0).
+    printf '350000 5000\n' > "$d/.token_prev_$SID"
     local tp="$d/transcript.jsonl"
     if [ "$with_boundary" = "yes" ]; then
         printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s","compactMetadata":{"trigger":"manual"}}\n' \
@@ -239,31 +255,46 @@ compact_display_check() {
     else
         : > "$tp"
     fi
-    printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":10,"current_usage":{"cache_read_input_tokens":0,"cache_creation_input_tokens":51000,"input_tokens":100,"output_tokens":10}}}\n' \
-        "$SID" "$tp" \
+    printf '{"session_id":"%s","transcript_path":"%s","model":{"id":"claude-fable-5"},"workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":10,"current_usage":{"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"input_tokens":%d,"output_tokens":10}}}\n' \
+        "$SID" "$tp" "$t_cr" "$t_cc" "$t_ui" \
         | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline >/dev/null 2>&1
     local hit_count cost_count cost_cause st_cause
     hit_count=$(grep -c '"k":"hit"' "$d/activity.jsonl" 2>/dev/null) || hit_count=0
     cost_count=$(grep -c '"k":"cost"' "$d/activity.jsonl" 2>/dev/null) || cost_count=0
     cost_cause=$(grep '"k":"cost"' "$d/activity.jsonl" 2>/dev/null | jq -r '.cause' | tail -1)
-    read -r _ _ _ _ _ st_cause _ < "$d/.cold_$SID" 2>/dev/null
+    local st_lastcc
+    read -r _ _ _ st_lastcc _ st_cause _ < "$d/.cold_$SID" 2>/dev/null
     local ok=1
     [ "$hit_count" -eq 0 ] || ok=0
     [ "$cost_count" -eq "$want_cost" ] || ok=0
     if [ "$want_cost" -gt 0 ]; then
         { [ "$cost_cause" = "$want_cause" ] && [ "$st_cause" = "$want_cause" ]; } || ok=0
+        # The ❄ size must be what THIS turn actually wrote — a warm compact
+        # writing 8k must not inherit the last bust's 294k.
+        [ "${st_lastcc:-0}" = "$t_cc" ] || ok=0
     fi
     if [ "$ok" -eq 1 ]; then
         printf '  \033[32m✓\033[0m %s\n' "$label"; pass=$(( pass + 1 ))
     else
-        printf '  \033[31m✗\033[0m %s (hit=%s cost=%s cause=%s state_cause=%s)\n' \
-            "$label" "$hit_count" "$cost_count" "${cost_cause:-none}" "${st_cause:-none}"; fail=$(( fail + 1 ))
+        printf '  \033[31m✗\033[0m %s (hit=%s cost=%s cause=%s state_cause=%s state_cc=%s want_cc=%s)\n' \
+            "$label" "$hit_count" "$cost_count" "${cost_cause:-none}" "${st_cause:-none}" \
+            "${st_lastcc:-none}" "$t_cc"; fail=$(( fail + 1 ))
     fi
     rm -rf "$d"
 }
 compact_display_check "boundary evidence -> k:cost cause=compact" yes 1 compact
 compact_display_check "auto trigger -> k:cost cause=auto-compact" auto 1 auto-compact
 compact_display_check "no boundary -> silent (no speculation)" no 0 -
+# Warm-cache compact, the measured 2026-08-14 shape. The pair is what makes
+# this discriminate: with the boundary it must book (else the ❄ token keeps
+# showing a bust from hours ago), without it must stay silent (else every
+# ordinary warm turn books a phantom compact).
+compact_display_check "warm compact (cr 105k, cc 8k) -> k:cost cause=compact" \
+    yes 1 compact 713031 105164 8040 2
+compact_display_check "warm shape, no boundary -> silent" \
+    no 0 - 713031 105164 8040 2
+compact_display_check "warm auto-compact -> k:cost cause=auto-compact" \
+    auto 1 auto-compact 713031 105164 8040 2
 
 echo
 echo "❄ render: cost classes show without the #N bust index:"
@@ -274,7 +305,7 @@ render_check() {
     printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
     : > "$d/config.sh"
     printf '%s\n' "3 120000 $now 51000 $now $cause claude-fable-5" > "$d/.cold_$SID"
-    printf '100000 200\n' > "$d/.token_prev"      # matches the turn -> logger skips
+    printf '100000 200\n' > "$d/.token_prev_$SID" # matches the turn -> logger skips
     local out
     out=$(printf '{"session_id":"%s","workspace":{"current_dir":"/tmp/p"},"context_window":{"used_percentage":30,"current_usage":{"cache_read_input_tokens":100000,"cache_creation_input_tokens":200,"input_tokens":1,"output_tokens":10}}}\n' "$SID" \
         | COLD_NOTIFY=false CLAUDE_WORKTIME_DATA="$d" CLAUDE_WORKTIME_CONFIG="$d" bash "$SCRIPT" --statusline 2>/dev/null)
@@ -305,8 +336,11 @@ zero_render_check() {
     printf '{"t":%d,"p":"/tmp/p","s":"%s","e":"prompt"}\n' "$now" "$SID" > "$d/activity.jsonl"
     : > "$d/config.sh"
     printf '%s\n' "0 355000 $((now-36000)) 0 0 - claude-fable-5" > "$d/.cold_$SID"
-    # token_prev differs from (0,0) so only the zero-total rule can skip it
-    printf '350000 5000\n' > "$d/.token_prev"
+    # token_prev differs from (0,0) so only the zero-total rule can skip it.
+    # Under the dead global name this seed was absent, tp read (0,0), and the
+    # unchanged-pair gate skipped the zero render too — the case passed with
+    # the zero-total rule deleted. Per-session name restores the discrimination.
+    printf '350000 5000\n' > "$d/.token_prev_$SID"
     turn "$d" 0 0 0 >/dev/null                      # the compact-completion render
     local ztok; ztok=$(grep -c '"type":"tokens"' "$d/activity.jsonl" 2>/dev/null) || ztok=0
     local st_ctx st_t

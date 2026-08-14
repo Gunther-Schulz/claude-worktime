@@ -812,7 +812,56 @@ is visible from reading the statusline.
   Check the hook call sites first — the six harness hooks pass real flags,
   and this must not break them.
 
+- **READY — a guard that catches a test fixture seeding a state filename the
+  code never reads.** Found 2026-08-14 while fixing the warm-compact defect:
+  three sites in `tests/replay-cold-detect.sh` wrote `"$d/.token_prev"`, the
+  pre-split GLOBAL name, while the detector has read `.token_prev_<sid>` since
+  the per-session split (`claude-worktime.sh:1800`). All three read as pinned
+  premises and pinned nothing. One was not merely decorative: the zero-usage
+  case's own comment says "token_prev differs from (0,0) so only the zero-total
+  rule can skip it" — with the seed landing on a dead name, `tp` read (0,0), the
+  unchanged-pair gate skipped the render too, and the case would have passed
+  with the zero-total rule DELETED. A green check exercising less than it
+  claims, byte-identical to health.
+  **Design, decided.** A check in `tools/` that (a) derives, from
+  `claude-worktime.sh`, the set of `${LOGDIR}/.<name>` state files the script
+  actually reads or writes — derived from the source, never a restated list,
+  since a restated one cannot age loudly — and (b) asserts every `"$d/.<name>"`
+  a file under `tests/` writes resolves to a member of that set, allowing the
+  `_<sid>` suffix. Wire it into `tools/run-tests.sh`.
+  **Red-first arrangement:** revert one of today's three renames back to
+  `.token_prev` and the guard goes red naming that line; the unreverted tree is
+  green. Baseline is green today (suite 18/18, 2026-08-14) — state that before
+  claiming the red, since a permanently-red guard is indistinguishable from a
+  working one.
+  **Done-criterion:** guard red on the reverted site, green on the tree,
+  `tools/run-tests.sh` still 18/18 (19 suites with the guard).
+  **Write boundary:** `tools/` (new check) + `tools/run-tests.sh`.
+
 ## Parked
+
+- **PARKED — `_cw_compact_boundary_info` picks the newest compact boundary by
+  FILE ORDER, not by timestamp, and it is not settled which is right.**
+  `claude-worktime.sh:3057` selects every `compact_boundary` record and takes
+  `tail -n 1` — last in the file. Measured 2026-08-14 on a real 4,845-line
+  transcript carrying two manual compacts: file order and chronological
+  order AGREE for the two boundary records, so today's behaviour is correct and
+  the warm-compact fix rests on it safely. But timestamps and file order do
+  diverge in that transcript's compact region — the `isCompactSummary` record
+  sits AFTER its boundary record in the file while carrying a timestamp five to
+  seven seconds EARLIER (11:05:17 after 11:05:22; 15:42:03 after 15:42:10),
+  reported by the session that observed the defect. The divergence is proven
+  for neighbouring records; it is unproven for two boundary records.
+  **Named missing evidence:** one transcript in which two `compact_boundary`
+  records appear in a file order that disagrees with their timestamp order —
+  the plausible producer is a fork or resume that replays a parent session's
+  records after later ones. Absent that, `tail -n 1` and max-by-timestamp are
+  indistinguishable and switching would be a change with no evidence behind it.
+  **Which way it unparks matters and is NOT decided:** if the divergence comes
+  from replayed parent records, FILE ORDER is the causal order and the current
+  code is right; if it comes from out-of-order writes within one session,
+  max-by-timestamp is right. The evidence above must say which before either is
+  built — a fix chosen now would be a coin flip wearing a design's costume.
 
 - **PARKED — the `-ef` guard and the settings `cp` are Linux-tested only.**
   `install.sh:82` uses `[ src -ef dst ]` and `:135`/`:145` write through a
