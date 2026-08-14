@@ -2952,7 +2952,14 @@ _rotate_boundaries() {
             else
                 ROTATE_CUTOFF=$(date -d "last monday" +%s 2>/dev/null || date -j -v-monday -v0H -v0M -v0S +%s 2>/dev/null)
             fi
-            ROTATE_SUFFIX=$(date -d "@$((ROTATE_CUTOFF - 1))" +%Y-W%V 2>/dev/null || date -r "$((ROTATE_CUTOFF - 1))" +%Y-W%V 2>/dev/null)
+            # %G, not %Y: %V is the ISO week NUMBER and its companion year is the
+            # ISO week-YEAR. For the first days of January that belong to the
+            # previous year's final ISO week, %Y-W%V names a period that does not
+            # exist (2027-01-01 -> "2027-W53"), and worse, it breaks the
+            # lexicographic ordering this repo treats as chronological — "2027-W53"
+            # sorts after "2027-W01", so a New Year archive reads as newer than
+            # every archive for the rest of that year. tests/rotate-suffix-iso-week.sh
+            ROTATE_SUFFIX=$(date -d "@$((ROTATE_CUTOFF - 1))" +%G-W%V 2>/dev/null || date -r "$((ROTATE_CUTOFF - 1))" +%G-W%V 2>/dev/null)
             ;;
         monthly|*)
             ROTATE_CUTOFF=$(date -d "$(date +%Y-%m-01)" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-01) 00:00:00" +%s 2>/dev/null)
@@ -3153,7 +3160,10 @@ _rotate_periods_ago_suffix() {
             date -d "$n days ago" +%Y-%m-%d 2>/dev/null || date -v-"${n}"d +%Y-%m-%d 2>/dev/null
             ;;
         weekly)
-            date -d "$(( n * 7 )) days ago" +%Y-W%V 2>/dev/null || date -v-"$(( n * 7 ))"d +%Y-W%V 2>/dev/null
+            # %G-W%V, matching _rotate_boundaries byte-for-byte — the threshold
+            # suffix is COMPARED against a real archive suffix, so a format
+            # mismatch between the two sites would silently misorder them.
+            date -d "$(( n * 7 )) days ago" +%G-W%V 2>/dev/null || date -v-"$(( n * 7 ))"d +%G-W%V 2>/dev/null
             ;;
         monthly|*)
             date -d "$n months ago" +%Y-%m 2>/dev/null || date -v-"${n}"m +%Y-%m 2>/dev/null
