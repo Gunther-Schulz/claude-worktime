@@ -13,6 +13,25 @@ hand for the same reason.
 
 ## Ready
 
+- **READY 2026-08-14 — the statusline shows the session's OWN peer name,
+  because CC's UI never does: the operator can see every OTHER session's
+  address (a peer's ListAgents) but not the one they are typing into, so
+  they cannot deliberately target a session for cross-session messaging.**
+  Design decided, feasibility proven live: the harness registry is
+  `~/.claude/sessions/<pid>.json`, one file per live session, carrying
+  `sessionId`, `name` (e.g. `claude-code-cache-fix-6f`), `nameSource`,
+  `status` (schema observed at CC 2.1.229, `peerProtocol: 1` — undocumented,
+  so treat as a binding: fail-soft to no-display on missing dir/file/field,
+  never error the statusline). The statusline's stdin JSON already carries
+  `session_id`; match it against the registry files' `sessionId` and render
+  `name` as one segment. Cache by file mtime if the glob shows up in the
+  statusline's time budget; the dir holds O(live sessions) files.
+  Verifier: statusline output contains the same name a PEER session's
+  ListAgents shows for this session (checked once by hand at build time),
+  and renders unchanged (no error, segment absent) with the sessions dir
+  renamed away. Done-criterion: name segment visible in a live session +
+  the fail-soft arm exercised. Boundary: this repo (statusline script).
+
 - **READY — `other` splits cleanly into TWO classes and the ledger already
   carries the discriminator: a TOTAL miss (`cr == 0`) is genuinely causeless,
   while every event that had a real `cache_miss_reason` was a PARTIAL miss.
