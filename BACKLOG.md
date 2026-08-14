@@ -13,25 +13,6 @@ hand for the same reason.
 
 ## Ready
 
-- **READY 2026-08-14 — the statusline shows the session's OWN peer name,
-  because CC's UI never does: the operator can see every OTHER session's
-  address (a peer's ListAgents) but not the one they are typing into, so
-  they cannot deliberately target a session for cross-session messaging.**
-  Design decided, feasibility proven live: the harness registry is
-  `~/.claude/sessions/<pid>.json`, one file per live session, carrying
-  `sessionId`, `name` (e.g. `claude-code-cache-fix-6f`), `nameSource`,
-  `status` (schema observed at CC 2.1.229, `peerProtocol: 1` — undocumented,
-  so treat as a binding: fail-soft to no-display on missing dir/file/field,
-  never error the statusline). The statusline's stdin JSON already carries
-  `session_id`; match it against the registry files' `sessionId` and render
-  `name` as one segment. Cache by file mtime if the glob shows up in the
-  statusline's time budget; the dir holds O(live sessions) files.
-  Verifier: statusline output contains the same name a PEER session's
-  ListAgents shows for this session (checked once by hand at build time),
-  and renders unchanged (no error, segment absent) with the sessions dir
-  renamed away. Done-criterion: name segment visible in a live session +
-  the fail-soft arm exercised. Boundary: this repo (statusline script).
-
 - **READY — `other` splits cleanly into TWO classes and the ledger already
   carries the discriminator: a TOTAL miss (`cr == 0`) is genuinely causeless,
   while every event that had a real `cache_miss_reason` was a PARTIAL miss.
@@ -884,6 +865,21 @@ is visible from reading the statusline.
   The operator decision in (1) is the cheapest and unblocks the most.
 
 ## Departed
+
+- 2026-08-14: **the statusline shows the session's OWN peer name — SHIPPED
+  `8821afb` (implementation, tests, install) + `1dd961c` (README,
+  .shellcheckrc), live-verified.** Booked and dispatched the same day
+  (opus lane, dispatcher-verified: suite 18/18 run independently, installed
+  binary cmp-identical, live render positive for a live id, negative control
+  clean on the same registry). The done-criterion's live half needed one word
+  outside the repo — ` PEER` appended to the operator's
+  `~/.config/claude-worktime/config.sh:291`, made by the dispatcher, since
+  install.sh keeps an existing config by design and a shipped default
+  therefore never reaches a standing user config (candidate lesson recorded
+  in the lane report). Fail-soft arms tested against a fixture registry
+  (synthesized ids only); `CLAUDE_SESSIONS_DIR` overridable; registry schema
+  is a CC-internal binding (2.1.229) — on schema drift the segment silently
+  vanishes, which is the designed failure mode.
 
 - 2026-08-08: **the rotation summary WRITER — BUILT, and the hold it gated is
   lifted.** The item said the `summaries=` jq inside `_do_rotate` still ran
