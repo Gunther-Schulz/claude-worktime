@@ -416,11 +416,14 @@ is visible from reading the statusline.
 ### Residue from the dotfiles-drift sweep and the install/gate lane (2026-08-08)
 
 - **READY (trivial) — the lint baseline drifts and nothing says so.**
-  `docs/lint-baseline-2026-08-08.txt` records 33 warnings at `cf1c126`; the
-  live run is 34 (27 SC2034, was 26), the extra one from test files added
-  after that commit. The file is commit-pinned and says it records the state
-  as found, so it is not wrong — but a reader comparing today's run against it
-  has no way to tell expected drift from a new finding.
+  `docs/lint-baseline-2026-08-08.txt` records 33 warnings at `cf1c126`. The
+  live run was 34 when this was filed; **re-measured 2026-08-14 with the same
+  method (`tools/lint.sh --format=gcc`, counting `[SCnnnn]`): 38** — 29 SC2034
+  (was 26 at baseline), 6 SC2164 (was 4), 3 SC2155 (unchanged). The file is
+  commit-pinned and says it records the state as found, so it is not wrong —
+  but a reader comparing today's run against it has no way to tell expected
+  drift from a new finding, and the drift is now growing faster than the entry
+  itself was tracking (33 -> 34 -> 38 in six days).
   Fix, either: regenerate it and re-pin (a `tools/lint.sh --format=gcc`
   redirect plus the header's commit/date), or teach `tools/lint.sh` a
   `--baseline` mode that diffs against the file and reports only NEW codes.
