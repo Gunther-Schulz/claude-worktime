@@ -2682,7 +2682,14 @@ mode_statusline() {
             _l4_out="${_l4_out%%$'\n'*}"
             _l4_out="${_l4_out#"${_l4_out%%[![:space:]]*}"}"
             _l4_out="${_l4_out%"${_l4_out##*[![:space:]]}"}"
-            [ -n "$_l4_out" ] && printf '\n%s' "$_l4_out"
+            # Plain `if`, deliberately: `[ -n ] && printf` as the last
+            # statement makes a succeeds-but-silent command the FUNCTION's
+            # exit status (1), and Claude Code hides the whole statusline
+            # on a nonzero exit — a total outage from the one branch whose
+            # output is nothing (measured live 2026-08-19).
+            if [ -n "$_l4_out" ]; then
+                printf '\n%s' "$_l4_out"
+            fi
         fi
     fi
 }

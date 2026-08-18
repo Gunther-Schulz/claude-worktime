@@ -106,8 +106,9 @@ check "set: everything before the new line is untouched" "$BASE" "${out%$'\n'dem
 #    here as an explicit case so the suite output enumerates it).
 # ---------------------------------------------------------------------------
 printf '%s\n' "$COMMON_CFG" > "$CFGDIR/config.sh"
-out="$(render)"
+out="$(render)"; rc=$?
 check "unset: output byte-identical to baseline" "$BASE" "$out"
+check "unset: script exit 0" "0" "$rc"
 
 # ---------------------------------------------------------------------------
 # 3. Empty stdout: fails open, byte-identical to baseline.
@@ -116,8 +117,14 @@ cat > "$CFGDIR/config.sh" <<EOF
 $COMMON_CFG
 LINE4_CMD='true'
 EOF
-out="$(render)"
+out="$(render)"; rc=$?
 check "empty stdout: output byte-identical to baseline" "$BASE" "$out"
+# THE EXIT STATUS IS PART OF THE CONTRACT, learned live (2026-08-19): a
+# command that SUCCEEDS but prints nothing left `[ -n ] && printf` as the
+# script's last statement, so the whole script exited 1 — and Claude Code
+# hides the entire statusline on a nonzero exit. Byte-identical output with
+# a nonzero exit is therefore a total outage wearing a passing test.
+check "empty stdout: script exit 0 (nonzero hides the WHOLE statusline)" "0" "$rc"
 
 # ---------------------------------------------------------------------------
 # 4. THE DISCRIMINATOR: nonzero exit AFTER printing output. A check that only
@@ -129,8 +136,9 @@ cat > "$CFGDIR/config.sh" <<EOF
 $COMMON_CFG
 LINE4_CMD='echo oops; exit 1'
 EOF
-out="$(render)"
+out="$(render)"; rc=$?
 check "nonzero exit with prior stdout: output byte-identical to baseline" "$BASE" "$out"
+check "nonzero exit: script exit 0" "0" "$rc"
 case "$out" in
   *oops*) printf '  FAIL %-56s -> leaked\n' "nonzero exit: failed command text never appears"
           fails=$((fails + 1)) ;;
