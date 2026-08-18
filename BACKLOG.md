@@ -27,6 +27,27 @@ hand for the same reason.
 
 ## Ready
 
+- **READY — generic fourth statusline line from a user-supplied
+  command (`LINE4_CMD`): the statusline gains an extension point
+  instead of a domain feature.** Motivation (2026-08-18): the
+  operator wants per-repo work-queue counts on the statusline; that
+  vocabulary is site-specific and belongs to the site's own tooling
+  (the supplier is booked in the operator's dotfiles BACKLOG as
+  `tools/backlog-census`), so what THIS repo ships is domain-free:
+  a `LINE4_CMD` option in `config.sh` — when set, the command runs
+  per render in the session's cwd and its first stdout line renders
+  as line 4. Fail-open by design: unset config, empty stdout,
+  nonzero exit, or timeout (hard cap ~1s, killed) → exactly the
+  current three lines, no error text on the statusline ever.
+  Caching is the supplier's job, not this repo's — the contract is
+  "run command, print line", nothing more. Done-criterion: with
+  `LINE4_CMD='printf …'` a fourth line renders; unset/failing
+  reproduces today's output byte-identically. Verifier: tests in
+  `tests/` covering set/unset/empty/nonzero/timeout, plus README's
+  Configuration table gaining the option (docs are part of done —
+  this repo is public). Write boundary: this repo
+  (`claude-worktime.sh`, `config.sh`, `tests/`, `README.md`).
+
 - **READY — `other` in the ledger is a RACED READ of the transcript, not a
   missing cause: every one of four measured events had a real
   `cache_miss_reason` sitting in its transcript.** Measured 2026-08-08
