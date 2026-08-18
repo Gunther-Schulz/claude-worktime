@@ -326,6 +326,12 @@ A cached value is only displayed while it is fresh: once the cache is older than
 
 **When the lookup fails, nothing happens — deliberately.** That registry is an internal format Claude Code does not document (schema observed at CC 2.1.229, `peerProtocol: 1`); it may move, change shape, or disappear under any CLI update. So every failure is silent: a missing directory, no files, no matching session, an unreadable or unparseable file, a file without a `name` field — each leaves the segment out and the rest of the line byte-identical, with the exit status unchanged. The trade is deliberate: a convenience segment must never be able to break the display it rides on, and a statusline that errored on every refresh would be a far worse bargain than one that quietly shows one thing less. `CLAUDE_SESSIONS_DIR` (default `~/.claude/sessions`) points at the registry if yours is elsewhere. The lookup only runs when `{peer_name}` is actually on a line, so removing the group costs nothing at all.
 
+**A fourth line from your own command:**
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `LINE4_CMD` | `""` | An extension point rather than a built-in token: when set, this command runs on every render (via `bash -c`, in the same directory `{project}` resolves from) and its first stdout line — stripped — becomes a fourth statusline line. Wrapped in `timeout 1` where the `timeout` binary is present; stock macOS lacks it, so there it runs unguarded with no hard cap. Fails open, unconditionally — unset, empty stdout, a nonzero exit, or a timeout all fall back to exactly the lines above, never error text on the statusline. Caching a slow command's result is the command's own job. Example: `LINE4_CMD='printf "queue: %s open" "$(my-queue-count)"'`. |
+
 ### Groups and layout
 
 Define named groups, then compose lines by listing group names. The divider (`GROUP_DIVIDER`, default ` · `) is inserted between non-empty groups. Empty groups are hidden.

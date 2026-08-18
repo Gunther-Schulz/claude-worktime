@@ -190,6 +190,18 @@ GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS"
 STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
+# LINE4_CMD: a fourth statusline line rendered from YOUR OWN command's stdout
+# instead of a built-in token — an extension point rather than a domain
+# feature. Empty (unset) by default: no fourth line, output unchanged.
+# When set, it runs per render via `bash -c`, in the same directory {project}
+# is resolved from (the session's cwd; $HOME if that never resolved), wrapped
+# in `timeout 1` when the `timeout` binary is present (stock macOS lacks it,
+# so there it runs unguarded). Only the first stdout line is shown, stripped
+# of surrounding whitespace. Fails open, unconditionally: unset, empty
+# stdout, a nonzero exit, or a timeout all fall back to exactly today's
+# three lines — never error text on the statusline. Caching is the
+# command's own job, not this script's.
+LINE4_CMD=""
 # Per-model colors for {model}: comma list of "substring=color" pairs,
 # matched case-insensitively against the model id and display name.
 # First match wins; unmatched models keep the group color.
@@ -2646,6 +2658,33 @@ mode_statusline() {
         _render_groups_v "$_sl_extra"
         [ -n "$_RENDER_RESULT" ] && printf '\n%s' "${_RENDER_RESULT}${COLOR_DEFAULT}"
     done
+
+    # Line 4: LINE4_CMD, a user-supplied command instead of a built-in token.
+    # Fails open unconditionally — see the LINE4_CMD default's comment above
+    # for the full contract. Every failure path (unset, cd failure, nonzero
+    # exit, empty stdout, timeout) falls through to printing nothing, which
+    # leaves the three lines above exactly as they were.
+    if [ -n "${LINE4_CMD:-}" ]; then
+        local _l4_cwd="${_proot:-$HOME}" _l4_out="" _l4_rc
+        if command -v timeout &>/dev/null; then
+            _l4_out=$(cd "$_l4_cwd" 2>/dev/null && timeout 1 bash -c "$LINE4_CMD" 2>/dev/null)
+        else
+            _l4_out=$(cd "$_l4_cwd" 2>/dev/null && bash -c "$LINE4_CMD" 2>/dev/null)
+        fi
+        _l4_rc=$?
+        # A nonzero exit (the command itself, a timeout kill, or the `cd`
+        # failing) discards whatever text was already written to stdout
+        # before the failure — printing it would be exactly the "error text
+        # on the statusline" the contract forbids, and a command that
+        # echoes a message before failing is the case that would leak it.
+        if [ "$_l4_rc" -eq 0 ]; then
+            # First stdout line only, then trim leading/trailing whitespace.
+            _l4_out="${_l4_out%%$'\n'*}"
+            _l4_out="${_l4_out#"${_l4_out%%[![:space:]]*}"}"
+            _l4_out="${_l4_out%"${_l4_out##*[![:space:]]}"}"
+            [ -n "$_l4_out" ] && printf '\n%s' "$_l4_out"
+        fi
+    fi
 }
 
 # ============================================================

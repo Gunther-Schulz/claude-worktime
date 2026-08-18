@@ -107,6 +107,20 @@
 #STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 #GROUP_DIVIDER=" · "
 
+# ---------------------------------------------------------------------------
+# Fourth line from your own command (LINE4_CMD)
+# ---------------------------------------------------------------------------
+# An extension point, not a built-in token: when set, this command runs on
+# every render (via `bash -c`, in the same directory {project} resolves
+# from) and its first stdout line — stripped — becomes a fourth statusline
+# line. Wrapped in `timeout 1` where the `timeout` binary exists (stock
+# macOS lacks it, so there it runs unguarded — no hard cap). Fails open,
+# unconditionally: unset, empty stdout, a nonzero exit, or a timeout all
+# fall back to exactly today's three lines, never error text on the
+# statusline. Caching a slow command's result is the command's own job —
+# this script does none.
+#LINE4_CMD='printf "queue: 3 open"'
+
 # Per-group colors (optional, falls back to COLOR_NORMAL)
 # Mute secondary info for visual hierarchy
 #GROUP_RATE_7D_COLOR="dark-gray"
