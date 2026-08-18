@@ -69,7 +69,7 @@ Removes hooks, statusline config, and the script. Logs and config are preserved.
 
 ### Statusline
 
-Up to 3 configurable lines. Every element is a token — mix and match what matters to you.
+Up to 3 configurable lines — plus an optional fourth from your own command (`LINE4_CMD`). Every element is a token — mix and match what matters to you.
 
 **Line 1 — Work done** (project-scoped):
 ```

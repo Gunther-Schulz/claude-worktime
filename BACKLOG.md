@@ -27,27 +27,6 @@ hand for the same reason.
 
 ## Ready
 
-- **READY — generic fourth statusline line from a user-supplied
-  command (`LINE4_CMD`): the statusline gains an extension point
-  instead of a domain feature.** Motivation (2026-08-18): the
-  operator wants per-repo work-queue counts on the statusline; that
-  vocabulary is site-specific and belongs to the site's own tooling
-  (the supplier is booked in the operator's dotfiles BACKLOG as
-  `tools/backlog-census`), so what THIS repo ships is domain-free:
-  a `LINE4_CMD` option in `config.sh` — when set, the command runs
-  per render in the session's cwd and its first stdout line renders
-  as line 4. Fail-open by design: unset config, empty stdout,
-  nonzero exit, or timeout (hard cap ~1s, killed) → exactly the
-  current three lines, no error text on the statusline ever.
-  Caching is the supplier's job, not this repo's — the contract is
-  "run command, print line", nothing more. Done-criterion: with
-  `LINE4_CMD='printf …'` a fourth line renders; unset/failing
-  reproduces today's output byte-identically. Verifier: tests in
-  `tests/` covering set/unset/empty/nonzero/timeout, plus README's
-  Configuration table gaining the option (docs are part of done —
-  this repo is public). Write boundary: this repo
-  (`claude-worktime.sh`, `config.sh`, `tests/`, `README.md`).
-
 - **READY — `other` in the ledger is a RACED READ of the transcript, not a
   missing cause: every one of four measured events had a real
   `cache_miss_reason` sitting in its transcript.** Measured 2026-08-08
@@ -547,6 +526,22 @@ is visible from reading the statusline.
   rejected as an unknown flag, never its exit code or output.
 
 ## Departed
+
+- 2026-08-18: **generic fourth statusline line from a user-supplied
+  command (`LINE4_CMD`) — SHIPPED `2b21a7a`** (sonnet dispatch,
+  same-day booking `efddefe`). The statusline gains an extension
+  point instead of a domain feature: `LINE4_CMD` in `config.sh`,
+  run per render in the resolved project cwd, first stdout line as
+  line 4; fail-open on unset/empty/nonzero/timeout (`timeout 1`
+  where the binary exists). The build's own verification found the
+  contract's real edge: a naive command substitution keeps stdout
+  from a FAILING command, so "oops-then-exit-1" would have leaked
+  onto the statusline — fixed with an exit-status gate, pinned by
+  the discriminator case in `tests/statusline-line4-cmd.sh`
+  (12 checks; suite 24/24). Residue, named: the no-`timeout`-binary
+  path (macOS) is inspection-only — its test SKIPs with
+  disposition on hosts that have the binary. Supplier side
+  (`tools/backlog-census`) lives in the operator's dotfiles.
 
 - 2026-08-14: **unknown flags are named and rejected — SHIPPED `1964d3c`**
   (with `06f1255`, a repair to the guard that this change tripped). The
