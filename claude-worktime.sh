@@ -1552,12 +1552,17 @@ mode_statusline() {
         # Strip the context-window suffix (e.g. " (1M context)") from the
         # display name — redundant in the statusline.
         [[ "$mdl" == *" ("*"context)" ]] && mdl="${mdl% (*context)}"
-        # Persist the current model for external consumers (e.g. commit hooks
-        # comparing a hand-typed attribution trailer against the live runtime:
-        # the model can change MID-session, so any snapshot taken at session
-        # start goes stale silently). File mtime doubles as the freshness
-        # signal. Last-writer-wins across concurrent sessions — consumers
-        # must treat this as advisory, never as a hard gate.
+        # Persist the current model for external consumers. DEPRECATED as a
+        # primary source (2026-08-19): last-writer-wins across concurrent
+        # sessions, so with parallel desks of different tiers it describes
+        # whichever session rendered last — it once reported an Opus desk
+        # during a Fable session's commit. Session-accurate consumers read
+        # their own transcript via CLAUDE_CODE_SESSION_ID instead (see
+        # pbs-office scripts/modell_trailer_warnung.sh, dotfiles
+        # claude/hooks/skill-payload-gate.py); this file remains ONLY as
+        # their advisory fallback for contexts without a session identity
+        # (hand commits). File mtime doubles as the freshness signal. No
+        # new consumers.
         [ -n "$mdl" ] && printf '%s\n' "$mdl" > "${LOGDIR}/.current_model" 2>/dev/null
         [ "$eff" = "_" ] && eff=""
         [ -n "$eff" ] && tok_effort="$eff"

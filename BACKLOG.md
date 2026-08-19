@@ -27,31 +27,6 @@ hand for the same reason.
 
 ## Ready
 
-- **READY — `.current_model` ist ein globales Singleton für eine
-  per-Session-Frage: als Primärquelle deprecaten, sobald konsumentenfrei.**
-  Befund 2026-08-19 (Betreiber + Messung): die Datei ist last-writer-wins
-  über alle parallel laufenden Sessions (Kommentar am Schreibort sagt es
-  selbst, claude-worktime.sh ~Z.1556); ein Konsument (pbs-office
-  modell_trailer_warnung.sh) las sie als "das laufende Modell" und
-  produzierte einen Fehlalarm, als ein Opus-Desk während einer
-  Fable-Session zuletzt renderte. Der robuste Weg ist gemessen und beim
-  ersten Konsumenten gebaut (pbs-office `ece5b35`): CLAUDE_CODE_SESSION_ID
-  steht in der Umgebung jedes Bash-Tool-Aufrufs -> Transkript
-  `~/.claude/projects/*/<sid>.jsonl`, letzte Nicht-Sidechain-model-Zeile
-  (tac+grep -m1; 43 ms auf 51-MB-Realfall) — session-genau, subagent-fest.
-  BAU: (1) Restkonsument migrieren: dotfiles
-  `claude/hooks/skill-payload-gate.py` liest _MODEL_FILE (Z.60f.) — gleiche
-  Transkript-Ableitung, transcript_path hat der Hook-Payload bereits;
-  fail-open-Verhalten beibehalten. (Schreib-Grenze dotfiles; dort gebucht,
-  sobald dessen BACKLOG.md wieder committbar ist — trug am 19.08.
-  unkommittierte Betreiber-Änderungen.) (2) Danach hier: Schreibstelle
-  entfernen oder Kommentar auf "deprecated, keine neuen Konsumenten"
-  stellen — Entscheid je Ergebnis von (1).
-  Verifizierer: grep über ~/dev nach current_model findet keinen lesenden
-  Konsumenten mehr (Positivkontrolle: der Schreibort selbst trifft);
-  pbs-office-Suite test-modell-trailer.sh bleibt 14/14.
-  Write-set: claude-worktime.sh (+ dotfiles-Hook als Vorbedingung).
-
 - **READY — `other` in the ledger is a RACED READ of the transcript, not a
   missing cause: every one of four measured events had a real
   `cache_miss_reason` sitting in its transcript.** Measured 2026-08-08
@@ -551,6 +526,17 @@ is visible from reading the statusline.
   rejected as an unknown flag, never its exit code or output.
 
 ## Departed
+
+- 2026-08-19: **`.current_model` als Primärquelle deprecaten — ERLEDIGT
+  im Buchungs-Bogen selbst.** Beide Hälften gebaut: (1) letzter
+  Lese-Konsument migriert — dotfiles `claude/hooks/skill-payload-gate.py`
+  liest jetzt das Transkript der feuernden Session (dotfiles `8999f45`;
+  Rot-Beweis mit gepinnter Opus-Fixture-Datei), analog zuvor pbs-office
+  `modell_trailer_warnung.sh` (`ece5b35`, Suite 14/14). (2) Schreibstellen-
+  Kommentar in claude-worktime.sh trägt die Deprecation (nur noch
+  advisory Fallback ohne Session-Identität; keine neuen Konsumenten).
+  Die Schreibstelle selbst bleibt, weil beide Konsumenten sie als
+  Hand-Commit-Fallback weiter lesen.
 
 - 2026-08-18: **generic fourth statusline line from a user-supplied
   command (`LINE4_CMD`) — SHIPPED `2b21a7a`** (sonnet dispatch,
