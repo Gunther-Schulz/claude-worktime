@@ -389,15 +389,6 @@ is visible from reading the statusline.
 
 ## Parked
 
-- **PARKED — `tokens`-Records im Ledger tragen kein Modell-Feld, also sind
-  Per-Modell-Totale nur über den Transkript-Korpus (retention-begrenzt)
-  möglich.** Nur `type:cold`-Records mit `cause=model` tragen `mdl`;
-  `type:tokens` nicht (gemessen beim Bau von `tools/model-spend-report.py`,
-  2026-08-19). **Fehlende Evidenz/Design:** welcher Codepfad `tokens`-Records
-  emittiert und welche Modellquelle dort zur Schreibzeit bereitsteht
-  (Session-Modell-Erkennung ist seit `6cc64c9` transkriptbasiert). Write-set:
-  claude-worktime.
-
 - **PARKED — `_cw_compact_boundary_info` picks the newest compact boundary by
   FILE ORDER, not by timestamp, and it is not settled which is right.**
   `claude-worktime.sh:3057` selects every `compact_boundary` record and takes
@@ -840,11 +831,3 @@ is visible from reading the statusline.
   entry's own commit; `tests/replay-cold-detect.sh` 17/17; live ledger
   and the session's ❄ state retro-corrected with the shipped
   `hit-retract` mechanism).
-
-- 2026-08-19: dispatch-Ausgang gebucht — `tools/model-spend-report.py`
-  (sonnet-Lane, Commit `db07ec1`): vom Dispatcher am Artefakt verifiziert
-  (Positivkontrolle 135e595d = 326.391.695 exakt; Negativkontrolle leer,
-  exit 0; `--json` parst; Trailer geprüft). Anlass: Ökonomie-Regime
-  Fable-Desk (routing.md-Mint gleichen Datums, dotfiles). Offene Frage
-  der Lane (Python-Test-Idiom) entschieden: Instrument-Paar-Verifier
-  genügt für diese Tool-Klasse, kein neues Idiom gemintet (Kein-Behelf).
