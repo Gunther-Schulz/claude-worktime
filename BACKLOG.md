@@ -389,6 +389,15 @@ is visible from reading the statusline.
 
 ## Parked
 
+- **PARKED — `tokens`-Records im Ledger tragen kein Modell-Feld, also sind
+  Per-Modell-Totale nur über den Transkript-Korpus (retention-begrenzt)
+  möglich.** Nur `type:cold`-Records mit `cause=model` tragen `mdl`;
+  `type:tokens` nicht (gemessen beim Bau von `tools/model-spend-report.py`,
+  2026-08-19). **Fehlende Evidenz/Design:** welcher Codepfad `tokens`-Records
+  emittiert und welche Modellquelle dort zur Schreibzeit bereitsteht
+  (Session-Modell-Erkennung ist seit `6cc64c9` transkriptbasiert). Write-set:
+  claude-worktime.
+
 - **PARKED — `_cw_compact_boundary_info` picks the newest compact boundary by
   FILE ORDER, not by timestamp, and it is not settled which is right.**
   `claude-worktime.sh:3057` selects every `compact_boundary` record and takes
