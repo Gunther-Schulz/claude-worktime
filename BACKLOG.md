@@ -840,3 +840,11 @@ is visible from reading the statusline.
   entry's own commit; `tests/replay-cold-detect.sh` 17/17; live ledger
   and the session's ❄ state retro-corrected with the shipped
   `hit-retract` mechanism).
+
+- 2026-08-19: dispatch-Ausgang gebucht — `tools/model-spend-report.py`
+  (sonnet-Lane, Commit `db07ec1`): vom Dispatcher am Artefakt verifiziert
+  (Positivkontrolle 135e595d = 326.391.695 exakt; Negativkontrolle leer,
+  exit 0; `--json` parst; Trailer geprüft). Anlass: Ökonomie-Regime
+  Fable-Desk (routing.md-Mint gleichen Datums, dotfiles). Offene Frage
+  der Lane (Python-Test-Idiom) entschieden: Instrument-Paar-Verifier
+  genügt für diese Tool-Klasse, kein neues Idiom gemintet (Kein-Behelf).
