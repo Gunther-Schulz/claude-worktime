@@ -514,6 +514,32 @@ _resolve_color_v "${COLOR_DEFAULT:-reset}"; COLOR_DEFAULT="$_V"
 # Convert RATE_7D_PROJ_MIN_DAYS (float) to seconds (integer) for bash comparison
 RATE_7D_PROJ_MIN_SECONDS=$(awk "BEGIN { printf \"%d\", ${RATE_7D_PROJ_MIN_DAYS:-0.5} * 86400 }")
 
+# The parent of a pid, printed; non-zero and silent if it cannot be read.
+# /proc first because the caller walks a chain and the statusline re-renders
+# constantly — a `ps` spawn per hop would put a process on the hot path — with
+# `ps` kept as the macOS branch, which has no /proc. Read from `status` rather
+# than field 4 of `stat`: a process name containing a space or a parenthesis
+# shifts stat's fields and silently returns the wrong number.
+_ppid_of() {
+    local _p="$1" _line _v
+    if [ -r "/proc/$_p/status" ]; then
+        while IFS= read -r _line; do
+            case "$_line" in
+                PPid:*) _v="${_line#PPid:}"; _v="${_v//[[:space:]]/}"
+                        [ -n "$_v" ] || return 1
+                        printf '%s' "$_v"; return 0 ;;
+            esac
+        done < "/proc/$_p/status"
+        return 1
+    fi
+    # macOS branch. `tr` rather than pattern substitution: this path is
+    # already a spawn, and it runs only where the walk itself is rare, so the
+    # cheap-and-certain construct beats saving a process on bash 3.2.
+    _v=$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d '[:space:]') || return 1
+    [ -n "$_v" ] || return 1
+    printf '%s' "$_v"
+}
+
 # --- Date helpers (GNU coreutils, BSD fallback) ---
 _date_at() { date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null; }
 # BSD `date -j -f "%Y-%m-%d" "$d"` inherits current time-of-day for unspecified
@@ -2549,21 +2575,59 @@ mode_statusline() {
     # at `{` or `,`, so `bridgeSessionId` cannot satisfy `sessionId` and
     # `nameSource` cannot satisfy `name` — an unanchored substring test would
     # read the neighbouring key's value.
+    # sessionId does NOT identify a live session on its own: resuming one while
+    # its first process still runs leaves two registry files carrying the same
+    # sessionId and different names (measured 2026-08-20 — two `claude` pids,
+    # one id). The registry's key is the PID in the filename, so a match on
+    # sessionId alone is ambiguous, and taking the first hit gave BOTH
+    # processes the same address while the other became unreachable — the
+    # token exists to be typed at, so a name that may be the neighbour's is
+    # worse than none. Collect every candidate, then disambiguate by pid.
     local tok_peer_name=""
     if [[ "$all_formats" == *"{peer_name}"* ]] && [ -n "$sid" ]; then
-        local _pf _pc
+        local _pf _pc _pname _pstem
         local _peer_re_sid='[{,][[:space:]]*"sessionId"[[:space:]]*:[[:space:]]*"([^"]*)"'
         local _peer_re_name='[{,][[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)"'
+        # Counted by hand rather than with ${#arr[@]}: under `set -u` (line 49)
+        # bash 3.2 — the vanilla macOS shell this repo supports — errors on an
+        # empty array's expansion, and "no candidates" is the ordinary case.
+        local -a _peer_pids _peer_names
+        local _peer_n=0
         for _pf in "$CLAUDE_SESSIONS_DIR"/*.json; do
             [ -f "$_pf" ] && [ -r "$_pf" ] || continue
             _pc=$(<"$_pf")
             [[ "$_pc" =~ $_peer_re_sid ]] || continue
             [ "${BASH_REMATCH[1]}" = "$sid" ] || continue
-            # "@" marks it as an address (SendMessage handle); added only on
-            # a found name so the fail-soft empty stays empty, never a bare @.
-            [[ "$_pc" =~ $_peer_re_name ]] && tok_peer_name="@${BASH_REMATCH[1]}"
-            break
+            [[ "$_pc" =~ $_peer_re_name ]] || continue
+            # Read out of BASH_REMATCH before anything else matches over it.
+            _pname="${BASH_REMATCH[1]}"
+            _pstem="${_pf##*/}"; _pstem="${_pstem%.json}"
+            case "$_pstem" in ""|*[!0-9]*) continue ;; esac
+            _peer_pids[$_peer_n]="$((10#$_pstem))"
+            _peer_names[$_peer_n]="$_pname"
+            _peer_n=$(( _peer_n + 1 ))
         done
+        # "@" marks it as an address (SendMessage handle); added only on a
+        # found name so the fail-soft empty stays empty, never a bare @.
+        if [ "$_peer_n" -eq 1 ]; then
+            tok_peer_name="@${_peer_names[0]}"
+        elif [ "$_peer_n" -gt 1 ]; then
+            # Ambiguous, so pay for the ancestry walk — and only here, which is
+            # what keeps the single-session hot path exactly as cheap as it was.
+            # We are a child of our own session's process, so the candidate that
+            # is an ancestor of this script is ours. Unresolvable stays empty.
+            local _wp="$$" _hop=0 _i
+            while [ -n "$_wp" ] && [ "$_wp" -gt 1 ] && [ "$_hop" -lt 12 ]; do
+                for (( _i = 0; _i < _peer_n; _i++ )); do
+                    if [ "${_peer_pids[$_i]}" -eq "$_wp" ]; then
+                        tok_peer_name="@${_peer_names[$_i]}"
+                        break 2
+                    fi
+                done
+                _wp="$(_ppid_of "$_wp")" || break
+                _hop=$(( _hop + 1 ))
+            done
+        fi
     fi
 
     # Colorize timeline blocks if colors are configured

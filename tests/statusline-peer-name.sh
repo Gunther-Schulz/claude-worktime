@@ -160,6 +160,52 @@ case "$plain" in
 esac
 
 # ---------------------------------------------------------------------------
+# 2b. TWO LIVE PROCESSES ON ONE SESSION ID — the case that actually bit.
+#
+# Resuming a session while its first process is still alive leaves the
+# registry holding two files with the SAME sessionId and DIFFERENT names
+# (observed 2026-08-20: 1100769.json "…-9c" and 1106098.json "…-0a", one
+# sessionId). So sessionId is NOT the registry's unique key — the pid in the
+# filename is — and a lookup keyed on sessionId with a `break` gives BOTH
+# processes whichever file the glob reaches first. The operator then reads one
+# session's address on both screens and cannot address the other at all: the
+# token's whole purpose, defeated exactly when it is needed most.
+#
+# The decoy is named `10.json` so it is ALWAYS the glob's first entry — `.`
+# sorts below every digit, so "10.json" precedes any multi-digit pid — and pid
+# 10 is a kernel thread, never an ancestor of this test. Without that ordering
+# the case could pass on glob luck rather than on the fix.
+# ---------------------------------------------------------------------------
+D8="$TMP/s8"; mkdir -p "$D8"
+printf '{"pid":10,"sessionId":"%s","name":"%s","peerProtocol":1}' \
+  "$SID" "$OTHER_NAME" > "$D8/10.json"
+printf '{"pid":%d,"sessionId":"%s","name":"%s","peerProtocol":1}' \
+  "$$" "$SID" "$NAME" > "$D8/$$.json"
+out="$(render "$D8")"
+plain="$(printf '%s' "$out" | sed 's/\x1b\[[0-9;]*m//g')"
+check "two processes, one session id: OUR pid's name wins" "@$NAME" "${plain##* }"
+case "$plain" in
+  *"$OTHER_NAME"*) printf '  FAIL %-56s -> %s\n' "the co-resident process's name must not appear" "$plain"
+                   fails=$((fails + 1)) ;;
+  *)               check "the co-resident process's name must not appear" "0" "0" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 2c. The same ambiguity with NEITHER file ours. Showing an arbitrary one of
+# them is the defect above wearing a different hat — a name meant to be typed
+# as an address is worse than no name when it may be the other process's — so
+# the contract here is the fail-soft one: nothing at all.
+# ---------------------------------------------------------------------------
+D9="$TMP/s9"; mkdir -p "$D9"
+printf '{"pid":10,"sessionId":"%s","name":"%s","peerProtocol":1}' \
+  "$SID" "$OTHER_NAME" > "$D9/10.json"
+printf '{"pid":11,"sessionId":"%s","name":"%s","peerProtocol":1}' \
+  "$SID" "$NAME" > "$D9/11.json"
+out="$(render "$D9")"; rc=$?
+check "ambiguous session id, neither ours: output unchanged" "$BASE" "$out"
+check "ambiguous session id, neither ours: exit status" "0" "$rc"
+
+# ---------------------------------------------------------------------------
 # 3-7. The fail-soft arms. Each must be byte-identical to the baseline.
 # ---------------------------------------------------------------------------
 D3="$TMP/s3"; mkdir -p "$D3"
