@@ -8,13 +8,14 @@ first. Follow the four steps in order; total time is a couple of minutes.
 > **Different task? Read a different file.** This one is for INVESTIGATING a
 > bust that already happened. If you are about to CHANGE the proxy —
 > extensions, normalization, anything under `proxy/` — read
-> `~/dev/vendor/claude-code-cache-fix/docs/dev-loop.md` first: the replay
+> `docs/dev-loop.md` in your cache-fix checkout first: the replay
 > gates that must pass, the standing rules, and the check-design lessons.
 > Six self-inflicted defects shipped and stayed live for months because that
 > procedure did not exist; every one was found the day it did.
 >
 > Worth knowing before you attribute anything here: a divergence present in
-> `~/.claude/cache-fix-captures/` is Claude Code's, one absent there is OURS
+> the capture directory (`${XDG_DATA_HOME:-$HOME/.local/share}/cache-fix/captures`)
+> is Claude Code's, one absent there is OURS
 > (captures are recorded pre-pipeline). On 2026-07-28 five of six defects
 > that looked like CC turned out to be ours.
 
@@ -212,7 +213,7 @@ the conversation advancing.
 Byte-level detail lives in two files per session:
 
 ```sh
-ls ~/.claude/cache-fix-snapshots/
+ls "${XDG_STATE_HOME:-$HOME/.local/state}/cache-fix/snapshots/"
 # <key>-diff.json    latest diff, full detail — OVERWRITTEN each time
 # <key>-events.jsonl append-only ledger, one bounded record per diff
 ```
@@ -225,7 +226,7 @@ from both sides — enough to identify the culprit months later.
 
 ```sh
 jq -c 'select(.causes|length>0) | {ts, causes}' \
-    ~/.claude/cache-fix-snapshots/s-*-events.jsonl | tail -20
+    "${XDG_STATE_HOME:-$HOME/.local/state}"/cache-fix/snapshots/s-*-events.jsonl | tail -20
 ```
 
 Keys prefixed `s-` are derived from the session-id header; a bare hex
@@ -241,7 +242,8 @@ the bust timestamp from step 1:
 python3 - <<'PY'
 import json, glob, os
 WINDOW = "2026-07-27T17:17"          # UTC, minute precision
-for p in glob.glob(os.path.expanduser("~/.claude/cache-fix-snapshots/*-events.jsonl")):
+STATE = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+for p in glob.glob(os.path.join(STATE, "cache-fix/snapshots/*-events.jsonl")):
     if "insertion" in p or "ladder" in p: continue   # per-extension ledgers
     rows = [json.loads(l) for l in open(p) if l.strip()]
     hits = [r for r in rows if str(r.get("ts", "")).startswith(WINDOW)]
@@ -338,7 +340,7 @@ it, and what was going on," just without wire-level byte-level proof.
 
 ## Recorded pattern datapoints (append-only)
 
-- 2026-07-27 12:44:41 + 12:44:50 UTC (session f4d154fc, fable-5,
+- 2026-07-27 12:44:41 + 12:44:50 UTC (session A, fable-5,
   ~153k cc each): identical `mtok` 126,243 on both — same divergence
   index hit twice, 9s apart. `flight=true`, `pblk=["tool_use"]`; the
   window immediately follows a Skill launch (19.7KB injected) plus a
@@ -382,7 +384,7 @@ it, and what was going on," just without wire-level byte-level proof.
   tools in place until session end, they cost nothing inert).
   Day total now ~1.83M uncontrolled write-tokens across 5 events.
 
-- 2026-07-28 09:47:31 + 09:53:21 UTC (session 35d72503, opus-5[1m],
+- 2026-07-28 09:47:31 + 09:53:21 UTC (session B, opus-5[1m],
   252,905 + 266,422 cc = **519k**; `mtok` 205,814 / 217,025; cause
   `messages_changed`, `flight=true`, `pblk=["tool_use"]`, `concur=0`
   on both). **New class: hook-reminder re-anchoring.** Both diverge at
@@ -392,7 +394,7 @@ it, and what was going on," just without wire-level byte-level proof.
   tools moved).
 
   Mechanism, from the wire bytes
-  (`~/.claude/cache-fix-captures/s-<sid>-requests.jsonl`): the
+  (`${XDG_DATA_HOME:-$HOME/.local/share}/cache-fix/captures/s-<sid>-requests.jsonl`): the
   `PreToolUse:Agent` and `PostToolUse:Agent` hook reminders are first
   sent as two extra `text` blocks appended INSIDE the Agent
   `tool_result` user message; on a later request the harness
@@ -425,8 +427,8 @@ it, and what was going on," just without wire-level byte-level proof.
   (`[491]`, `[531]`), so there may be no intermediate boundary to fall
   back to, but that was not proven against wire bytes.
 
-  **Attribution: CC's, not ours** — the standing rule from HANDOFF
-  §10.3b (classify every divergence pre vs post) is satisfied here.
+  **Attribution: CC's, not ours** — the standing rule (classify every
+  divergence pre-pipeline vs post) is satisfied here.
   These bytes come from `request-capture` (order 60); the only
   extension ahead of it is `bootstrap-defense` (order 45), which
   deletes top-level prompt keys and never touches `messages[]`
@@ -436,7 +438,7 @@ it, and what was going on," just without wire-level byte-level proof.
   so no later extension can alias into the captured bytes. The flip is
   in what Claude Code sent.
 
-  **This is the same class as HANDOFF §10.2/§10.2b (2026-07-27, 135k +
+  **This is the same class as the two 2026-07-27 events above (135k +
   182k), with a new shape.** There the reminder alternated
   present/absent INSIDE a user message. Here it MIGRATES: stripped from
   the user `tool_result` and re-emitted as a standalone `system`-role
@@ -484,7 +486,7 @@ it, and what was going on," just without wire-level byte-level proof.
   either way.
   Day total ~519k uncontrolled write-tokens across 2 events.
 
-- 2026-07-30 16:57:14 UTC (session 0d6f38ba, fable-5, **221k cc**,
+- 2026-07-30 16:57:14 UTC (session C, fable-5, **221k cc**,
   `mtok` 201,434, cause `messages_changed`, gap 9s, `flight=false`,
   `ubytes=4248`, `concur=1`): first measured OSCILLATION of the
   block-migration class — the Agent hook-reminder pair flipped
