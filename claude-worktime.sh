@@ -2534,9 +2534,13 @@ mode_statusline() {
         fi
     fi
 
-    # Log cost snapshot when cost changed (skip if no valid session context)
+    # Log cost snapshot when THIS session's cost changed (skip if no valid
+    # session context). Keyed per session, like .cold_<sid>: a single global
+    # .last_cost was flipped by every other session's render, so alternating
+    # sessions re-logged unchanged costs on each render — about half of one
+    # day's cost records (tests/cost-record-per-session.sh).
     if [ -n "${cst:-}" ] && [ -n "${project:-}" ] && [ "${sid:-}" != "" ]; then
-        local cost_state="${LOGDIR}/.last_cost"
+        local cost_state="${LOGDIR}/.last_cost_${sid}"
         local last_cost=""
         [ -f "$cost_state" ] && last_cost=$(cat "$cost_state" 2>/dev/null)
         if [ "$last_cost" != "$cst" ]; then
@@ -3258,8 +3262,9 @@ _do_rotate() {
         } > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE"
     ) 9>"${LOGFILE}.lock"
 
-    # Prune cold-counter state files of sessions idle for over a week
-    find "$LOGDIR" -maxdepth 1 -name '.cold_*' -mtime +7 -delete 2>/dev/null
+    # Prune per-session state files (cold counters, cost markers) of sessions
+    # idle for over a week
+    find "$LOGDIR" -maxdepth 1 \( -name '.cold_*' -o -name '.last_cost_*' \) -mtime +7 -delete 2>/dev/null
 
     # Prune archives past the retention horizon. The active log is bounded by
     # the rewrite above, but archives were appended and never removed — growth
