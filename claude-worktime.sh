@@ -47,6 +47,11 @@
 #   claude-worktime --raw                   # JSON output (any mode)
 
 set -euo pipefail
+# Bash 5.2+ reads an unquoted `&` in a ${var//pattern/replacement} replacement
+# as "the matched text", so the token substitution rendered a value containing
+# "&" with the {token} name spliced in ("fix {agents} test"). No replacement in
+# this script means that; older bash has no such option.
+shopt -u patsub_replacement 2>/dev/null || true
 export LC_ALL=C
 
 # ============================================================
@@ -174,6 +179,15 @@ GROUP_COLD="{cold}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
 GROUP_PEER="{peer_name}"
+GROUP_AGENTS="agents {agents}"
+# {agents}: subagents of this session that are working now. Nothing whose
+# newest log record is older than AGENTS_WINDOW_SECS is shown (a killed agent's
+# log is never marked finished, so a ghost must age out); a busy agent quiet
+# for AGENTS_QUIET_WARN_SECS or longer is flagged ⚠; at most AGENTS_MAX_SHOWN
+# busy agents are named, the rest counted.
+AGENTS_WINDOW_SECS=3600
+AGENTS_QUIET_WARN_SECS=600
+AGENTS_MAX_SHOWN=3
 # token_budget removed: weighted tokens only tracked main conversation,
 # missing subagent costs (1.1-2.4x underestimate). Use {cost_budget} instead.
 GROUP_TOKENS=""
@@ -188,7 +202,7 @@ GROUP_PEER_COLOR="dark-gray"
 GROUP_COLD_COLOR="none"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS"
+STATUSLINE_2="TIMELINE BREAKS AGENTS"
 STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 # LINE4_CMD: a fourth statusline line rendered from YOUR OWN command's stdout
 # instead of a built-in token — an extension point rather than a domain
@@ -2634,6 +2648,132 @@ mode_statusline() {
         fi
     fi
 
+    # {agents} — this session's subagents that are working now, each named with
+    # how long it has been quiet, then a count of idle teammates:
+    #   "lane-a 12s, lane-b ⚠14m +2 more, 3 idle"
+    # The statusline stdin carries no task list, but the harness keeps one log
+    # per subagent beside the transcript:
+    #   <transcript dir>/<session id>/subagents/agent-<id>.jsonl (+ .meta.json)
+    # An undocumented internal format, so — as with {peer_name} — every failure
+    # is silent and leaves the token empty.
+    #
+    # State is the LAST user/assistant record of each log (attachments
+    # skipped): assistant tool_use or thinking-only, or any user record = busy;
+    # assistant text = idle for a teammate (taskKind in_process_teammate), done
+    # for an Agent-tool agent (not shown, its result already reached the
+    # parent); a user "[Request interrupted" record = stopped (not shown). The
+    # measured basis is in tests/statusline-agents.sh.
+    #
+    # Cost: `find -mmin` bounds the read to logs written inside the window, at
+    # most 24 of the newest, each read as an 8-line tail — over 1179 real logs
+    # the last conversation record was the final line in all but one (3 lines
+    # up there); tails of 6 and 12 lines measured ~21KB and ~47KB at the
+    # median. One jq reads them all.
+    local tok_agents=""
+    if [[ "$all_formats" == *"{agents}"* ]] && [ -n "${tp_path:-}" ] \
+       && [ -d "${tp_path%.jsonl}/subagents" ]; then
+        local _ag_dir="${tp_path%.jsonl}/subagents"
+        local _ag_win="${AGENTS_WINDOW_SECS:-}" _ag_warn="${AGENTS_QUIET_WARN_SECS:-}" _ag_max="${AGENTS_MAX_SHOWN:-}"
+        case "$_ag_win" in ""|*[!0-9]*) _ag_win=3600 ;; esac
+        case "$_ag_warn" in ""|*[!0-9]*) _ag_warn=600 ;; esac
+        case "$_ag_max" in ""|*[!0-9]*) _ag_max=3 ;; esac
+        local _ag_list _ag_rows
+        # Newest first, so the 24-log cap drops the oldest.
+        _ag_list=$(find "$_ag_dir" -maxdepth 1 -type f -name 'agent-*.jsonl' \
+            -mmin "-$(( (_ag_win + 59) / 60 + 1 ))" -exec ls -t {} + 2>/dev/null)
+        if [ -n "$_ag_list" ]; then
+            # One stream for jq: per log a \036<file> line, its meta as a
+            # \035<json> line (meta files carry no trailing newline, and any
+            # inner newline is JSON whitespace), then the tail. The marker is
+            # preceded by a newline so a half-written last line cannot swallow it.
+            _ag_rows=$(
+                _ag_n=0
+                while IFS= read -r _ag_f; do
+                    case "$_ag_f" in "$_ag_dir"/agent-*.jsonl) ;; *) continue ;; esac
+                    [ "$_ag_n" -ge 24 ] && break
+                    _ag_n=$((_ag_n + 1))
+                    printf '\n\036%s\n' "${_ag_f##*/}"
+                    _ag_m="${_ag_f%.jsonl}.meta.json"
+                    if [ -r "$_ag_m" ]; then
+                        _ag_mc=$(<"$_ag_m")
+                        printf '\035%s\n' "${_ag_mc//$'\n'/ }"
+                    fi
+                    tail -n 8 "$_ag_f" 2>/dev/null
+                done <<< "$_ag_list" | jq -n -R -r --argjson now "$now" --argjson win "$_ag_win" '
+                    def clean: tostring | gsub("[[:cntrl:]]"; "");
+                    def epoch: .timestamp as $ts
+                        | if ($ts | type) == "string"
+                          then ($ts | sub("\\.[0-9]+Z$"; "Z") | try fromdateiso8601 catch null)
+                          else null end;
+                    def shape:
+                        if .type == "assistant" then
+                            [.message.content[]? | .type?] as $t
+                            | if any($t[]; . == "tool_use") then "busy"
+                              elif any($t[]; . == "text") then "idle"
+                              else "busy" end
+                        elif .type == "user" then
+                            .message.content as $c
+                            | if any((if ($c | type) == "string" then $c
+                                      else ($c[]? | select(.type? == "text") | .text) end)
+                                     | tostring; startswith("[Request interrupted"))
+                              then "stopped" else "busy" end
+                        else null end;
+                    reduce inputs as $l ({cur: null, a: {}};
+                        if ($l | startswith("\u001e")) then
+                            .cur = $l[1:] | .a[.cur] = {m: {}, st: null, t: null}
+                        elif .cur == null or $l == "" then .
+                        elif ($l | startswith("\u001d")) then
+                            .a[.cur].m = ((try ($l[1:] | fromjson) catch null)
+                                          | if type == "object" then . else {} end)
+                        else
+                            (try ($l | fromjson) catch null) as $r
+                            | if ($r | type) != "object" then .
+                              else ($r | epoch) as $e
+                                | (if $e != null and $e > (.a[.cur].t // 0)
+                                   then .a[.cur].t = $e else . end)
+                                | ($r | shape) as $s
+                                | (if $s != null then .a[.cur].st = $s else . end)
+                              end
+                        end)
+                    | [ .a[] | select(.t != null)
+                        | (($now - .t) | if . < 0 then 0 else floor end) as $age
+                        | select($age <= $win)
+                        | .m as $m
+                        | ([$m.name, $m.description, $m.agentType, "agent"]
+                           | map(select(type == "string") | clean | select(length > 0))
+                           | .[0]) as $label
+                        | {age: $age, st: (.st // "busy"),
+                           mate: ($m.taskKind == "in_process_teammate"),
+                           label: (if ($label | length) > 20 then $label[0:19] + "…" else $label end)} ]
+                    | (map(select(.st == "busy")) | sort_by(-.age) | .[] | "B\t\(.age)\t\(.label)"),
+                      "I\t\(map(select(.st == "idle" and .mate)) | length)"
+                ' 2>/dev/null
+            )
+            local _ag_k _ag_age _ag_label _ag_dur _ag_out="" _ag_shown=0 _ag_more=0 _ag_idle=0
+            while IFS=$'\t' read -r _ag_k _ag_age _ag_label; do
+                case "$_ag_age" in ""|*[!0-9]*) continue ;; esac
+                if [ "$_ag_k" = "I" ]; then
+                    _ag_idle="$_ag_age"
+                elif [ "$_ag_k" = "B" ] && [ -n "$_ag_label" ]; then
+                    if [ "$_ag_shown" -ge "$_ag_max" ]; then
+                        _ag_more=$((_ag_more + 1))
+                        continue
+                    fi
+                    if [ "$_ag_age" -lt 60 ]; then _ag_dur="${_ag_age}s"
+                    elif [ "$_ag_age" -lt 3600 ]; then _ag_dur="$((_ag_age / 60))m"
+                    else _fmt_short_v "$_ag_age"; _ag_dur="$_V"
+                    fi
+                    if [ "$_ag_age" -ge "$_ag_warn" ]; then _ag_dur="⚠${_ag_dur}"; fi
+                    _ag_out="${_ag_out:+${_ag_out}, }${_ag_label} ${_ag_dur}"
+                    _ag_shown=$((_ag_shown + 1))
+                fi
+            done <<< "${_ag_rows:-}"
+            if [ "$_ag_more" -gt 0 ]; then _ag_out="${_ag_out} +${_ag_more} more"; fi
+            if [ "$_ag_idle" -gt 0 ]; then _ag_out="${_ag_out:+${_ag_out}, }${_ag_idle} idle"; fi
+            tok_agents="$_ag_out"
+        fi
+    fi
+
     # Colorize timeline blocks if colors are configured
     # Colorize timeline blocks using actual ANSI escape bytes
     if [ -n "${tok_timeline:-}" ]; then
@@ -2645,8 +2785,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{effort}' '{peer_name}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" "$tok_peer_name" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{effort}' '{peer_name}' '{agents}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" "$tok_peer_name" "$tok_agents" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT

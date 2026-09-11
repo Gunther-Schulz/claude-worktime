@@ -269,6 +269,7 @@ A commented-out template with all options is created on install.
 | `{model}` | Model name + source when overridden (e.g. `Opus 4.6 (local)`) |
 | `{effort}` | Reasoning effort level (`low` / `medium` / `high` / `xhigh` / `max`). Hidden when the active model doesn't support effort. |
 | `{peer_name}` | This session's own cross-session peer name, rendered with an `@` prefix (e.g. `@my-project-ab`) so it reads as an address — the one other sessions reach it by. Matched from the stdin session id against Claude Code's live-session registry, and resolved by process where one session id has more than one live process; silently empty when that lookup does not resolve. See below |
+| `{agents}` | This session's subagents that are working now, each with how long it has been quiet — `lane-a 12s, lane-b ⚠14m +2 more, 3 idle`. Idle teammates are counted; finished and interrupted agents are not shown; silently empty when nothing is working or the logs cannot be read. See below |
 
 Empty tokens are automatically removed along with their surrounding separators.
 
@@ -328,6 +329,20 @@ A cached value is only displayed while it is fresh: once the cache is older than
 
 **A session id can have more than one live process, and the name is resolved by process when it does.** Resuming a session while its first process is still running leaves two registry files carrying the same `sessionId` and *different* names — measured 2026-08-20, two live `claude` pids on one id. So `sessionId` is not the registry's unique key; the pid in the filename is. Matching on the id alone and taking the first hit put the *same* address on both screens, while the other session became unaddressable — the failure lands precisely on what the token is for, and it looks completely normal, because one of the two names shown is genuinely correct. The lookup therefore collects every candidate and, only when more than one matches, walks this process's own ancestry to find the entry that is actually ours. If that cannot be resolved, the segment stays empty by the rule above: a name meant to be typed at another session is worse than no name when it might be the neighbour's. The walk costs nothing in the ordinary single-process case, which never reaches it.
 
+**Running subagents (`{agents}`):** Claude Code's statusline stdin carries no task list, so a session running several subagents — Agent-tool dispatches, in-process teammates — gives no at-a-glance answer to "what is still working, and is anything stuck?". The harness does keep one log per subagent beside the session transcript (`<session id>/subagents/agent-<id>.jsonl`, with a `.meta.json` carrying its name), and the statusline's stdin carries the transcript path, so the display is a scan. It ships as its own `GROUP_AGENTS` group (`agents {agents}`) at the end of line 2, hidden whenever there is nothing to show.
+
+**How an agent's state is read:** from the *last* conversation record of its log. A tool call in flight, a thinking-only record, or a user record (a tool result the model is answering) means **busy** — named, with its quiet time. A closing text reply means **idle** for a teammate, which waits for its next message and is counted (`3 idle`), and **done** for an Agent-tool agent, whose result has already reached you — not shown. An `[Request interrupted…` record means **stopped** — not shown. That rule was measured over 1,179 real agent logs (2026-09-11); the basis sits at the top of `tests/statusline-agents.sh`. Busy agents are listed longest-quiet first, so the one most likely stuck leads.
+
+**Quiet time is the stuck detector.** It counts from the newest record in the log, so an agent blocked in one long tool call reads as busy and quiet — which is exactly what it is — and is flagged `⚠` once quiet for `AGENTS_QUIET_WARN_SECS`. A log is never marked finished when its agent is killed, so nothing whose newest record is older than `AGENTS_WINDOW_SECS` is shown at all: a ghost ages out instead of standing forever.
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `AGENTS_WINDOW_SECS` | `3600` | Agents whose newest log record is older than this are not shown |
+| `AGENTS_QUIET_WARN_SECS` | `600` | A busy agent quiet this long is flagged `⚠` |
+| `AGENTS_MAX_SHOWN` | `3` | Busy agents named; the rest are counted (`+2 more`) |
+
+**Like `{peer_name}`, it fails silent.** The subagent logs are an undocumented internal format, so a missing transcript path, no subagents directory, no logs, or unparseable records each leave the segment out and the rest of the line byte-identical. Labels (the agent's name, else its description, else its type) are cut at 20 characters and stripped of control characters, since a description is prompt-derived text. The scan only runs when `{agents}` is on a line, reads only logs written inside the window (at most 24), and reads each as an 8-line tail parsed by a single `jq` call.
+
 **A fourth line from your own command:**
 
 | Option | Default | Effect |
@@ -353,10 +368,11 @@ GROUP_COLD="{cold}"
 GROUP_MODEL="{model}"
 GROUP_EFFORT="{effort}"
 GROUP_PEER="{peer_name}"
+GROUP_AGENTS="agents {agents}"
 
 # Lines (space-separated group names)
 STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS"
+STATUSLINE_2="TIMELINE BREAKS AGENTS"
 STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 GROUP_DIVIDER=" · "
 ```

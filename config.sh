@@ -60,6 +60,12 @@
 #                      session id against Claude Code's live-session registry
 #                      (see CLAUDE_SESSIONS_DIR); silently absent whenever that
 #                      lookup does not resolve.
+#   {agents}         — this session's subagents that are working now, each with
+#                      how long it has been quiet: "lane-a 12s, lane-b ⚠14m
+#                      +2 more, 3 idle". Idle teammates are counted; finished
+#                      and interrupted agents are not shown. Read from the
+#                      subagent logs beside the transcript; silently absent
+#                      when nothing is working or they cannot be read.
 
 # ---------------------------------------------------------------------------
 # Idle detection
@@ -100,10 +106,11 @@
 #GROUP_MODEL="{model}"
 #GROUP_EFFORT="{effort}"
 #GROUP_PEER="{peer_name}"
+#GROUP_AGENTS="agents {agents}"
 # GROUP_TOKENS removed — weighted tokens missed subagent costs; use {cost_budget} instead
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
-#STATUSLINE_2="TIMELINE BREAKS"
+#STATUSLINE_2="TIMELINE BREAKS AGENTS"
 #STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 #GROUP_DIVIDER=" · "
 
@@ -143,6 +150,19 @@
 # only if your Claude Code data root is not ~/.claude (the environment
 # variable of the same name works too).
 #CLAUDE_SESSIONS_DIR="$HOME/.claude/sessions"
+
+# ---------------------------------------------------------------------------
+# Running subagents ({agents})
+# ---------------------------------------------------------------------------
+# One log per subagent sits beside the session transcript; the LAST
+# conversation record decides the state (busy: a tool call in flight, a
+# thinking-only record, a tool result being answered; idle teammate: a closing
+# reply; done / interrupted: not shown). A killed agent's log is never marked
+# finished, so anything whose newest record is older than the window is not
+# shown. Undocumented internal format: every failure leaves the segment out.
+#AGENTS_WINDOW_SECS=3600     # hide agents whose newest record is older than this
+#AGENTS_QUIET_WARN_SECS=600  # flag a busy agent quiet this long with ⚠
+#AGENTS_MAX_SHOWN=3          # busy agents named; the rest counted as "+N more"
 
 # ---------------------------------------------------------------------------
 # Cold-cache counter (❄) & prompt-submit guard
