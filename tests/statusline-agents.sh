@@ -25,9 +25,14 @@
 #     for its next message (960 of 960 teammate logs carry a name; 922 of
 #     them end this way). For an Agent-tool agent it is DONE: its result has
 #     already reached the parent, so it is not shown;
-#   - a user record whose text starts "[Request interrupted" is STOPPED (3 of
-#     219 Agent-tool logs), not shown — without this arm an interrupted agent
-#     would read as busy until the window expired.
+#   - a user record carrying Claude Code's interruption marker is STOPPED (3
+#     of 219 Agent-tool logs), not shown — without this arm an interrupted
+#     agent would read as busy until the window expired. The log line carries
+#     no structured flag for it (its keys are those of any user record); the
+#     marker IS the harness's own signal: the 2.1.263 binary defines exactly
+#     "[Request interrupted by user]" and "[Request interrupted by user for
+#     tool use]" and recognizes them with /^\[Request interrupted by user[^\]]*\]/,
+#     which is the pattern matched here — not a looser prefix of our own.
 # The quiet time is "now minus the newest record timestamp in the tail", so an
 # agent blocked on one long tool call reads as busy-and-quiet, which is the
 # true observable. Past AGENTS_QUIET_WARN_SECS it is flagged ⚠. Nothing older
@@ -142,6 +147,7 @@ r_thinking()  { printf '{"type":"assistant","timestamp":"%s","message":{"role":"
 r_text()      { printf '{"type":"assistant","timestamp":"%s","message":{"role":"assistant","content":[{"type":"text","text":"Done."}]}}\n' "$(iso_ago "$1")"; }
 r_result()    { printf '{"type":"user","timestamp":"%s","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_x","content":"ok"}]}}\n' "$(iso_ago "$1")"; }
 r_interrupt() { printf '{"type":"user","timestamp":"%s","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}\n' "$(iso_ago "$1")"; }
+r_user_text() { printf '{"type":"user","timestamp":"%s","message":{"role":"user","content":[{"type":"text","text":"%s"}]}}\n' "$(iso_ago "$1")" "$2"; }
 r_attach()    { printf '{"type":"attachment","timestamp":"%s","attachment":{"type":"hook_success"}}\n' "$(iso_ago "$1")"; }
 
 # meta name-or-empty description-or-empty agentType [teammate]
@@ -210,6 +216,19 @@ agent b3 "$(meta busy-attach "" general-purpose)"   "$(r_tool_use 500)" "$(r_att
 agent b4 "$(meta stopped "" general-purpose)"       "$(r_tool_use 30)" "$(r_interrupt 20)"
 check_match "tool_result, thinking-only, trailing attachment: busy; interrupted: hidden" \
   "$BASE_PLAIN · agents busy-result 3m, busy-think 1m, busy-attach 5[0-4]s" "$(plain "$(render "$TP")")"
+
+# ---------------------------------------------------------------------------
+# 3b. STOPPED is the harness's marker, matched as the harness matches it. The
+#     tool-use variant (seen in a real log) hides too; a prompt that merely
+#     BEGINS with the same words, without "by user" and the closing bracket,
+#     is an ordinary message the model is answering: busy. A looser prefix
+#     match hides that agent.
+# ---------------------------------------------------------------------------
+new_session c3b
+agent s1 "$(meta stopped-tool "" general-purpose)" "$(r_tool_use 60)" "$(r_user_text 50 '[Request interrupted by user for tool use]')"
+agent s2 "$(meta prompt-lane "" general-purpose)" "$(r_user_text 40 '[Request interrupted notes] please continue')"
+check_match "tool-use interrupt marker hidden; lookalike prompt busy" \
+  "$BASE_PLAIN · agents prompt-lane 4[0-4]s" "$(plain "$(render "$TP")")"
 
 # ---------------------------------------------------------------------------
 # 4. Quiet past the warning threshold is flagged; past the window, hidden.

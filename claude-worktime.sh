@@ -2661,8 +2661,11 @@ mode_statusline() {
     # skipped): assistant tool_use or thinking-only, or any user record = busy;
     # assistant text = idle for a teammate (taskKind in_process_teammate), done
     # for an Agent-tool agent (not shown, its result already reached the
-    # parent); a user "[Request interrupted" record = stopped (not shown). The
-    # measured basis is in tests/statusline-agents.sh.
+    # parent); a user record carrying Claude Code's interruption marker =
+    # stopped (not shown). The log line has no structured flag for that; the
+    # marker is the harness's own signal, matched with the harness's own
+    # pattern (2.1.263 binary). The measured basis is in
+    # tests/statusline-agents.sh.
     #
     # Cost: `find -mmin` bounds the read to logs written inside the window, at
     # most 24 of the newest, each read as an 8-line tail — over 1179 real logs
@@ -2715,7 +2718,7 @@ mode_statusline() {
                             .message.content as $c
                             | if any((if ($c | type) == "string" then $c
                                       else ($c[]? | select(.type? == "text") | .text) end)
-                                     | tostring; startswith("[Request interrupted"))
+                                     | tostring; test("^\\[Request interrupted by user[^\\]]*\\]"))
                               then "stopped" else "busy" end
                         else null end;
                     reduce inputs as $l ({cur: null, a: {}};
