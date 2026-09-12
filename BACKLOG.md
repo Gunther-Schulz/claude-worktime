@@ -27,6 +27,44 @@ hand for the same reason.
 
 ## Ready
 
+- **READY (gated on ONE discriminator, below) — the statusline renders no
+  SESSION SLUG, and the repo has zero slug handling to build on.** Operator
+  ask, relayed 2026-09-12 by the dotfiles judgment desk: the session slug
+  should appear in the statusline. Measured here before booking, with a
+  positive control so the zero is not vacuous: a case-insensitive `slug`
+  sweep over this repo's `*.sh` and `*.md` returns **0** hits while the same
+  sweep for `statusline` returns **217** — the instrument reached, so the
+  absence is real and not a dead pattern. The deployed binary is in sync with
+  the repo (judgment desk's measurement, relayed; not re-run here), so this is
+  a genuine absence and not the stale-copy class that bit
+  `claude-worktime` before.
+  **THE DISCRIMINATOR, checked FIRST — it decides whether this is buildable at
+  all:** does Claude Code's statusline JSON input (the object delivered on
+  stdin to the `statusLine` command) carry a session slug field? Answer it by
+  DUMPING THE RAW INPUT ONCE from a real session — `cat > /tmp/sl-dump.json`
+  as the statusline command for one render, then read the keys — never from
+  memory of the documented schema and never from the docs alone: the schema
+  the harness actually sends is the only thing that settles it, and a
+  documented-but-absent field and an undocumented-but-present one both occur.
+  - **If the slug IS in the payload:** render it in the identity segment
+    beside the model name. Done-criterion: a real session's statusline shows
+    the slug, read off the rendered output, not asserted; the existing
+    statusline tests stay green; a session whose payload carries NO slug key
+    renders the segment without it rather than printing an empty separator or
+    the word `null`.
+  - **If the slug is NOT in the payload:** this entry CLOSES as
+    not-buildable-here, and the closing line names where the ask moves — a
+    Claude Code feature request, or the terminal-title route — so the operator
+    ask is not silently dropped by a negative finding. A close with no
+    named destination is this entry failing, not succeeding.
+  **Public-repo constraint, binding on the fixture:** this repo is public and
+  the machine-wide push-side leak scan does not reach it (see this file's
+  head). A slug is session-identifying, so any fixture or test payload
+  carrying one is SYNTHESIZED by hand — never a captured real session's
+  object, and never a real slug pasted into a test.
+  Write-set: `claude-worktime.sh` (identity segment), `config.sh` if the
+  segment is configurable like `{model}` is, plus the statusline tests.
+
 - **READY — `other` in the ledger is a RACED READ of the transcript, not a
   missing cause: every one of four measured events had a real
   `cache_miss_reason` sitting in its transcript.** Measured 2026-08-08
