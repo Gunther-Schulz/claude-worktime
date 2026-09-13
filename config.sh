@@ -50,6 +50,10 @@
 #   {cost}           — session cost (e.g. "$1.23")
 #   {cost_budget}    — actual cost / inferred 5h budget (e.g. "$19.65/≈$40")
 #   {model}          — model name + source (e.g. "Opus 4.6 (local)")
+#   {session_name}   — this session's slug/name, when the statusline stdin
+#                      JSON carries a `session_name` field (a payload missing
+#                      the key, or carrying an empty string, renders the
+#                      segment out — no empty separator, no "null")
 #   {effort}         — reasoning effort level: low / medium / high / xhigh / max
 #                      (hidden when active model doesn't support effort)
 #   {peer_name}      — THIS session's own peer name (e.g. "my-project-ab"), the
@@ -104,6 +108,7 @@
 #GROUP_CONTEXT="ctx {context}"
 #GROUP_COLD="{cold}"
 #GROUP_MODEL="{model}"
+#GROUP_SESSION_NAME="{session_name}"
 #GROUP_EFFORT="{effort}"
 #GROUP_PEER="{peer_name}"
 #GROUP_AGENTS="agents {agents}"
@@ -111,7 +116,7 @@
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
 #STATUSLINE_2="TIMELINE BREAKS AGENTS"
-#STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
+#STATUSLINE_3="MODEL SESSION_NAME RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 #GROUP_DIVIDER=" · "
 
 # ---------------------------------------------------------------------------

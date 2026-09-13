@@ -177,6 +177,7 @@ GROUP_RATE_SCOPED="{rate_7d_scoped_name} {rate_7d_scoped} {rate_7d_scoped_proj}"
 GROUP_CONTEXT="ctx {context}"
 GROUP_COLD="{cold}"
 GROUP_MODEL="{model}"
+GROUP_SESSION_NAME="{session_name}"
 GROUP_EFFORT="{effort}"
 GROUP_PEER="{peer_name}"
 GROUP_AGENTS="agents {agents}"
@@ -203,7 +204,7 @@ GROUP_COLD_COLOR="none"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
 STATUSLINE_2="TIMELINE BREAKS AGENTS"
-STATUSLINE_3="MODEL RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
+STATUSLINE_3="MODEL SESSION_NAME RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 # LINE4_CMD: a fourth statusline line rendered from YOUR OWN command's stdout
 # instead of a built-in token — an extension point rather than a domain
 # feature. Empty (unset) by default: no fourth line, output unchanged.
@@ -1548,7 +1549,7 @@ mode_statusline() {
     fi
 
     # Tokens from Claude Code stdin JSON (rate limits, context, cost, model, effort)
-    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cold="" tok_cost_budget="" tok_cost="" tok_model="" tok_effort=""
+    local tok_rate_5h="" tok_rate_5h_reset="" tok_rate_5h_proj="" tok_rate_7d="" tok_rate_7d_reset="" tok_rate_7d_day="" tok_rate_7d_proj="" tok_context="" tok_cold="" tok_cost_budget="" tok_cost="" tok_model="" tok_session_name="" tok_effort=""
     local tok_rate_7d_scoped="" tok_rate_7d_scoped_name="" tok_rate_7d_scoped_proj=""
     if [ -n "${_STDIN_JSON:-}" ]; then
         # Single jq call to extract all fields
@@ -1568,12 +1569,13 @@ mode_statusline() {
             (.cost.total_cost_usd // "_"),
             (.model.display_name // "_"),
             (.model.id // "_"),
+            (.session_name // "_"),
             (.effort.level // "_"),
             (.transcript_path // "_")
         ] | join("\t")' <<< "$_STDIN_JSON" 2>/dev/null || true)
 
-        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff tp_path
-        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id eff tp_path <<< "$stdin_parsed"
+        local r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id sess_name eff tp_path
+        IFS=$'\t' read -r r5h r5h_reset r7d r7d_reset ctx cache_create cache_read uncached_input output_tokens cum_input cum_output cst mdl mdl_id sess_name eff tp_path <<< "$stdin_parsed"
         # Replace placeholder with empty
         [ "$r5h" = "_" ] && r5h=""
         [ "$r5h_reset" = "_" ] && r5h_reset=""
@@ -1589,6 +1591,12 @@ mode_statusline() {
         [ "$cst" = "_" ] && cst=""
         [ "$mdl" = "_" ] && mdl=""
         [ "$mdl_id" = "_" ] && mdl_id=""
+        # session_name: absent key and empty-string value both collapse to ""
+        # here (the "_" placeholder only stands in for a missing/null key; an
+        # empty string survives jq's `//` untouched) — both render the
+        # segment out, never an empty separator or the literal word "null".
+        [ "$sess_name" = "_" ] && sess_name=""
+        [ -n "$sess_name" ] && tok_session_name="$sess_name"
         # Strip the context-window suffix (e.g. " (1M context)") from the
         # display name — redundant in the statusline.
         [[ "$mdl" == *" ("*"context)" ]] && mdl="${mdl% (*context)}"
@@ -2788,8 +2796,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{effort}' '{peer_name}' '{agents}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_effort" "$tok_peer_name" "$tok_agents" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{session_name}' '{effort}' '{peer_name}' '{agents}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_session_name" "$tok_effort" "$tok_peer_name" "$tok_agents" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
