@@ -389,6 +389,27 @@ is visible from reading the statusline.
 
 ## Parked
 
+- **PARKED — a machine-wide ATTENTION line: sessions waiting on the operator
+  are invisible from every other terminal.** Operator-requested 2026-09-19,
+  first-hand: a session sat >30 min holding a prompt for approval and the
+  operator "never noticed the terminal sitting and waiting"; a desktop toast
+  is a moment, not a state, and for one waiting class (a held cross-session
+  peer message) no hook event fires at all (claude-code-guide agent,
+  2026-09-19: no documented hook at waiting-state entry). The statusline is
+  the one surface rendered in whichever terminal the operator is looking at,
+  so it is the natural home for a standing indicator. Design sketch, not
+  decided: an additional dedicated line (operator: "clearly there to see")
+  listing sessions on this machine currently waiting for operator input —
+  e.g. `⚠ waiting on you: cachyos-setup-36 (14m)` — empty line suppressed.
+  **Missing evidence/design:** the DATA SOURCE for cross-session waiting
+  state — what the session listing reads (the cc-socks registry under
+  `/run/user/<uid>/cc-socks/`?), whether state (busy/idle/waiting) is
+  readable there or only liveness, and the staleness contract (a
+  crashed session must not show as waiting forever; a cleared prompt must
+  clear the line). A hook-written marker file is NOT a viable source alone:
+  nothing fires on the held-peer-message class, and nothing reliably fires
+  on prompt RESOLUTION either. Write-set: claude-worktime.
+
 - **PARKED — `tokens`-Records im Ledger tragen kein Modell-Feld, also sind
   Per-Modell-Totale nur über den Transkript-Korpus (retention-begrenzt)
   möglich.** Nur `type:cold`-Records mit `cause=model` tragen `mdl`;
