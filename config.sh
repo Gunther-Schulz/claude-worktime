@@ -70,6 +70,24 @@
 #                      and interrupted agents are not shown. Read from the
 #                      subagent logs beside the transcript; silently absent
 #                      when nothing is working or they cannot be read.
+#   {attention}      — OTHER sessions on this machine that the harness reports
+#                      as waiting for YOU, longest wait first:
+#                      "⚠ waiting on you: my-other-session 14m, third-one 3m".
+#                      A session blocked on an approval is invisible from every
+#                      other terminal, and a desktop toast is a moment rather
+#                      than a state; this is the standing surface. Nothing
+#                      waiting less than ATTENTION_MIN_SECS is shown, because
+#                      routine approvals clear in seconds and a line that
+#                      flickers on those is one you stop reading. Only live
+#                      pids are listed, so a crashed session cannot show as
+#                      waiting forever, and a resolved prompt clears itself.
+#                      This session is never listed: if the terminal you are
+#                      reading is the one waiting, you can already see it.
+#                      Read from the same registry as {peer_name}
+#                      (see CLAUDE_SESSIONS_DIR); silently absent whenever that
+#                      read does not resolve. It shows what the harness reports
+#                      as waiting — which classes of wait it reports is the
+#                      harness's business, not this tool's.
 
 # ---------------------------------------------------------------------------
 # Idle detection
@@ -112,10 +130,16 @@
 #GROUP_EFFORT="{effort}"
 #GROUP_PEER="{peer_name}"
 #GROUP_AGENTS="agents {agents}"
+#GROUP_ATTENTION="{attention}"
+#GROUP_ATTENTION_COLOR="yellow"
 # GROUP_TOKENS removed — weighted tokens missed subagent costs; use {cost_budget} instead
 
 #STATUSLINE_1="PROJECT TODAY TOTAL"
-#STATUSLINE_2="TIMELINE BREAKS AGENTS"
+#STATUSLINE_2="ATTENTION TIMELINE BREAKS AGENTS"
+# For a line of its OWN, put ATTENTION alone in one of the three. A line whose
+# groups are all empty is not rendered at all, so it costs no blank row when
+# nobody is waiting and appears only when someone is:
+#STATUSLINE_2="ATTENTION"
 #STATUSLINE_3="MODEL SESSION_NAME RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 #GROUP_DIVIDER=" · "
 
@@ -168,6 +192,12 @@
 #AGENTS_WINDOW_SECS=3600     # hide agents whose newest record is older than this
 #AGENTS_QUIET_WARN_SECS=600  # flag a busy agent quiet this long with ⚠
 #AGENTS_MAX_SHOWN=3          # busy agents named; the rest counted as "+N more"
+
+# {attention} — sessions waiting on you. Raise ATTENTION_MIN_SECS if ordinary
+# approvals still make the line appear more often than you want to look at it;
+# lower it only if you would rather see every brief wait than miss a long one.
+#ATTENTION_MIN_SECS=30        # ignore waits shorter than this (seconds)
+#ATTENTION_MAX_SHOWN=3        # sessions named; the rest counted as "+N more"
 
 # ---------------------------------------------------------------------------
 # Cold-cache counter (❄) & prompt-submit guard

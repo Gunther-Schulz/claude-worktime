@@ -189,6 +189,16 @@ GROUP_AGENTS="agents {agents}"
 AGENTS_WINDOW_SECS=3600
 AGENTS_QUIET_WARN_SECS=600
 AGENTS_MAX_SHOWN=3
+GROUP_ATTENTION="{attention}"
+GROUP_ATTENTION_COLOR="yellow"
+# {attention}: OTHER sessions on this machine that the harness reports as
+# waiting for you, longest wait first. Nothing waiting under
+# ATTENTION_MIN_SECS is shown — routine approvals clear in seconds, and a
+# line that flickers on those is a line you learn to stop reading. At most
+# ATTENTION_MAX_SHOWN are named, the rest counted. This session is never
+# listed: if the terminal you are reading is the one waiting, you can see it.
+ATTENTION_MIN_SECS=30
+ATTENTION_MAX_SHOWN=3
 # token_budget removed: weighted tokens only tracked main conversation,
 # missing subagent costs (1.1-2.4x underestimate). Use {cost_budget} instead.
 GROUP_TOKENS=""
@@ -203,7 +213,12 @@ GROUP_PEER_COLOR="dark-gray"
 GROUP_COLD_COLOR="none"
 GROUP_DIVIDER=" · "
 STATUSLINE_1="PROJECT TODAY TOTAL"
-STATUSLINE_2="TIMELINE BREAKS AGENTS"
+# ATTENTION leads line 2 so a waiting session is the first thing read there.
+# Its group collapses to nothing when nobody is waiting, so the default line is
+# byte-identical to before in the ordinary case. For a line of its OWN, put
+# ATTENTION alone in a STATUSLINE_N — an all-empty line is not rendered at all,
+# so that line simply appears when someone is waiting and is absent otherwise.
+STATUSLINE_2="ATTENTION TIMELINE BREAKS AGENTS"
 STATUSLINE_3="MODEL SESSION_NAME RATE_5H RATE_7D RATE_SCOPED CONTEXT COLD PEER"
 # LINE4_CMD: a fourth statusline line rendered from YOUR OWN command's stdout
 # instead of a built-in token — an extension point rather than a domain
@@ -2785,6 +2800,111 @@ mode_statusline() {
         fi
     fi
 
+    # {attention} — sessions on THIS machine the harness reports as WAITING for
+    # the operator, longest wait first:
+    #   "⚠ waiting on you: cachyos-setup-36 14m, aller-27 3m +2 more"
+    #
+    # WHY THIS EXISTS: a session blocked on an approval is invisible from every
+    # other terminal. A desktop toast is a moment; the statusline is the
+    # standing surface, rendered in whichever terminal the operator is actually
+    # looking at. Measured incident: a session sat >30 min holding a prompt and
+    # was never noticed.
+    #
+    # Source is the same registry {peer_name} reads, so the same contract
+    # applies: an UNDOCUMENTED internal format, every failure silent, the token
+    # left empty. Read with bash pattern matching rather than jq for the same
+    # reason — no process on the hot path.
+    #
+    # `statusUpdatedAt` CONTAINS the string `status`, so both key patterns are
+    # anchored at `{` or `,` AND closed by the quote before the colon; an
+    # unanchored test would read the timestamp as the state.
+    #
+    # ATTENTION_MIN_SECS exists because routine approvals resolve in seconds
+    # (measured: 4s, 16s, 12s waits during ordinary cross-session traffic).
+    # Showing those makes the line flicker constantly, and a line that usually
+    # says nothing trains the reader to stop reading it — which is precisely
+    # the day it matters. The threshold is what makes the line mean "stuck".
+    #
+    # Only sessions whose pid is ALIVE are shown: a registry file outlives its
+    # process (measured: an entry idle 21h still present), so file presence is
+    # not liveness and a crashed session must never show as waiting forever.
+    # A resolved prompt clears on its own — the harness rewrites `status`.
+    local tok_attention=""
+    if [[ "$all_formats" == *"{attention}"* ]]; then
+        local _at_f _at_c _at_pid _at_name _at_upd _at_age _at_dur _at_i _at_j
+        local _at_re_st='[{,][[:space:]]*"status"[[:space:]]*:[[:space:]]*"([^"]*)"'
+        local _at_re_up='[{,][[:space:]]*"statusUpdatedAt"[[:space:]]*:[[:space:]]*([0-9]+)'
+        local _at_re_nm='[{,][[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]*)"'
+        # This session must not list itself: if the terminal you are reading is
+        # the one waiting, its dialog is already on screen. The statusline runs
+        # as a descendant of its own session process, so our session's pid is an
+        # ancestor of this script.
+        local -a _at_self
+        local _at_selfn=0 _at_wp="$$" _at_hop=0
+        while [ -n "$_at_wp" ] && [ "$_at_wp" -gt 1 ] && [ "$_at_hop" -lt 12 ]; do
+            _at_self[$_at_selfn]="$_at_wp"; _at_selfn=$(( _at_selfn + 1 ))
+            _at_wp="$(_ppid_of "$_at_wp")" || break
+            _at_hop=$(( _at_hop + 1 ))
+        done
+        local _at_now_ms; _at_now_ms="$(_epoch_ms)"
+        # Counted by hand, as in {peer_name}: under `set -u`, bash 3.2 errors on
+        # an empty array's expansion, and "nobody is waiting" is the ordinary case.
+        local -a _at_ages _at_names
+        local _at_n=0
+        for _at_f in "$CLAUDE_SESSIONS_DIR"/*.json; do
+            [ -f "$_at_f" ] && [ -r "$_at_f" ] || continue
+            _at_pid="${_at_f##*/}"; _at_pid="${_at_pid%.json}"
+            case "$_at_pid" in ""|*[!0-9]*) continue ;; esac
+            _at_pid=$(( 10#$_at_pid ))
+            # Own session — skip before any parsing.
+            for (( _at_i = 0; _at_i < _at_selfn; _at_i++ )); do
+                [ "${_at_self[$_at_i]}" -eq "$_at_pid" ] && continue 2
+            done
+            # A registry file outlives its process; only a live pid counts.
+            kill -0 "$_at_pid" 2>/dev/null || continue
+            _at_c=$(<"$_at_f")
+            [[ "$_at_c" =~ $_at_re_st ]] || continue
+            [ "${BASH_REMATCH[1]}" = "waiting" ] || continue
+            [[ "$_at_c" =~ $_at_re_up ]] || continue
+            _at_upd="${BASH_REMATCH[1]}"
+            _at_age=$(( ( _at_now_ms - _at_upd ) / 1000 ))
+            # A clock skew or a future stamp must not render as a huge wait.
+            [ "$_at_age" -ge "$ATTENTION_MIN_SECS" ] || continue
+            [[ "$_at_c" =~ $_at_re_nm ]] || continue
+            _at_names[$_at_n]="${BASH_REMATCH[1]}"
+            _at_ages[$_at_n]="$_at_age"
+            _at_n=$(( _at_n + 1 ))
+        done
+        if [ "$_at_n" -gt 0 ]; then
+            # Longest wait first — that is the one most likely forgotten.
+            # Selection sort in-shell: N is a handful, and sorting here keeps
+            # the spawn count at zero even in the rare non-empty case.
+            for (( _at_i = 0; _at_i < _at_n - 1; _at_i++ )); do
+                for (( _at_j = _at_i + 1; _at_j < _at_n; _at_j++ )); do
+                    if [ "${_at_ages[$_at_j]}" -gt "${_at_ages[$_at_i]}" ]; then
+                        _at_age="${_at_ages[$_at_i]}"; _at_ages[$_at_i]="${_at_ages[$_at_j]}"; _at_ages[$_at_j]="$_at_age"
+                        _at_name="${_at_names[$_at_i]}"; _at_names[$_at_i]="${_at_names[$_at_j]}"; _at_names[$_at_j]="$_at_name"
+                    fi
+                done
+            done
+            local _at_out="" _at_shown=0
+            for (( _at_i = 0; _at_i < _at_n; _at_i++ )); do
+                if [ "$_at_shown" -ge "$ATTENTION_MAX_SHOWN" ]; then break; fi
+                _at_age="${_at_ages[$_at_i]}"
+                if [ "$_at_age" -lt 60 ]; then _at_dur="${_at_age}s"
+                elif [ "$_at_age" -lt 3600 ]; then _at_dur="$(( _at_age / 60 ))m"
+                else _fmt_short_v "$_at_age"; _at_dur="$_V"
+                fi
+                _at_out="${_at_out:+${_at_out}, }${_at_names[$_at_i]} ${_at_dur}"
+                _at_shown=$(( _at_shown + 1 ))
+            done
+            if [ "$_at_n" -gt "$_at_shown" ]; then
+                _at_out="${_at_out} +$(( _at_n - _at_shown )) more"
+            fi
+            tok_attention="⚠ waiting on you: ${_at_out}"
+        fi
+    fi
+
     # Colorize timeline blocks if colors are configured
     # Colorize timeline blocks using actual ANSI escape bytes
     if [ -n "${tok_timeline:-}" ]; then
@@ -2796,8 +2916,8 @@ mode_statusline() {
     # Token arrays (constant per statusline refresh, shared by all groups)
     local -a _atokens=( '{session}' '{session_wall}' '{today}' '{today_wall}' '{today_start}' '{today_now}' '{today_project}' '{today_claude}' '{today_you}' '{project_total}' '{total_claude}' '{total_you}' '{project}' '{branch}' '{status}' '{git}' '{timeline}' )
     local -a _avalues=( "$tok_session" "$tok_session_wall" "$tok_today" "$tok_today_wall" "$tok_today_start" "$tok_today_now" "$tok_today_project" "$tok_today_claude" "$tok_today_you" "$tok_project_total" "$tok_total_claude" "$tok_total_you" "$tok_project" "$tok_branch" "$tok_status" "$tok_git" "$tok_timeline" )
-    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{session_name}' '{effort}' '{peer_name}' '{agents}' )
-    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_session_name" "$tok_effort" "$tok_peer_name" "$tok_agents" )
+    local -a opt_tokens=( '{last_break}' '{since_break}' '{rate_5h}' '{rate_5h_reset}' '{rate_5h_proj}' '{rate_7d}' '{rate_7d_reset}' '{rate_7d_day}' '{rate_7d_proj}' '{rate_7d_scoped_name}' '{rate_7d_scoped_proj}' '{rate_7d_scoped}' '{context}' '{cold}' '{cost_budget}' '{cost}' '{model}' '{session_name}' '{effort}' '{peer_name}' '{agents}' '{attention}' )
+    local -a opt_values=( "$tok_last_break" "$tok_since_break" "$tok_rate_5h" "$tok_rate_5h_reset" "$tok_rate_5h_proj" "$tok_rate_7d" "$tok_rate_7d_reset" "$tok_rate_7d_day" "$tok_rate_7d_proj" "$tok_rate_7d_scoped_name" "$tok_rate_7d_scoped_proj" "$tok_rate_7d_scoped" "$tok_context" "$tok_cold" "$tok_cost_budget" "$tok_cost" "$tok_model" "$tok_session_name" "$tok_effort" "$tok_peer_name" "$tok_agents" "$tok_attention" )
 
     # Substitute all tokens in a group template.
     # Variable-setting: sets _SUBST_NONEMPTY (0/1) and _SUBST_RESULT
