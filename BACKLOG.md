@@ -389,27 +389,6 @@ is visible from reading the statusline.
 
 ## Parked
 
-- **PARKED — a machine-wide ATTENTION line: sessions waiting on the operator
-  are invisible from every other terminal.** Operator-requested 2026-09-19,
-  first-hand: a session sat >30 min holding a prompt for approval and the
-  operator "never noticed the terminal sitting and waiting"; a desktop toast
-  is a moment, not a state, and for one waiting class (a held cross-session
-  peer message) no hook event fires at all (claude-code-guide agent,
-  2026-09-19: no documented hook at waiting-state entry). The statusline is
-  the one surface rendered in whichever terminal the operator is looking at,
-  so it is the natural home for a standing indicator. Design sketch, not
-  decided: an additional dedicated line (operator: "clearly there to see")
-  listing sessions on this machine currently waiting for operator input —
-  e.g. `⚠ waiting on you: cachyos-setup-36 (14m)` — empty line suppressed.
-  **Missing evidence/design:** the DATA SOURCE for cross-session waiting
-  state — what the session listing reads (the cc-socks registry under
-  `/run/user/<uid>/cc-socks/`?), whether state (busy/idle/waiting) is
-  readable there or only liveness, and the staleness contract (a
-  crashed session must not show as waiting forever; a cleared prompt must
-  clear the line). A hook-written marker file is NOT a viable source alone:
-  nothing fires on the held-peer-message class, and nothing reliably fires
-  on prompt RESOLUTION either. Write-set: claude-worktime.
-
 - **PARKED — `tokens`-Records im Ledger tragen kein Modell-Feld, also sind
   Per-Modell-Totale nur über den Transkript-Korpus (retention-begrenzt)
   möglich.** Nur `type:cold`-Records mit `cause=model` tragen `mdl`;
@@ -556,6 +535,56 @@ is visible from reading the statusline.
   rejected as an unknown flag, never its exit code or output.
 
 ## Departed
+
+- 2026-09-19: **a machine-wide ATTENTION line — SHIPPED `ee5e379`**
+  (opus executing desk, peer desk holding judgment; three sonnet
+  discovery lanes). The parked DATA SOURCE question is answered:
+  `~/.claude/sessions/<pid>.json` — the same registry `{peer_name}`
+  already reads — carries `status` and `statusUpdatedAt` (epoch ms,
+  which is the age), readable by any plain uid-1000 subprocess with
+  no session context. `waiting` was OBSERVED live in that field
+  (three samples, one session, 1 Hz recorder), which is what closed
+  the park: the binary's 4-value token list alone proved only that
+  the word exists in code, not that the field ever carries it.
+  Two candidates were eliminated with evidence. Transcripts: no pid
+  anywhere in the schema, so a crashed session cannot be told from a
+  slow one, and NOTHING is written when a session enters the wait —
+  permission prompt, long-running tool and held message collapse to
+  one shape. `claude agents --json`: preserves `waiting` but drops
+  `statusUpdatedAt` and collapses every other state to "busy" —
+  observed disagreeing with the file for a session in `shell`.
+  The STALENESS CONTRACT the entry demanded is a pid liveness check,
+  and it is measured rather than assumed: a registry file outlives
+  its process (an entry idle 21h was still present), so file
+  presence is not liveness. A resolved prompt clears itself — the
+  harness rewrites `status`, observed flipping back within seconds.
+  Design addition the entry did not ask for, from the measurements:
+  ATTENTION_MIN_SECS (default 30s). Routine approvals clear in
+  seconds — 4s, 16s and 12s observed during ordinary cross-session
+  traffic — and a line firing on those flickers constantly, which
+  costs the READER, who learns it never says anything and stops
+  reading it on the day it matters.
+  Suite 29/29, 0 skips, including the new synthesized-fixture test
+  (public-repo constraint honored: no real session ids or names).
+  Red-first proven: new expectations against the pre-change
+  implementation fail 6 of 25 — the positive arm, ordering, cap and
+  the anchoring mirror; the fail-soft arms pass vacuously there,
+  which is why the suite names case 1 as their known-positive.
+  Render cost measured, not asserted: +2.6ms against a live 9-file
+  registry (12.6 → 15.2ms over 20 renders), zero added spawns.
+  KNOWN LIMIT, open: only wait classes the harness publishes as
+  `waiting` are shown. The held-cross-session-message class is
+  confirmed; whether a TOOL-PERMISSION dialog also sets `waiting` is
+  untested — two probes were inconclusive because neither dialog was
+  held long enough to sample. Discriminator for whoever picks it up:
+  raise a genuinely-gated call, hold the dialog >30s, sample
+  `~/.claude/sessions/<pid>.json` at 1 Hz; sustained `waiting` means
+  covered, sustained `busy`/`shell` means the held-message class
+  only. It blocks nothing and changes no code either way, and the
+  config wording claims only what was verified.
+  NOT DEPLOYED: this ships the repo change only. The operator's own
+  installed copy and any config overriding STATUSLINE_2 are a
+  separate act, as with `fc22fe8`.
 
 - 2026-09-13: **session name in the statusline — SHIPPED `fc22fe8`**
   (sonnet dispatch, statiker meta desk integrating). The gating
